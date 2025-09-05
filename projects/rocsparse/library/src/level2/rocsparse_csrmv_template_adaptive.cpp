@@ -30,6 +30,7 @@
 
 #include "csrmv_device.h"
 #include "csrmv_symm_device.h"
+#include <chrono>
 #include <vector>
 
 #define BLOCK_SIZE 1024
@@ -367,6 +368,7 @@ rocsparse_status
     p_csrmv_info[0]                 = new _rocsparse_csrmv_info();
     rocsparse_csrmv_info csrmv_info = p_csrmv_info[0];
 
+    auto t0 = std::chrono::high_resolution_clock::now();
     if(trans == rocsparse_operation_none)
     {
         // Stream
@@ -446,6 +448,12 @@ rocsparse_status
             RETURN_IF_HIP_ERROR(hipStreamSynchronize(stream));
         }
     }
+
+    auto t1  = std::chrono::high_resolution_clock::now();
+    auto dt0 = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+
+    std::cout << "[total] Time: " << dt0 << " us" << std::endl;
+
     // Store some pointers to verify correct execution
     csrmv_info->trans       = trans;
     csrmv_info->m           = m;
