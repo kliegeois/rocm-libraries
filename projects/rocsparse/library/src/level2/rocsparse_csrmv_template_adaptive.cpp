@@ -376,9 +376,10 @@ rocsparse_status
         csrmv_info->adaptive.size = 0;
 
         // Temporary arrays to hold device data
-        std::vector<I> hptr(m + 1);
-        RETURN_IF_HIP_ERROR(hipMemcpyAsync(
-            hptr.data(), csr_row_ptr, sizeof(I) * (m + 1), hipMemcpyDeviceToHost, stream));
+        I* hptr;
+        RETURN_IF_HIP_ERROR(rocsparse_hipHostMalloc(&hptr, sizeof(I) * (m + 1)));
+        RETURN_IF_HIP_ERROR(
+            hipMemcpyAsync(hptr, csr_row_ptr, sizeof(I) * (m + 1), hipMemcpyDeviceToHost, stream));
 
         // Wait for host transfer to finish
         RETURN_IF_HIP_ERROR(hipStreamSynchronize(stream));
@@ -389,26 +390,31 @@ rocsparse_status
                                csrmv_info->adaptive.size,
                                csrmv_info->adaptive.first_row,
                                csrmv_info->adaptive.last_row,
-                               hptr.data(),
+                               hptr,
                                m,
                                false);
 
         // Create row blocks and workgroup data structures
-        std::vector<I> row_blocks(csrmv_info->adaptive.size, 0);
-        std::vector<J> wg_ids(csrmv_info->adaptive.size, 0);
+        I* row_blocks;
+        J* wg_ids;
 
-        ComputeRowBlocks<I, J>(row_blocks.data(),
-                               wg_ids.data(),
+        RETURN_IF_HIP_ERROR(
+            rocsparse_hipHostMalloc(&row_blocks, sizeof(I) * csrmv_info->adaptive.size));
+        RETURN_IF_HIP_ERROR(
+            rocsparse_hipHostMalloc(&wg_ids, sizeof(J) * csrmv_info->adaptive.size));
+
+        ComputeRowBlocks<I, J>(row_blocks,
+                               wg_ids,
                                csrmv_info->adaptive.size,
                                csrmv_info->adaptive.first_row,
                                csrmv_info->adaptive.last_row,
-                               hptr.data(),
+                               hptr,
                                m,
                                true);
 
         if(descr->type == rocsparse_matrix_type_symmetric)
         {
-            csrmv_info->max_rows = maxRowsInABlock(row_blocks.data(), csrmv_info->adaptive.size);
+            csrmv_info->max_rows = maxRowsInABlock(row_blocks, csrmv_info->adaptive.size);
         }
 
         // Allocate memory on device to hold csrmv info, if required
@@ -428,7 +434,7 @@ rocsparse_status
 
             // Copy row blocks information to device
             RETURN_IF_HIP_ERROR(hipMemcpyAsync(csrmv_info->adaptive.row_blocks,
-                                               row_blocks.data(),
+                                               row_blocks,
                                                sizeof(I) * csrmv_info->adaptive.size,
                                                hipMemcpyHostToDevice,
                                                stream));
@@ -437,7 +443,7 @@ rocsparse_status
                                                sizeof(uint32_t) * csrmv_info->adaptive.size,
                                                stream));
             RETURN_IF_HIP_ERROR(hipMemcpyAsync(csrmv_info->adaptive.wg_ids,
-                                               wg_ids.data(),
+                                               wg_ids,
                                                sizeof(J) * csrmv_info->adaptive.size,
                                                hipMemcpyHostToDevice,
                                                stream));
@@ -445,6 +451,9 @@ rocsparse_status
             // Wait for device transfer to finish
             RETURN_IF_HIP_ERROR(hipStreamSynchronize(stream));
         }
+        RETURN_IF_HIP_ERROR(rocsparse_hipHostFree(hptr));
+        RETURN_IF_HIP_ERROR(rocsparse_hipHostFree(row_blocks));
+        RETURN_IF_HIP_ERROR(rocsparse_hipHostFree(wg_ids));
     }
     // Store some pointers to verify correct execution
     csrmv_info->trans       = trans;
