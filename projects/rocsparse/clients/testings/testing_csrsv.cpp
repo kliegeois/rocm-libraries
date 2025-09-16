@@ -550,12 +550,87 @@ void testing_csrsv(const Arguments& arg)
             CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
             printf("[DEBUG] csrsv_analysis called after csrsm none (2)\n");
         }
+    }
+
+    if(arg.timing)
+    {
+        int number_cold_calls = 2;
+        int number_hot_calls  = arg.iters;
+
+        CHECK_ROCSPARSE_ERROR(rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_host));
+
+        // Warm up
+        for(int iter = 0; iter < number_cold_calls; ++iter)
+        {
+            CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
+            CHECK_ROCSPARSE_ERROR(
+                rocsparse_csrsv_zero_pivot(handle, descr, info, h_analysis_pivot));
+            CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_solve<T>(PARAMS_SOLVE(h_alpha, dA, dx, dy)));
+            CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_zero_pivot(handle, descr, info, h_solve_pivot));
+            CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_clear(handle, descr, info));
+        }
+
+        double gpu_analysis_time_used = get_time_us();
+
+        CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
+        gpu_analysis_time_used = get_time_us() - gpu_analysis_time_used;
+
+        double gpu_solve_time_used = get_time_us();
+
+        // Performance run
+        for(int iter = 0; iter < number_hot_calls; ++iter)
+        {
+            CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_solve<T>(PARAMS_SOLVE(h_alpha, dA, dx, dy)));
+        }
+
+        gpu_solve_time_used = (get_time_us() - gpu_solve_time_used) / number_hot_calls;
+
+        double gflop_count = csrsv_gflop_count(M, dA.nnz, diag);
+        double gbyte_count = csrsv_gbyte_count<T>(M, dA.nnz);
+
+        double gpu_gflops = get_gpu_gflops(gpu_solve_time_used, gflop_count);
+        double gpu_gbyte  = get_gpu_gbyte(gpu_solve_time_used, gbyte_count);
+
+        display_timing_info(display_key_t::M,
+                            M,
+                            display_key_t::nnz,
+                            dA.nnz,
+                            display_key_t::alpha,
+                            *h_alpha,
+                            display_key_t::pivot,
+                            std::min(*h_analysis_pivot, *h_solve_pivot),
+                            display_key_t::trans,
+                            rocsparse_operation2string(trans),
+                            display_key_t::diag_type,
+                            rocsparse_diagtype2string(diag),
+                            display_key_t::fill_mode,
+                            rocsparse_fillmode2string(uplo),
+                            display_key_t::analysis_policy,
+                            rocsparse_analysis2string(apol),
+                            display_key_t::solve_policy,
+                            rocsparse_solve2string(spol),
+                            display_key_t::gflops,
+                            gpu_gflops,
+                            display_key_t::bandwidth,
+                            gpu_gbyte,
+                            display_key_t::analysis_time_ms,
+                            get_gpu_time_msec(gpu_analysis_time_used),
+                            display_key_t::time_ms,
+                            get_gpu_time_msec(gpu_solve_time_used));
+    }
+
+    // Clear csrsv meta data
+    CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_clear(handle, descr, info));
+
+    // Free buffer
+    CHECK_HIP_ERROR(rocsparse_hipFree(dbuffer));
+}
 
 #define INSTANTIATE(TYPE)                                            \
     template void testing_csrsv_bad_arg<TYPE>(const Arguments& arg); \
     template void testing_csrsv<TYPE>(const Arguments& arg)
-        INSTANTIATE(float);
-        INSTANTIATE(double);
-        INSTANTIATE(rocsparse_float_complex);
-        INSTANTIATE(rocsparse_double_complex);
-        void testing_csrsv_extra(const Arguments& arg) {}
+INSTANTIATE(float);
+INSTANTIATE(double);
+INSTANTIATE(rocsparse_float_complex);
+INSTANTIATE(rocsparse_double_complex);
+void testing_csrsv_extra(const Arguments& arg) {}
