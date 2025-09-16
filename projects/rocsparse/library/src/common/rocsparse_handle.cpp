@@ -39,22 +39,30 @@ _rocsparse_handle::_rocsparse_handle()
 {
     printf("[DEBUG] Entering _rocsparse_handle constructor\n");
     ROCSPARSE_ROUTINE_TRACE;
+    printf("[DEBUG] Getting default device\n");
 
     // Default device is active device
     THROW_IF_HIP_ERROR(hipGetDevice(&device));
+    printf("[DEBUG] Device ID: %d\n", device);
+
     THROW_IF_HIP_ERROR(hipGetDeviceProperties(&properties, device));
+    printf("[DEBUG] Got device properties\n");
 
     // Device wavefront size
     wavefront_size = properties.warpSize;
+    printf("[DEBUG] Wavefront size: %d\n", wavefront_size);
 
     // Shared memory per block opt-in
     shared_mem_per_block_optin = properties.sharedMemPerBlockOptin;
+    printf("[DEBUG] Shared memory per block opt-in: %zu\n", shared_mem_per_block_optin);
 
 #if HIP_VERSION >= 307
     // ASIC revision
     asic_rev = properties.asicRevision;
+    printf("[DEBUG] ASIC revision: %d\n", asic_rev);
 #else
     asic_rev = 0;
+    printf("[DEBUG] ASIC revision: 0 (default)\n");
 #endif
 
     // Layer mode
@@ -62,57 +70,70 @@ _rocsparse_handle::_rocsparse_handle()
     if((str_layer_mode = getenv("ROCSPARSE_LAYER")) == NULL)
     {
         layer_mode = rocsparse_layer_mode_none;
+        printf("[DEBUG] ROCSPARSE_LAYER not set, using NONE\n");
     }
     else
     {
         layer_mode = (rocsparse_layer_mode)(atoi(str_layer_mode));
+        printf("[DEBUG] ROCSPARSE_LAYER set, value: %d\n", layer_mode);
     }
 
     // Obtain size for coomv device buffer
     rocsparse_int nthreads = properties.maxThreadsPerBlock;
     rocsparse_int nprocs   = 2 * properties.multiProcessorCount;
     rocsparse_int nblocks  = (nprocs * nthreads - 1) / 256 + 1;
+    printf("[DEBUG] nthreads: %d, nprocs: %d, nblocks: %d\n", nthreads, nprocs, nblocks);
 
     size_t coomv_size = (((sizeof(rocsparse_int) + 16) * nblocks - 1) / 256 + 1) * 256;
+    printf("[DEBUG] coomv_size: %zu\n", coomv_size);
 
     // Allocate device buffer
     buffer_size = (coomv_size > 1024 * 1024) ? coomv_size : 1024 * 1024;
+    printf("[DEBUG] Allocating buffer of size: %zu\n", buffer_size);
     THROW_IF_HIP_ERROR(rocsparse_hipMalloc(&buffer, buffer_size));
 
     // Device alpha and beta
+    printf("[DEBUG] Allocating alpha and beta\n");
     THROW_IF_HIP_ERROR(rocsparse_hipMalloc(&alpha, sizeof(double) * 2));
     THROW_IF_HIP_ERROR(rocsparse_hipMalloc(&beta, sizeof(double) * 2));
 
     // Device one
+    printf("[DEBUG] Allocating sone and done\n");
     THROW_IF_HIP_ERROR(rocsparse_hipMalloc(&sone, sizeof(float) * 2));
     THROW_IF_HIP_ERROR(rocsparse_hipMalloc(&done, sizeof(double) * 2));
 
     // Execute empty kernel for initialization
 
+    printf("[DEBUG] Launching empty init_kernel\n");
     THROW_WITH_MESSAGE_IF_HIP_ERROR(hipGetLastError(), "prior to hipLaunchKernelGGL");
     hipLaunchKernelGGL(init_kernel, dim3(1), dim3(1), 0, stream);
     THROW_WITH_MESSAGE_IF_HIP_ERROR(hipGetLastError(), "'empty kernel scheduling failed'");
 
     // Execute memset for initialization
+    printf("[DEBUG] Memsetting sone and done to 0\n");
     THROW_IF_HIP_ERROR(hipMemsetAsync(sone, 0, sizeof(float) * 2, stream));
     THROW_IF_HIP_ERROR(hipMemsetAsync(done, 0, sizeof(double) * 2, stream));
 
     const float  s_value = 1.0f;
     const double d_value = 1.0;
+    printf("[DEBUG] Copying s_value and d_value to device\n");
     THROW_IF_HIP_ERROR(
         hipMemcpyAsync(sone, &s_value, sizeof(float), hipMemcpyHostToDevice, stream));
     THROW_IF_HIP_ERROR(
         hipMemcpyAsync(done, &d_value, sizeof(double), hipMemcpyHostToDevice, stream));
 
     // Wait for device transfer to finish
+    printf("[DEBUG] Synchronizing stream\n");
     THROW_IF_HIP_ERROR(hipStreamSynchronize(stream));
 
     // create blas handle
     rocsparse::blas_impl blas_impl;
+    printf("[DEBUG] Creating BLAS handle\n");
 
 #ifdef ROCSPARSE_WITH_ROCBLAS
 
     blas_impl = rocsparse::blas_impl_rocblas;
+    printf("[DEBUG] Using ROCBLAS implementation\n");
 
 #else
 
@@ -120,6 +141,7 @@ _rocsparse_handle::_rocsparse_handle()
     // Other implementation available? Otherwise, set it to none.
     //
     blas_impl = rocsparse::blas_impl_none;
+    printf("[DEBUG] Using NONE BLAS implementation\n");
 #endif
 
     THROW_IF_ROCSPARSE_ERROR(rocsparse::blas_create_handle(&this->blas_handle, blas_impl));
@@ -130,18 +152,21 @@ _rocsparse_handle::_rocsparse_handle()
     // Open log file
     if(layer_mode & rocsparse_layer_mode_log_trace)
     {
+        printf("[DEBUG] Opening log_trace file\n");
         rocsparse::open_log_stream(&log_trace_os, &log_trace_ofs, "ROCSPARSE_LOG_TRACE_PATH");
     }
 
     // Open log_bench file
     if(layer_mode & rocsparse_layer_mode_log_bench)
     {
+        printf("[DEBUG] Opening log_bench file\n");
         rocsparse::open_log_stream(&log_bench_os, &log_bench_ofs, "ROCSPARSE_LOG_BENCH_PATH");
     }
 
     // Open log_debug file
     if(layer_mode & rocsparse_layer_mode_log_debug)
     {
+        printf("[DEBUG] Opening log_debug file\n");
         rocsparse::open_log_stream(&log_debug_os, &log_debug_ofs, "ROCSPARSE_LOG_DEBUG_PATH");
     }
 
