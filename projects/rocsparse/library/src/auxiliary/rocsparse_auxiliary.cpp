@@ -603,16 +603,19 @@ extern "C" {
 rocsparse_status rocsparse_create_handle(rocsparse_handle* handle)
 try
 {
+    printf("[DEBUG] Entering rocsparse_create_handle\n");
     ROCSPARSE_ROUTINE_TRACE;
 
     ROCSPARSE_CHECKARG_POINTER(0, handle);
     *handle = new _rocsparse_handle();
     rocsparse::log_trace(*handle, "rocsparse_create_handle");
+    printf("[DEBUG] Leaving rocsparse_create_handle\n");
     return rocsparse_status_success;
     // LCOV_EXCL_START
 }
 catch(...)
 {
+    printf("[DEBUG] Failed to create the handle\n");
     RETURN_ROCSPARSE_EXCEPTION();
 }
 // LCOV_EXCL_STOP
