@@ -298,8 +298,8 @@ void testing_csrsv(const Arguments& arg)
         // RESET MAT INFO.
         //
         info.reset();
-        CHECK_HIP_ERROR(hipDeviceSynchronize());
-        printf("[DEBUG: testing_csrsv] info.reset() called (device pointer mode section)\n");
+        //CHECK_HIP_ERROR(hipDeviceSynchronize());
+        //printf("[DEBUG: testing_csrsv] info.reset() called (device pointer mode section)\n");
 
         {
             device_scalar<rocsparse_int> d_analysis_pivot;
@@ -309,8 +309,8 @@ void testing_csrsv(const Arguments& arg)
             // Pointer mode device
             CHECK_ROCSPARSE_ERROR(
                 rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_device));
-            CHECK_HIP_ERROR(hipDeviceSynchronize());
-            printf("[DEBUG: testing_csrsv] Set pointer mode to device\n");
+            //CHECK_HIP_ERROR(hipDeviceSynchronize());
+            //printf("[DEBUG: testing_csrsv] Set pointer mode to device\n");
 
             //
             // CHECK IF DEFAULT ZERO PIVOT IS -1
@@ -318,8 +318,8 @@ void testing_csrsv(const Arguments& arg)
             EXPECT_ROCSPARSE_STATUS(
                 rocsparse_csrsv_zero_pivot(handle, descr, info, d_analysis_pivot),
                 rocsparse_status_success);
-            CHECK_HIP_ERROR(hipDeviceSynchronize());
-            printf("[DEBUG: testing_csrsv] csrsv_zero_pivot (analysis) called\n");
+            //CHECK_HIP_ERROR(hipDeviceSynchronize());
+            //printf("[DEBUG: testing_csrsv] csrsv_zero_pivot (analysis) called\n");
             analysis_no_pivot.unit_check(d_analysis_pivot);
 
             //
@@ -328,44 +328,44 @@ void testing_csrsv(const Arguments& arg)
             EXPECT_ROCSPARSE_STATUS(
                 testing::rocsparse_csrsv_solve<T>(PARAMS_SOLVE(h_alpha, dA, dx, dy)),
                 rocsparse_status_invalid_pointer);
-            CHECK_HIP_ERROR(hipDeviceSynchronize());
-            printf("[DEBUG: testing_csrsv] csrsv_solve called before analysis\n");
+            //CHECK_HIP_ERROR(hipDeviceSynchronize());
+            //printf("[DEBUG: testing_csrsv] csrsv_solve called before analysis\n");
 
             // Call it twice.
             CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-            CHECK_HIP_ERROR(hipDeviceSynchronize());
-            printf("[DEBUG: testing_csrsv] csrsv_analysis called (1)\n");
+            //CHECK_HIP_ERROR(hipDeviceSynchronize());
+            //printf("[DEBUG: testing_csrsv] csrsv_analysis called (1)\n");
             CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-            CHECK_HIP_ERROR(hipDeviceSynchronize());
-            printf("[DEBUG: testing_csrsv] csrsv_analysis called (2)\n");
+            //CHECK_HIP_ERROR(hipDeviceSynchronize());
+            //printf("[DEBUG: testing_csrsv] csrsv_analysis called (2)\n");
             EXPECT_ROCSPARSE_STATUS(
                 rocsparse_csrsv_zero_pivot(handle, descr, info, d_analysis_pivot),
                 (*h_analysis_pivot != -1) ? rocsparse_status_zero_pivot : rocsparse_status_success);
+            //CHECK_HIP_ERROR(hipDeviceSynchronize());
+            //printf("[DEBUG: testing_csrsv] csrsv_zero_pivot (analysis) checked after analysis\n");
             CHECK_HIP_ERROR(hipDeviceSynchronize());
-            printf("[DEBUG: testing_csrsv] csrsv_zero_pivot (analysis) checked after analysis\n");
-            CHECK_HIP_ERROR(hipDeviceSynchronize());
-            CHECK_HIP_ERROR(hipDeviceSynchronize());
-            printf("[DEBUG: testing_csrsv] hipDeviceSynchronize after analysis\n");
+            //CHECK_HIP_ERROR(hipDeviceSynchronize());
+            //printf("[DEBUG: testing_csrsv] hipDeviceSynchronize after analysis\n");
             CHECK_ROCSPARSE_ERROR(
                 testing::rocsparse_csrsv_solve<T>(PARAMS_SOLVE(d_alpha, dA, dx, dy)));
-            CHECK_HIP_ERROR(hipDeviceSynchronize());
-            printf("[DEBUG: testing_csrsv] csrsv_solve called after analysis\n");
+            //CHECK_HIP_ERROR(hipDeviceSynchronize());
+            //printf("[DEBUG: testing_csrsv] csrsv_solve called after analysis\n");
             EXPECT_ROCSPARSE_STATUS(rocsparse_csrsv_zero_pivot(handle, descr, info, d_solve_pivot),
                                     (*h_solve_pivot != -1) ? rocsparse_status_zero_pivot
                                                            : rocsparse_status_success);
+            //CHECK_HIP_ERROR(hipDeviceSynchronize());
+            //printf("[DEBUG: testing_csrsv] csrsv_zero_pivot (solve) checked after solve\n");
             CHECK_HIP_ERROR(hipDeviceSynchronize());
-            printf("[DEBUG: testing_csrsv] csrsv_zero_pivot (solve) checked after solve\n");
-            CHECK_HIP_ERROR(hipDeviceSynchronize());
-            CHECK_HIP_ERROR(hipDeviceSynchronize());
-            printf("[DEBUG: testing_csrsv] hipDeviceSynchronize after solve\n");
+            //CHECK_HIP_ERROR(hipDeviceSynchronize());
+            //printf("[DEBUG: testing_csrsv] hipDeviceSynchronize after solve\n");
             h_analysis_pivot.unit_check(d_analysis_pivot);
             h_solve_pivot.unit_check(d_solve_pivot);
         }
 
         if(*h_analysis_pivot == -1 && *h_solve_pivot == -1)
         {
-            CHECK_HIP_ERROR(hipDeviceSynchronize());
-            printf("[DEBUG: testing_csrsv] No pivot detected, running near_check on hy and dy\n");
+            //CHECK_HIP_ERROR(hipDeviceSynchronize());
+            //printf("[DEBUG: testing_csrsv] No pivot detected, running near_check on hy and dy\n");
             hy.near_check(dy, tol);
         }
 
