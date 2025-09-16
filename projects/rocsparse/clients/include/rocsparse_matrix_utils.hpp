@@ -534,10 +534,12 @@ struct rocsparse_matrix_utils
     {
         if(!buffer)
         {
+            printf("Debug: Entering csric0 buffer size calculation\n");
             rocsparse_handle handle;
             CHECK_ROCSPARSE_THROW_ERROR(rocsparse_create_handle(&handle));
             CHECK_ROCSPARSE_THROW_ERROR(
                 rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_host));
+            printf("Debug: Calling csric0_buffer_size\n");
             CHECK_ROCSPARSE_THROW_ERROR(rocsparse_csric0_buffer_size<T>(handle,
                                                                         that.m,
                                                                         that.nnz,
@@ -547,6 +549,8 @@ struct rocsparse_matrix_utils
                                                                         that.ind,
                                                                         info,
                                                                         p_buffer_size));
+            printf("Debug: Returned from csric0_buffer_size with buffer size %zu\n",
+                   *p_buffer_size);
             CHECK_ROCSPARSE_THROW_ERROR(rocsparse_destroy_handle(handle));
             return;
         }
