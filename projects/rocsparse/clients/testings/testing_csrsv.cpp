@@ -298,8 +298,8 @@ void testing_csrsv(const Arguments& arg)
         // RESET MAT INFO.
         //
         info.reset();
-        //CHECK_HIP_ERROR(hipDeviceSynchronize());
-        //printf("[DEBUG: testing_csrsv] info.reset() called (device pointer mode section)\n");
+        CHECK_HIP_ERROR(hipDeviceSynchronize());
+        printf("[DEBUG: testing_csrsv] info.reset() called (device pointer mode section)\n");
 
         {
             device_scalar<rocsparse_int> d_analysis_pivot;
@@ -426,8 +426,8 @@ void testing_csrsv(const Arguments& arg)
         // A BIT MORE FOR CODE COVERAGE, WE ONLY DO ANALYSIS FOR INFO ASSIGNMENT.
         //
         info.reset();
-        //CHECK_HIP_ERROR(hipDeviceSynchronize());
-        //printf("[DEBUG: testing_csrsv] info.reset() called (csric0 section)\n");
+        CHECK_HIP_ERROR(hipDeviceSynchronize());
+        printf("[DEBUG: testing_csrsv] info.reset() called (csric0 section)\n");
 
         CHECK_HIP_ERROR(hipDeviceSynchronize());
 
@@ -471,8 +471,8 @@ void testing_csrsv(const Arguments& arg)
         // A BIT MORE FOR CODE COVERAGE, WE ONLY DO ANALYSIS FOR INFO ASSIGNMENT.
         //
         info.reset();
-        //CHECK_HIP_ERROR(hipDeviceSynchronize());
-        //printf("[DEBUG: testing_csrsv] info.reset() called (csrsm transpose section)\n");
+        CHECK_HIP_ERROR(hipDeviceSynchronize());
+        printf("[DEBUG: testing_csrsv] info.reset() called (csrsm transpose section)\n");
 
         {
             void*  buffer = nullptr;
@@ -532,8 +532,8 @@ void testing_csrsv(const Arguments& arg)
         // A BIT MORE FOR CODE COVERAGE, WE ONLY DO ANALYSIS FOR INFO ASSIGNMENT.
         //
         info.reset();
-        //CHECK_HIP_ERROR(hipDeviceSynchronize());
-        //printf("[DEBUG: testing_csrsv] info.reset() called (csrsm none section)\n");
+        CHECK_HIP_ERROR(hipDeviceSynchronize());
+        printf("[DEBUG: testing_csrsv] info.reset() called (csrsm none section)\n");
 
         {
             void*  buffer = nullptr;
