@@ -37,6 +37,7 @@ ROCSPARSE_KERNEL(1) void init_kernel(){};
  ******************************************************************************/
 _rocsparse_handle::_rocsparse_handle()
 {
+    printf("[DEBUG] Entering _rocsparse_handle constructor\n");
     ROCSPARSE_ROUTINE_TRACE;
 
     // Default device is active device
@@ -143,6 +144,8 @@ _rocsparse_handle::_rocsparse_handle()
     {
         rocsparse::open_log_stream(&log_debug_os, &log_debug_ofs, "ROCSPARSE_LOG_DEBUG_PATH");
     }
+
+    printf("[DEBUG] handle created\n");
 }
 
 /*******************************************************************************

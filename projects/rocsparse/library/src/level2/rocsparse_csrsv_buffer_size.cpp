@@ -137,7 +137,7 @@ rocsparse_status rocsparse::csrsv_buffer_size_template(rocsparse_handle         
         *buffer_size = rocsparse::max(*buffer_size, transpose_size);
     }
 
-    *buffer_size *= 100;
+    //*buffer_size *= 100;
 
     printf("[DEBUG] csrsv_buffer_size_template: updated buffer_size = %zu\n", *buffer_size);
 
