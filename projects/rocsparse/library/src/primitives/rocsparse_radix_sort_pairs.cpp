@@ -36,6 +36,11 @@ rocsparse_status rocsparse::primitives::radix_sort_pairs_buffer_size(rocsparse_h
                                                                      size_t*          buffer_size,
                                                                      bool using_double_buffers)
 {
+    if(using_double_buffers)
+        printf("[DEBUG] Entering radix_sort_pairs_buffer_size with using_double_buffers == True\n");
+    else
+        printf(
+            "[DEBUG] Entering radix_sort_pairs_buffer_size with using_double_buffers == False\n");
     ROCSPARSE_ROUTINE_TRACE;
 
     K* ptr1 = reinterpret_cast<K*>(0x4);
