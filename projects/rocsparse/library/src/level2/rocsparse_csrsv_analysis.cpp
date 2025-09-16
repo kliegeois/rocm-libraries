@@ -356,8 +356,7 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
     else if(trans == rocsparse_operation_transpose
             || trans == rocsparse_operation_conjugate_transpose)
     {
-        printf("trans == rocsparse_operation_transpose
-            || trans == rocsparse_operation_conjugate_transpose\n");
+        printf("transpose or conjugate_transpose\n");
         if(gcn_arch_name == rocpsarse_arch_names::gfx908 && asicRev < 2)
         {
             // LCOV_EXCL_START
