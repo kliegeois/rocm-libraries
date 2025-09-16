@@ -88,6 +88,7 @@ namespace rocsparse
                                           rocsparse_solve_policy    policy,
                                           void*                     temp_buffer)
     {
+        printf("[DEBUG] Entering csrsv_solve_dispatch\n");
         ROCSPARSE_ROUTINE_TRACE;
 
         // Stream
@@ -257,6 +258,7 @@ namespace rocsparse
         }
 #undef CSRSV_DIM
 
+        printf("[DEBUG] Leaving csrsv_solve_dispatch\n");
         return rocsparse_status_success;
     }
 }
