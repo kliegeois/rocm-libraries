@@ -132,7 +132,7 @@ rocsparse_status rocsparse::csrsv_buffer_size_template(rocsparse_handle         
         transpose_size += ((sizeof(J) * nnz - 1) / 256 + 1) * 256;
         transpose_size += ((rocsparse::max(sizeof(I), sizeof(T)) * nnz - 1) / 256 + 1) * 256;
 
-        "[DEBUG] csrsv_buffer_size_template: transpose_size = %zu\n", *transpose_size);
+        "[DEBUG] csrsv_buffer_size_template: transpose_size = %zu\n", transpose_size);
 
         *buffer_size = rocsparse::max(*buffer_size, transpose_size);
     }
