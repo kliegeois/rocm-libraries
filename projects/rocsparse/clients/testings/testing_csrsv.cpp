@@ -298,7 +298,7 @@ void testing_csrsv(const Arguments& arg)
         // RESET MAT INFO.
         //
         info.reset();
-        printf("[DEBUG] info.reset() called (device pointer mode section)\n");
+        printf("[DEBUG: testing_csrsv] info.reset() called (device pointer mode section)\n");
 
         {
             device_scalar<rocsparse_int> d_analysis_pivot;
@@ -308,7 +308,7 @@ void testing_csrsv(const Arguments& arg)
             // Pointer mode device
             CHECK_ROCSPARSE_ERROR(
                 rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_device));
-            printf("[DEBUG] Set pointer mode to device\n");
+            printf("[DEBUG: testing_csrsv] Set pointer mode to device\n");
 
             //
             // CHECK IF DEFAULT ZERO PIVOT IS -1
@@ -316,7 +316,7 @@ void testing_csrsv(const Arguments& arg)
             EXPECT_ROCSPARSE_STATUS(
                 rocsparse_csrsv_zero_pivot(handle, descr, info, d_analysis_pivot),
                 rocsparse_status_success);
-            printf("[DEBUG] csrsv_zero_pivot (analysis) called\n");
+            printf("[DEBUG: testing_csrsv] csrsv_zero_pivot (analysis) called\n");
             analysis_no_pivot.unit_check(d_analysis_pivot);
 
             //
@@ -325,35 +325,35 @@ void testing_csrsv(const Arguments& arg)
             EXPECT_ROCSPARSE_STATUS(
                 testing::rocsparse_csrsv_solve<T>(PARAMS_SOLVE(h_alpha, dA, dx, dy)),
                 rocsparse_status_invalid_pointer);
-            printf("[DEBUG] csrsv_solve called before analysis\n");
+            printf("[DEBUG: testing_csrsv] csrsv_solve called before analysis\n");
 
             // Call it twice.
             CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-            printf("[DEBUG] csrsv_analysis called (1)\n");
+            printf("[DEBUG: testing_csrsv] csrsv_analysis called (1)\n");
             CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-            printf("[DEBUG] csrsv_analysis called (2)\n");
+            printf("[DEBUG: testing_csrsv] csrsv_analysis called (2)\n");
             EXPECT_ROCSPARSE_STATUS(
                 rocsparse_csrsv_zero_pivot(handle, descr, info, d_analysis_pivot),
                 (*h_analysis_pivot != -1) ? rocsparse_status_zero_pivot : rocsparse_status_success);
-            printf("[DEBUG] csrsv_zero_pivot (analysis) checked after analysis\n");
+            printf("[DEBUG: testing_csrsv] csrsv_zero_pivot (analysis) checked after analysis\n");
             CHECK_HIP_ERROR(hipDeviceSynchronize());
-            printf("[DEBUG] hipDeviceSynchronize after analysis\n");
+            printf("[DEBUG: testing_csrsv] hipDeviceSynchronize after analysis\n");
             CHECK_ROCSPARSE_ERROR(
                 testing::rocsparse_csrsv_solve<T>(PARAMS_SOLVE(d_alpha, dA, dx, dy)));
-            printf("[DEBUG] csrsv_solve called after analysis\n");
+            printf("[DEBUG: testing_csrsv] csrsv_solve called after analysis\n");
             EXPECT_ROCSPARSE_STATUS(rocsparse_csrsv_zero_pivot(handle, descr, info, d_solve_pivot),
                                     (*h_solve_pivot != -1) ? rocsparse_status_zero_pivot
                                                            : rocsparse_status_success);
-            printf("[DEBUG] csrsv_zero_pivot (solve) checked after solve\n");
+            printf("[DEBUG: testing_csrsv] csrsv_zero_pivot (solve) checked after solve\n");
             CHECK_HIP_ERROR(hipDeviceSynchronize());
-            printf("[DEBUG] hipDeviceSynchronize after solve\n");
+            printf("[DEBUG: testing_csrsv] hipDeviceSynchronize after solve\n");
             h_analysis_pivot.unit_check(d_analysis_pivot);
             h_solve_pivot.unit_check(d_solve_pivot);
         }
 
         if(*h_analysis_pivot == -1 && *h_solve_pivot == -1)
         {
-            printf("[DEBUG] No pivot detected, running near_check on hy and dy\n");
+            printf("[DEBUG: testing_csrsv] No pivot detected, running near_check on hy and dy\n");
             hy.near_check(dy, tol);
         }
 
@@ -361,7 +361,7 @@ void testing_csrsv(const Arguments& arg)
         // A BIT MORE FOR CODE COVERAGE, WE ONLY DO ANALYSIS FOR INFO ASSIGNMENT.
         //
         info.reset();
-        printf("[DEBUG] info.reset() called (csrilu0 section)\n");
+        printf("[DEBUG: testing_csrsv] info.reset() called (csrilu0 section)\n");
 
         {
             void*  buffer = nullptr;
@@ -370,7 +370,7 @@ void testing_csrsv(const Arguments& arg)
             T      h_boost_tol = static_cast<T>(arg.boosttol);
             T      h_boost_val = arg.get_boostval<T>();
 
-            printf("[DEBUG] csrilu0: getting buffer size\n");
+            printf("[DEBUG: testing_csrsv] csrilu0: getting buffer size\n");
             rocsparse_matrix_utils::csrilu0<T>(descr,
                                                dA,
                                                info,
@@ -383,7 +383,7 @@ void testing_csrsv(const Arguments& arg)
                                                buffer,
                                                rocsparse_matrix_utils::csrilu0_analysis);
             CHECK_HIP_ERROR(rocsparse_hipMalloc(&buffer, buffer_size));
-            printf("[DEBUG] csrilu0: running analysis\n");
+            printf("[DEBUG: testing_csrsv] csrilu0: running analysis\n");
             rocsparse_matrix_utils::csrilu0<T>(descr,
                                                dA,
                                                info,
@@ -396,24 +396,24 @@ void testing_csrsv(const Arguments& arg)
                                                buffer,
                                                rocsparse_matrix_utils::csrilu0_analysis);
             CHECK_HIP_ERROR(rocsparse_hipFree(buffer));
-            printf("[DEBUG] csrilu0: buffer freed\n");
+            printf("[DEBUG: testing_csrsv] csrilu0: buffer freed\n");
 
             CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-            printf("[DEBUG] csrsv_analysis called after csrilu0 (1)\n");
+            printf("[DEBUG: testing_csrsv] csrsv_analysis called after csrilu0 (1)\n");
             CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-            printf("[DEBUG] csrsv_analysis called after csrilu0 (2)\n");
+            printf("[DEBUG: testing_csrsv] csrsv_analysis called after csrilu0 (2)\n");
         }
 
         //
         // A BIT MORE FOR CODE COVERAGE, WE ONLY DO ANALYSIS FOR INFO ASSIGNMENT.
         //
         info.reset();
-        printf("[DEBUG] info.reset() called (csric0 section)\n");
+        printf("[DEBUG: testing_csrsv] info.reset() called (csric0 section)\n");
 
         {
             void*  buffer = nullptr;
             size_t buffer_size;
-            printf("[DEBUG] csric0: getting buffer size\n");
+            printf("[DEBUG: testing_csrsv] csric0: getting buffer size\n");
             rocsparse_matrix_utils::csric0<T>(descr,
                                               dA,
                                               info,
@@ -423,7 +423,7 @@ void testing_csrsv(const Arguments& arg)
                                               buffer,
                                               rocsparse_matrix_utils::csric0_analysis);
             CHECK_HIP_ERROR(rocsparse_hipMalloc(&buffer, buffer_size));
-            printf("[DEBUG] csric0: running analysis\n");
+            printf("[DEBUG: testing_csrsv] csric0: running analysis\n");
             rocsparse_matrix_utils::csric0<T>(descr,
                                               dA,
                                               info,
@@ -433,24 +433,24 @@ void testing_csrsv(const Arguments& arg)
                                               buffer,
                                               rocsparse_matrix_utils::csric0_analysis);
             CHECK_HIP_ERROR(rocsparse_hipFree(buffer));
-            printf("[DEBUG] csric0: buffer freed\n");
+            printf("[DEBUG: testing_csrsv] csric0: buffer freed\n");
 
             CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-            printf("[DEBUG] csrsv_analysis called after csric0 (1)\n");
+            printf("[DEBUG: testing_csrsv] csrsv_analysis called after csric0 (1)\n");
             CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-            printf("[DEBUG] csrsv_analysis called after csric0 (2)\n");
+            printf("[DEBUG: testing_csrsv] csrsv_analysis called after csric0 (2)\n");
         }
 
         //
         // A BIT MORE FOR CODE COVERAGE, WE ONLY DO ANALYSIS FOR INFO ASSIGNMENT.
         //
         info.reset();
-        printf("[DEBUG] info.reset() called (csrsm transpose section)\n");
+        printf("[DEBUG: testing_csrsv] info.reset() called (csrsm transpose section)\n");
 
         {
             void*  buffer = nullptr;
             size_t buffer_size;
-            printf("[DEBUG] csrsm_buffer_size (transpose) called\n");
+            printf("[DEBUG: testing_csrsv] csrsm_buffer_size (transpose) called\n");
             CHECK_ROCSPARSE_ERROR(rocsparse_csrsm_buffer_size<T>(handle,
                                                                  rocsparse_operation_transpose,
                                                                  rocsparse_operation_none,
@@ -468,7 +468,7 @@ void testing_csrsv(const Arguments& arg)
                                                                  spol,
                                                                  &buffer_size));
             CHECK_HIP_ERROR(rocsparse_hipMalloc(&buffer, buffer_size));
-            printf("[DEBUG] csrsm_analysis (transpose) called\n");
+            printf("[DEBUG: testing_csrsv] csrsm_analysis (transpose) called\n");
             CHECK_ROCSPARSE_ERROR(rocsparse_csrsm_analysis<T>(handle,
                                                               rocsparse_operation_transpose,
                                                               rocsparse_operation_none,
@@ -488,24 +488,24 @@ void testing_csrsv(const Arguments& arg)
                                                               buffer));
 
             CHECK_HIP_ERROR(rocsparse_hipFree(buffer));
-            printf("[DEBUG] csrsm buffer freed (transpose)\n");
+            printf("[DEBUG: testing_csrsv] csrsm buffer freed (transpose)\n");
 
             CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-            printf("[DEBUG] csrsv_analysis called after csrsm transpose (1)\n");
+            printf("[DEBUG: testing_csrsv] csrsv_analysis called after csrsm transpose (1)\n");
             CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-            printf("[DEBUG] csrsv_analysis called after csrsm transpose (2)\n");
+            printf("[DEBUG: testing_csrsv] csrsv_analysis called after csrsm transpose (2)\n");
         }
 
         //
         // A BIT MORE FOR CODE COVERAGE, WE ONLY DO ANALYSIS FOR INFO ASSIGNMENT.
         //
         info.reset();
-        printf("[DEBUG] info.reset() called (csrsm none section)\n");
+        printf("[DEBUG: testing_csrsv] info.reset() called (csrsm none section)\n");
 
         {
             void*  buffer = nullptr;
             size_t buffer_size;
-            printf("[DEBUG] csrsm_buffer_size (none) called\n");
+            printf("[DEBUG: testing_csrsv] csrsm_buffer_size (none) called\n");
             CHECK_ROCSPARSE_ERROR(rocsparse_csrsm_buffer_size<T>(handle,
                                                                  rocsparse_operation_none,
                                                                  rocsparse_operation_none,
@@ -523,7 +523,7 @@ void testing_csrsv(const Arguments& arg)
                                                                  spol,
                                                                  &buffer_size));
             CHECK_HIP_ERROR(rocsparse_hipMalloc(&buffer, buffer_size));
-            printf("[DEBUG] csrsm_analysis (none) called\n");
+            printf("[DEBUG: testing_csrsv] csrsm_analysis (none) called\n");
             CHECK_ROCSPARSE_ERROR(rocsparse_csrsm_analysis<T>(handle,
                                                               rocsparse_operation_none,
                                                               rocsparse_operation_none,
@@ -543,12 +543,12 @@ void testing_csrsv(const Arguments& arg)
                                                               buffer));
 
             CHECK_HIP_ERROR(rocsparse_hipFree(buffer));
-            printf("[DEBUG] csrsm buffer freed (none)\n");
+            printf("[DEBUG: testing_csrsv] csrsm buffer freed (none)\n");
 
             CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-            printf("[DEBUG] csrsv_analysis called after csrsm none (1)\n");
+            printf("[DEBUG: testing_csrsv] csrsv_analysis called after csrsm none (1)\n");
             CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-            printf("[DEBUG] csrsv_analysis called after csrsm none (2)\n");
+            printf("[DEBUG: testing_csrsv] csrsv_analysis called after csrsm none (2)\n");
         }
     }
 
