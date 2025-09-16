@@ -356,7 +356,7 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
     else if(trans == rocsparse_operation_transpose
             || trans == rocsparse_operation_conjugate_transpose)
     {
-        printf("transpose or conjugate_transpose\n");
+        printf("[DEBUG] transpose or conjugate_transpose\n");
         if(gcn_arch_name == rocpsarse_arch_names::gfx908 && asicRev < 2)
         {
             // LCOV_EXCL_START
@@ -516,10 +516,14 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
     rocsparse::primitives::double_buffer<int> keys(done_array, workspace2);
     rocsparse::primitives::double_buffer<J>   vals(workspace, row_map);
 
+    printf("[DEBUG] Sorting row_map: compute buffer size\n");
+
     RETURN_IF_ROCSPARSE_ERROR((rocsparse::primitives::radix_sort_pairs_buffer_size<int, J>(
         handle, m, startbit, endbit, &rocprim_size)));
+    printf("[DEBUG] Sorting row_map: computed buffer size\n");
     RETURN_IF_ROCSPARSE_ERROR(rocsparse::primitives::radix_sort_pairs(
         handle, keys, vals, m, startbit, endbit, rocprim_size, rocprim_buffer));
+    printf("[DEBUG] Sorting row_map: sorted\n");
 
     if(vals.current() != row_map)
     {
@@ -548,6 +552,7 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
             ? rocsparse_indextype_u16
             : ((sizeof(J) == sizeof(int32_t)) ? rocsparse_indextype_i32 : rocsparse_indextype_i64));
 
+    printf("[DEBUG] Leaving trm_analysis\n");
     return rocsparse_status_success;
 }
 
@@ -803,6 +808,7 @@ rocsparse_status rocsparse::csrsv_analysis_template(rocsparse_handle          ha
                                                           temp_buffer));
     }
 
+    printf("[DEBUG] csrsv_analysis_template: end\n");
     return rocsparse_status_success;
 }
 
