@@ -410,6 +410,8 @@ void testing_csrsv(const Arguments& arg)
         info.reset();
         printf("[DEBUG: testing_csrsv] info.reset() called (csric0 section)\n");
 
+        hipStreamSynchronize(0);
+
         {
             void*  buffer = nullptr;
             size_t buffer_size;
