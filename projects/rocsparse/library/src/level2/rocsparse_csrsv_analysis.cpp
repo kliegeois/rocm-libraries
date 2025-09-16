@@ -48,6 +48,9 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
                                          J**                       zero_pivot,
                                          void*                     temp_buffer)
 {
+    printf("[DEBUG] Entered trm_analysis: m=%d, nnz=%lld\n",
+           static_cast<int>(m),
+           static_cast<long long>(nnz));
     ROCSPARSE_ROUTINE_TRACE;
 
     // Stream
@@ -56,6 +59,7 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
     // If analyzing transposed, allocate some info memory to hold the transposed matrix
     if(trans == rocsparse_operation_transpose || trans == rocsparse_operation_conjugate_transpose)
     {
+        printf("[DEBUG] trm_analysis: Analyzing transposed matrix\n");
         // TODO: this need to be changed.
         // LCOV_EXCL_START
         if(info->get_transposed_perm() != nullptr || info->get_transposed_row_ptr() != nullptr
@@ -149,6 +153,11 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
                 rocsparse::valset(handle, m + 1, static_cast<I>(descr->base), transposed_row_ptr));
         }
     }
+    else
+    {
+        // If not analyzing transposed
+        printf("[DEBUG] trm_analysis: Analyzing non-transposed matrix\n");
+    }
 
     // Buffer
     char* ptr = reinterpret_cast<char*>(temp_buffer);
@@ -213,8 +222,10 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
 
     if(trans == rocsparse_operation_none)
     {
+        printf("[DEBUG] trans == rocsparse_operation_non\n");
         if(gcn_arch_name == rocpsarse_arch_names::gfx908 && asicRev < 2)
         {
+            printf("[DEBUG] gcn_arch_name == rocpsarse_arch_names::gfx908 && asicRev < 2\n");
             // LCOV_EXCL_START
             if(descr->fill_mode == rocsparse_fill_mode_upper)
             {
@@ -258,6 +269,7 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
         {
             if(handle->wavefront_size == 32)
             {
+                printf("[DEBUG] handle->wavefront_size == 32\n");
                 // LCOV_EXCL_START
                 if(descr->fill_mode == rocsparse_fill_mode_upper)
                 {
@@ -299,6 +311,7 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
             }
             else
             {
+                printf("[DEBUG] handle->wavefront_size == 64\n");
                 rocsparse_host_assert(handle->wavefront_size == 64,
                                       "Wrong wavefront size dispatch.");
                 if(descr->fill_mode == rocsparse_fill_mode_upper)
@@ -343,6 +356,8 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
     else if(trans == rocsparse_operation_transpose
             || trans == rocsparse_operation_conjugate_transpose)
     {
+        printf("trans == rocsparse_operation_transpose
+            || trans == rocsparse_operation_conjugate_transpose\n");
         if(gcn_arch_name == rocpsarse_arch_names::gfx908 && asicRev < 2)
         {
             // LCOV_EXCL_START
@@ -388,6 +403,7 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
         {
             if(handle->wavefront_size == 32)
             {
+                printf("[DEBUG] handle->wavefront_size == 32\n");
                 // LCOV_EXCL_START
                 if(descr->fill_mode == rocsparse_fill_mode_upper)
                 {
@@ -429,6 +445,7 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
             }
             else
             {
+                printf("[DEBUG] handle->wavefront_size == 64\n");
                 rocsparse_host_assert(handle->wavefront_size == 64,
                                       "Wrong wavefront size dispatch.");
                 if(descr->fill_mode == rocsparse_fill_mode_upper)
@@ -472,18 +489,22 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
     }
     else
     {
+        printf("[DEBUG] Error: invalid value\n");
         // LCOV_EXCL_START
         RETURN_IF_ROCSPARSE_ERROR(rocsparse_status_internal_error);
         // LCOV_EXCL_STOP
     }
 #undef CSRSV_DIM
 
+    printf("[DEBUG] trm_analysis: Kernel launched\n");
     // Post processing
     I max_nnz;
     RETURN_IF_HIP_ERROR(
         hipMemcpyAsync(&max_nnz, d_max_nnz, sizeof(I), hipMemcpyDeviceToHost, stream));
     RETURN_IF_HIP_ERROR(hipStreamSynchronize(stream));
     info->set_max_nnz(max_nnz);
+
+    printf("[DEBUG] max_nnz = %d\n", int(max_nnz));
 
     RETURN_IF_ROCSPARSE_ERROR(
         rocsparse::create_identity_permutation_template(handle, m, workspace));
