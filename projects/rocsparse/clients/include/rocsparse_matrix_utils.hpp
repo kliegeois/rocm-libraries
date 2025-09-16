@@ -536,7 +536,9 @@ struct rocsparse_matrix_utils
         {
             printf("Debug: Entering csric0 buffer size calculation\n");
             rocsparse_handle handle;
+            printf("Debug: Creating handle\n");
             CHECK_ROCSPARSE_THROW_ERROR(rocsparse_create_handle(&handle));
+            printf("Debug: Setting pointer mode\n");
             CHECK_ROCSPARSE_THROW_ERROR(
                 rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_host));
             printf("Debug: Calling csric0_buffer_size\n");
