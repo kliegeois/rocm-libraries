@@ -117,6 +117,8 @@ rocsparse_status rocsparse::csrsv_buffer_size_template(rocsparse_handle         
     // rocprim buffer
     *buffer_size += rocprim_size;
 
+    printf("[DEBUG] csrsv_buffer_size_template: base buffer_size = %zu\n", *buffer_size);
+
     // On transposed case, we might need more temporary storage for transposing
     if(trans == rocsparse_operation_transpose || trans == rocsparse_operation_conjugate_transpose)
     {
@@ -130,8 +132,12 @@ rocsparse_status rocsparse::csrsv_buffer_size_template(rocsparse_handle         
         transpose_size += ((sizeof(J) * nnz - 1) / 256 + 1) * 256;
         transpose_size += ((rocsparse::max(sizeof(I), sizeof(T)) * nnz - 1) / 256 + 1) * 256;
 
+        "[DEBUG] csrsv_buffer_size_template: transpose_size = %zu\n", *transpose_size);
+
         *buffer_size = rocsparse::max(*buffer_size, transpose_size);
     }
+
+    printf("[DEBUG] csrsv_buffer_size_template: updated buffer_size = %zu\n", *buffer_size);
 
     return rocsparse_status_success;
 }
