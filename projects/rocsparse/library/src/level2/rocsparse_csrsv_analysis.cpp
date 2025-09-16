@@ -547,6 +547,8 @@ rocsparse_status rocsparse::csrsv_analysis_template(rocsparse_handle          ha
 {
     ROCSPARSE_ROUTINE_TRACE;
 
+    printf("[DEBUG] csrsv_analysis_template: start\n");
+
     // Check for valid handle and matrix descriptor
     ROCSPARSE_CHECKARG_HANDLE(0, handle);
     ROCSPARSE_CHECKARG_POINTER(4, descr);
@@ -566,6 +568,8 @@ rocsparse_status rocsparse::csrsv_analysis_template(rocsparse_handle          ha
                          solve,
                          analysis,
                          (const void*&)temp_buffer);
+
+    printf("[DEBUG] csrsv_analysis_template: 0\n");
 
     ROCSPARSE_CHECKARG_ENUM(1, trans);
     ROCSPARSE_CHECKARG_ENUM(9, analysis);
@@ -601,9 +605,12 @@ rocsparse_status rocsparse::csrsv_analysis_template(rocsparse_handle          ha
     ROCSPARSE_CHECKARG_ARRAY(6, m, csr_row_ptr);
     ROCSPARSE_CHECKARG_ARRAY(7, nnz, csr_col_ind);
 
+    printf("[DEBUG] csrsv_analysis_template: check mode...\n");
+
     // Switch between lower and upper triangular analysis
     if(descr->fill_mode == rocsparse_fill_mode_upper)
     {
+        printf("[DEBUG] csrsv_analysis_template: rocsparse_fill_mode_upper\n");
         // Differentiate the analysis policies
         if(analysis == rocsparse_analysis_policy_reuse)
         {
@@ -614,15 +621,18 @@ rocsparse_status rocsparse::csrsv_analysis_template(rocsparse_handle          ha
             // If csrsv meta data is already available, do nothing
             if(trans == rocsparse_operation_none && info->csrsv_upper_info != nullptr)
             {
+                printf("[DEBUG] csrsv_analysis_template: Reusing csrsv_upper_info\n");
                 return rocsparse_status_success;
             }
             else if(trans == rocsparse_operation_transpose && info->csrsvt_upper_info != nullptr)
             {
+                printf("[DEBUG] csrsv_analysis_template: Reusing csrsvt_upper_info\n");
                 return rocsparse_status_success;
             }
             else if(trans == rocsparse_operation_conjugate_transpose
                     && info->csrsvt_upper_info != nullptr)
             {
+                printf("[DEBUG] csrsv_analysis_template: Reusing csrsvt_upper_info (conjugate)\n");
                 return rocsparse_status_success;
             }
 
@@ -630,6 +640,7 @@ rocsparse_status rocsparse::csrsv_analysis_template(rocsparse_handle          ha
 
             if(trans == rocsparse_operation_none && info->csrsm_upper_info != nullptr)
             {
+                printf("[DEBUG] csrsv_analysis_template: Reusing csrsm_upper_info\n");
                 // csrsm meta data
                 info->csrsv_upper_info = info->csrsm_upper_info;
                 return rocsparse_status_success;
@@ -637,6 +648,7 @@ rocsparse_status rocsparse::csrsv_analysis_template(rocsparse_handle          ha
 
             if(trans == rocsparse_operation_transpose && info->csrsmt_upper_info != nullptr)
             {
+                printf("[DEBUG] csrsv_analysis_template: Reusing csrsmt_upper_info (transpose)\n");
                 // csrsv meta data
                 info->csrsvt_upper_info = info->csrsmt_upper_info;
                 return rocsparse_status_success;
@@ -645,6 +657,7 @@ rocsparse_status rocsparse::csrsv_analysis_template(rocsparse_handle          ha
             if(trans == rocsparse_operation_conjugate_transpose
                && info->csrsmt_upper_info != nullptr)
             {
+                printf("[DEBUG] csrsv_analysis_template: Reusing csrsmt_upper_info (conjugate)\n");
                 // csrsv meta data
                 info->csrsvt_upper_info = info->csrsmt_upper_info;
                 return rocsparse_status_success;
@@ -653,6 +666,9 @@ rocsparse_status rocsparse::csrsv_analysis_template(rocsparse_handle          ha
 
         // User is explicitly asking to force a re-analysis, or no valid data has been
         // found to be re-used.
+
+        printf("[DEBUG] csrsv_analysis_template:  User is explicitly asking to force a "
+               "re-analysis, or no valid data has been found to be reused\n");
 
         rocsparse::trm_info_t** p_trm_info = (trans == rocsparse_operation_none)
                                                  ? &info->csrsv_upper_info
@@ -675,6 +691,7 @@ rocsparse_status rocsparse::csrsv_analysis_template(rocsparse_handle          ha
     }
     else
     {
+        printf("[DEBUG] csrsv_analysis_template: NOT rocsparse_fill_mode_upper\n");
         // Differentiate the analysis policies
         if(analysis == rocsparse_analysis_policy_reuse)
         {
@@ -685,15 +702,18 @@ rocsparse_status rocsparse::csrsv_analysis_template(rocsparse_handle          ha
             // If csrsv meta data is already available, do nothing
             if(trans == rocsparse_operation_none && info->csrsv_lower_info != nullptr)
             {
+                printf("[DEBUG] csrsv_analysis_template: Reusing csrsv_lower_info\n");
                 return rocsparse_status_success;
             }
             else if(trans == rocsparse_operation_transpose && info->csrsvt_lower_info != nullptr)
             {
+                printf("[DEBUG] csrsv_analysis_template: Reusing csrsvt_lower_info (transpose)\n");
                 return rocsparse_status_success;
             }
             else if(trans == rocsparse_operation_conjugate_transpose
                     && info->csrsvt_lower_info != nullptr)
             {
+                printf("[DEBUG] csrsv_analysis_template: Reusing csrsvt_lower_info (conjugate)\n");
                 return rocsparse_status_success;
             }
 
@@ -701,24 +721,28 @@ rocsparse_status rocsparse::csrsv_analysis_template(rocsparse_handle          ha
 
             if(trans == rocsparse_operation_none && info->csrilu0_info != nullptr)
             {
+                printf("[DEBUG] csrsv_analysis_template: Reusing csrilu0_info\n");
                 // csrilu0 meta data
                 info->csrsv_lower_info = info->csrilu0_info;
                 return rocsparse_status_success;
             }
             else if(trans == rocsparse_operation_none && info->csric0_info != nullptr)
             {
+                printf("[DEBUG] csrsv_analysis_template: Reusing csric0_info\n");
                 // csric0 meta data
                 info->csrsv_lower_info = info->csric0_info;
                 return rocsparse_status_success;
             }
             else if(trans == rocsparse_operation_none && info->csrsm_lower_info != nullptr)
             {
+                printf("[DEBUG] csrsv_analysis_template: Reusing csrsm_lower_info\n");
                 // csrsm meta data
                 info->csrsv_lower_info = info->csrsm_lower_info;
                 return rocsparse_status_success;
             }
             else if(trans == rocsparse_operation_transpose && info->csrsmt_lower_info != nullptr)
             {
+                printf("[DEBUG] csrsv_analysis_template: Reusing csrsmt_lower_info (transpose)\n");
                 // csrsm meta data
                 info->csrsvt_lower_info = info->csrsmt_lower_info;
                 return rocsparse_status_success;
@@ -726,6 +750,7 @@ rocsparse_status rocsparse::csrsv_analysis_template(rocsparse_handle          ha
             else if(trans == rocsparse_operation_conjugate_transpose
                     && info->csrsmt_lower_info != nullptr)
             {
+                printf("[DEBUG] csrsv_analysis_template: Reusing csrsmt_lower_info (conjugate)\n");
                 // csrsm meta data
                 info->csrsvt_lower_info = info->csrsmt_lower_info;
                 return rocsparse_status_success;
@@ -734,6 +759,9 @@ rocsparse_status rocsparse::csrsv_analysis_template(rocsparse_handle          ha
 
         // User is explicitly asking to force a re-analysis, or no valid data has been
         // found to be re-used.
+
+        printf("[DEBUG] csrsv_analysis_template:  User is explicitly asking to force a "
+               "re-analysis, or no valid data has been found to be reused\n");
 
         rocsparse::trm_info_t** p_trm_info = (trans == rocsparse_operation_none)
                                                  ? &info->csrsv_lower_info
