@@ -356,7 +356,6 @@ rocsparse_status rocsparse::csr2hyb_template(rocsparse_handle          handle,
 
     RETURN_IF_HIP_ERROR(rocsparse_hipFreeAsync(workspace, handle->stream));
 #undef CSR2ELL_DIM
-    RETURN_IF_HIP_ERROR(hipStreamSynchronize(handle->stream));
 
     return rocsparse_status_success;
 }
@@ -391,6 +390,7 @@ try
                                                           hyb,
                                                           user_ell_width,
                                                           partition_type));
+    RETURN_IF_HIP_ERROR(hipStreamSynchronize(handle->stream));
     return rocsparse_status_success;
     // LCOV_EXCL_START
 }
@@ -424,6 +424,7 @@ try
                                                           hyb,
                                                           user_ell_width,
                                                           partition_type));
+    RETURN_IF_HIP_ERROR(hipStreamSynchronize(handle->stream));
     return rocsparse_status_success;
     // LCOV_EXCL_START
 }
@@ -457,6 +458,7 @@ try
                                                           hyb,
                                                           user_ell_width,
                                                           partition_type));
+    RETURN_IF_HIP_ERROR(hipStreamSynchronize(handle->stream));
     return rocsparse_status_success;
     // LCOV_EXCL_START
 }
@@ -490,6 +492,7 @@ try
                                                           hyb,
                                                           user_ell_width,
                                                           partition_type));
+    RETURN_IF_HIP_ERROR(hipStreamSynchronize(handle->stream));
     return rocsparse_status_success;
     // LCOV_EXCL_START
 }
