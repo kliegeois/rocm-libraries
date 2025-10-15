@@ -31,3 +31,7 @@ void testing_csrmv_bad_arg(const Arguments& arg);
 void testing_csrmv_extra(const Arguments& arg);
 template <typename T>
 void testing_csrmv(const Arguments& arg);
+template <typename T>
+void testing_csrmv_residual_bad_arg(const Arguments& arg);
+template <typename T>
+void testing_csrmv_residual(const Arguments& arg);

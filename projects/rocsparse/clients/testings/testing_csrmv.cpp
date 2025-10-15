@@ -271,9 +271,281 @@ void testing_csrmv(const Arguments& arg)
     }
 }
 
-#define INSTANTIATE(TYPE)                                            \
-    template void testing_csrmv_bad_arg<TYPE>(const Arguments& arg); \
-    template void testing_csrmv<TYPE>(const Arguments& arg)
+template <typename T>
+void testing_csrmv_residual_bad_arg(const Arguments& arg)
+{
+    static const size_t safe_size = 100;
+
+    const T h_alpha = static_cast<T>(1);
+    const T h_beta  = static_cast<T>(1);
+    const T h_gamma = static_cast<T>(0.5);
+
+    rocsparse_local_handle    local_handle;
+    rocsparse_local_mat_descr local_descr;
+    rocsparse_local_mat_info  local_info;
+
+    rocsparse_handle   handle     = local_handle;
+    rocsparse_mat_info info       = local_info;
+    const T*           gamma      = &h_gamma;
+    rocsparse_datatype gamma_type = rocsparse_datatype_f32_r;
+    const T*           z          = (const T*)0x4;
+    rocsparse_datatype z_type     = rocsparse_datatype_f32_r;
+
+    // Test invalid handle
+    EXPECT_ROCSPARSE_STATUS(
+        rocsparse_csrmv_set_residual(nullptr, info, gamma, gamma_type, z, z_type),
+        rocsparse_status_invalid_handle);
+
+    // Test invalid info pointer
+    EXPECT_ROCSPARSE_STATUS(
+        rocsparse_csrmv_set_residual(handle, nullptr, gamma, gamma_type, z, z_type),
+        rocsparse_status_invalid_pointer);
+
+    // Test invalid gamma pointer
+    EXPECT_ROCSPARSE_STATUS(
+        rocsparse_csrmv_set_residual(handle, info, nullptr, gamma_type, z, z_type),
+        rocsparse_status_invalid_pointer);
+
+    // Test invalid z pointer
+    EXPECT_ROCSPARSE_STATUS(
+        rocsparse_csrmv_set_residual(handle, info, gamma, gamma_type, nullptr, z_type),
+        rocsparse_status_invalid_pointer);
+
+    // Test clear with invalid handle
+    EXPECT_ROCSPARSE_STATUS(rocsparse_csrmv_clear_residual(nullptr, info),
+                            rocsparse_status_invalid_handle);
+
+    // Test clear with invalid info
+    EXPECT_ROCSPARSE_STATUS(rocsparse_csrmv_clear_residual(handle, nullptr),
+                            rocsparse_status_invalid_pointer);
+}
+
+template <typename T>
+void testing_csrmv_residual(const Arguments& arg)
+{
+    auto                 tol   = get_near_check_tol<T>(arg);
+    rocsparse_int        M     = arg.M;
+    rocsparse_int        N     = arg.N;
+    rocsparse_operation  trans = arg.transA;
+    rocsparse_index_base base  = arg.baseA;
+    rocsparse_spmv_alg   alg   = arg.spmv_alg;
+
+    host_scalar<T> h_alpha(arg.get_alpha<T>());
+    host_scalar<T> h_beta(arg.get_beta<T>());
+    host_scalar<T> h_gamma(static_cast<T>(0.5));
+
+    device_scalar<T> d_alpha(h_alpha);
+    device_scalar<T> d_beta(h_beta);
+    device_scalar<T> d_gamma(h_gamma);
+
+    rocsparse_local_handle    handle(arg);
+    rocsparse_local_mat_descr descr;
+    rocsparse_local_mat_info  info_ptr;
+
+    rocsparse_mat_info info = (alg == rocsparse_spmv_alg_csr_adaptive) ? info_ptr : nullptr;
+
+    CHECK_ROCSPARSE_ERROR(rocsparse_set_mat_index_base(descr, base));
+
+    int dev;
+    CHECK_HIP_ERROR(hipGetDevice(&dev));
+
+    hipDeviceProp_t prop;
+    CHECK_HIP_ERROR(hipGetDeviceProperties(&prop, dev));
+
+    bool to_int = (prop.warpSize == 32) || (alg != rocsparse_spmv_alg_csr_rowsplit);
+
+    static constexpr bool       full_rank = false;
+    rocsparse_matrix_factory<T> matrix_factory(arg, arg.unit_check ? to_int : false, full_rank);
+
+    host_csr_matrix<T> hA;
+    matrix_factory.init_csr(hA, M, N);
+
+    device_csr_matrix<T> dA(hA);
+
+    host_dense_matrix<T> hx(trans == rocsparse_operation_none ? N : M, 1);
+    rocsparse_matrix_utils::init_exact(hx);
+    device_dense_matrix<T> dx(hx);
+
+    host_dense_matrix<T> hy(trans == rocsparse_operation_none ? M : N, 1);
+    rocsparse_matrix_utils::init_exact(hy);
+    device_dense_matrix<T> dy(hy);
+
+    host_dense_matrix<T> hz(trans == rocsparse_operation_none ? M : N, 1);
+    rocsparse_matrix_utils::init_exact(hz);
+    device_dense_matrix<T> dz(hz);
+
+    // If adaptive, run analysis step
+    if(alg == rocsparse_spmv_alg_csr_adaptive)
+    {
+        CHECK_ROCSPARSE_ERROR(testing::rocsparse_csrmv_analysis<T>(
+            handle, trans, dA.m, dA.n, dA.nnz, descr, dA.val, dA.ptr, dA.ind, info));
+    }
+
+    if(arg.unit_check)
+    {
+        // Test with host pointer mode
+        CHECK_ROCSPARSE_ERROR(rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_host));
+
+        // Set residual parameters
+        CHECK_ROCSPARSE_ERROR(testing::rocsparse_csrmv_set_residual(
+            handle, info, h_gamma, rocsparse_datatype_f32_r, dz, rocsparse_datatype_f32_r));
+
+        // Call csrmv
+        CHECK_ROCSPARSE_ERROR(testing::rocsparse_csrmv<T>(handle,
+                                                          trans,
+                                                          dA.m,
+                                                          dA.n,
+                                                          dA.nnz,
+                                                          h_alpha,
+                                                          descr,
+                                                          dA.val,
+                                                          dA.ptr,
+                                                          dA.ind,
+                                                          info,
+                                                          dx,
+                                                          h_beta,
+                                                          dy));
+
+        if(ROCSPARSE_REPRODUCIBILITY)
+        {
+            rocsparse_reproducibility::save("Y pointer mode host with residual", dy);
+        }
+
+        // Clear residual parameters
+        CHECK_ROCSPARSE_ERROR(testing::rocsparse_csrmv_clear_residual(handle, info));
+
+        // CPU computation for validation
+        host_dense_matrix<T> hy_gold(hy);
+
+        // y = alpha * A * x + beta * y
+        host_csrmv<T, rocsparse_int, rocsparse_int, T, T, T>(trans,
+                                                             M,
+                                                             N,
+                                                             hA.nnz,
+                                                             *h_alpha,
+                                                             hA.ptr,
+                                                             hA.ind,
+                                                             hA.val,
+                                                             hx,
+                                                             *h_beta,
+                                                             hy_gold,
+                                                             base,
+                                                             rocsparse_matrix_type_general,
+                                                             alg,
+                                                             false);
+
+        // Add gamma * z
+        for(rocsparse_int i = 0; i < hy_gold.m; ++i)
+        {
+            hy_gold[i] += *h_gamma * hz[i];
+        }
+
+        hy_gold.near_check(dy, tol);
+
+        // Test with device pointer mode
+        dy = hy;
+        CHECK_ROCSPARSE_ERROR(rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_device));
+
+        // Set residual parameters with device pointer
+        CHECK_ROCSPARSE_ERROR(testing::rocsparse_csrmv_set_residual(
+            handle, info, d_gamma, rocsparse_datatype_f32_r, dz, rocsparse_datatype_f32_r));
+
+        CHECK_ROCSPARSE_ERROR(testing::rocsparse_csrmv<T>(handle,
+                                                          trans,
+                                                          dA.m,
+                                                          dA.n,
+                                                          dA.nnz,
+                                                          d_alpha,
+                                                          descr,
+                                                          dA.val,
+                                                          dA.ptr,
+                                                          dA.ind,
+                                                          info,
+                                                          dx,
+                                                          d_beta,
+                                                          dy));
+
+        if(ROCSPARSE_REPRODUCIBILITY)
+        {
+            rocsparse_reproducibility::save("Y pointer mode device with residual", dy);
+        }
+
+        // Clear residual parameters
+        CHECK_ROCSPARSE_ERROR(testing::rocsparse_csrmv_clear_residual(handle, info));
+
+        hy_gold.near_check(dy, tol);
+    }
+
+    if(arg.timing)
+    {
+        CHECK_ROCSPARSE_ERROR(rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_host));
+
+        // Set residual parameters
+        CHECK_ROCSPARSE_ERROR(testing::rocsparse_csrmv_set_residual(
+            handle, info, h_gamma, rocsparse_datatype_f32_r, dz, rocsparse_datatype_f32_r));
+
+        const double gpu_time_used = rocsparse_clients::run_benchmark(arg,
+                                                                      rocsparse_csrmv<T>,
+                                                                      handle,
+                                                                      trans,
+                                                                      dA.m,
+                                                                      dA.n,
+                                                                      dA.nnz,
+                                                                      h_alpha,
+                                                                      descr,
+                                                                      dA.val,
+                                                                      dA.ptr,
+                                                                      dA.ind,
+                                                                      info,
+                                                                      dx,
+                                                                      h_beta,
+                                                                      dy);
+
+        // Clear residual parameters
+        CHECK_ROCSPARSE_ERROR(testing::rocsparse_csrmv_clear_residual(handle, info));
+
+        double gflop_count = spmv_gflop_count(M, dA.nnz, *h_beta != static_cast<T>(0));
+        gflop_count += (trans == rocsparse_operation_none ? M : N) * 2 / 1e9;
+
+        double gbyte_count = csrmv_gbyte_count<T>(M, N, dA.nnz, *h_beta != static_cast<T>(0));
+        gbyte_count += (sizeof(T) * (trans == rocsparse_operation_none ? M : N)) / 1e9;
+
+        double gpu_gflops = get_gpu_gflops(gpu_time_used, gflop_count);
+        double gpu_gbyte  = get_gpu_gbyte(gpu_time_used, gbyte_count);
+
+        display_timing_info(display_key_t::M,
+                            M,
+                            display_key_t::N,
+                            N,
+                            display_key_t::nnz,
+                            dA.nnz,
+                            display_key_t::alpha,
+                            *h_alpha,
+                            display_key_t::beta,
+                            *h_beta,
+                            "gamma",
+                            *h_gamma,
+                            display_key_t::algorithm,
+                            ((alg == rocsparse_spmv_alg_csr_adaptive) ? "adaptive" : "stream"),
+                            display_key_t::gflops,
+                            gpu_gflops,
+                            display_key_t::bandwidth,
+                            gpu_gbyte,
+                            display_key_t::time_ms,
+                            get_gpu_time_msec(gpu_time_used));
+    }
+
+    if(info != nullptr)
+    {
+        CHECK_ROCSPARSE_ERROR(rocsparse_csrmv_clear(handle, info));
+    }
+}
+
+#define INSTANTIATE(TYPE)                                                     \
+    template void testing_csrmv_bad_arg<TYPE>(const Arguments& arg);          \
+    template void testing_csrmv<TYPE>(const Arguments& arg);                  \
+    template void testing_csrmv_residual_bad_arg<TYPE>(const Arguments& arg); \
+    template void testing_csrmv_residual<TYPE>(const Arguments& arg)
 INSTANTIATE(float);
 INSTANTIATE(double);
 INSTANTIATE(rocsparse_float_complex);

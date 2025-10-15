@@ -132,6 +132,8 @@ namespace testing
     TESTING_COMPUTE_TEMPLATE(coomv)
     TESTING_COMPUTE_TEMPLATE(csrmv_analysis)
     TESTING_TEMPLATE(csrmv_clear)
+    TESTING_TEMPLATE(csrmv_set_residual)
+    TESTING_TEMPLATE(csrmv_clear_residual)
     TESTING_COMPUTE_TEMPLATE(csrmv)
     TESTING_TEMPLATE(csrsv_zero_pivot)
     TESTING_COMPUTE_TEMPLATE(csrsv_buffer_size)

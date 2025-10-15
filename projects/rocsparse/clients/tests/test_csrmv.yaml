@@ -478,3 +478,36 @@ Tests:
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive, rocsparse_spmv_alg_csr_rowsplit]
   graph_test: true
   call_stage_analysis: [false, true]
+
+#
+# Compute residual
+#
+
+- name: csrmv_residual_bad_arg
+  category: pre_checkin
+  function: csrmv_residual_bad_arg
+  precision: *single_double_precisions_complex_real
+
+- name: csrmv_residual
+  category: quick
+  function: csrmv_residual
+  precision: *single_double_precisions
+  M: [10, 500]
+  N: [10, 500]
+  alpha_beta: *alpha_beta_range_quick
+  transA: [rocsparse_operation_none]
+  baseA: [rocsparse_index_base_zero, rocsparse_index_base_one]
+  matrix: [rocsparse_matrix_random]
+  spmv_alg: [rocsparse_spmv_alg_csr_stream, rocsparse_spmv_alg_csr_adaptive]
+
+- name: csrmv_residual
+  category: pre_checkin
+  function: csrmv_residual
+  precision: *single_double_precisions_complex
+  M: [0, 1, 10, 872]
+  N: [0, 1, 33, 623]
+  alpha_beta: *alpha_beta_range_checkin
+  transA: [rocsparse_operation_none]
+  baseA: [rocsparse_index_base_zero, rocsparse_index_base_one]
+  matrix: [rocsparse_matrix_random]
+  spmv_alg: [rocsparse_spmv_alg_csr_stream, rocsparse_spmv_alg_csr_adaptive]

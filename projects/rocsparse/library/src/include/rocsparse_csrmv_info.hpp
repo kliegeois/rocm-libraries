@@ -52,7 +52,21 @@ typedef struct _rocsparse_csrmv_info
     rocsparse_indextype index_type_I = rocsparse_indextype_u16;
     rocsparse_indextype index_type_J = rocsparse_indextype_u16;
 
-    _rocsparse_csrmv_info() {}
+    // Residual computation parameters
+    const void*        gamma_ptr;
+    const void*        z_ptr;
+    rocsparse_datatype gamma_datatype;
+    rocsparse_datatype z_datatype;
+    bool               residual_enabled;
+
+    _rocsparse_csrmv_info()
+        : gamma_ptr(nullptr)
+        , z_ptr(nullptr)
+        , gamma_datatype(rocsparse_datatype_f32_r)
+        , z_datatype(rocsparse_datatype_f32_r)
+        , residual_enabled(false)
+    {
+    }
 
     ~_rocsparse_csrmv_info()
     {
@@ -73,6 +87,46 @@ typedef struct _rocsparse_csrmv_info
         this->csr_col_ind  = nullptr;
         this->index_type_I = rocsparse_indextype_u16;
         this->index_type_J = rocsparse_indextype_u16;
+        this->clear_residual_params();
+    }
+
+    void set_residual_params(const void*        gamma,
+                             rocsparse_datatype gamma_type,
+                             const void*        z,
+                             rocsparse_datatype z_type)
+    {
+        gamma_ptr        = gamma;
+        z_ptr            = z;
+        gamma_datatype   = gamma_type;
+        z_datatype       = z_type;
+        residual_enabled = true;
+    }
+
+    void get_residual_params(const void**        gamma,
+                             rocsparse_datatype* gamma_type,
+                             const void**        z,
+                             rocsparse_datatype* z_type) const
+    {
+        if(gamma)
+            *gamma = gamma_ptr;
+        if(gamma_type)
+            *gamma_type = gamma_datatype;
+        if(z)
+            *z = z_ptr;
+        if(z_type)
+            *z_type = z_datatype;
+    }
+
+    void clear_residual_params()
+    {
+        gamma_ptr        = nullptr;
+        z_ptr            = nullptr;
+        residual_enabled = false;
+    }
+
+    bool is_residual_enabled() const
+    {
+        return residual_enabled;
     }
 
 } * rocsparse_csrmv_info, *rocsparse_cscmv_info;

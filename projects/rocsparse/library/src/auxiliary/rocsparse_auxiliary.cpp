@@ -4895,6 +4895,72 @@ catch(...)
 }
 // LCOV_EXCL_STOP
 
+rocsparse_status rocsparse_csrmv_set_residual(rocsparse_handle   handle,
+                                              rocsparse_mat_info info,
+                                              const void*        gamma,
+                                              rocsparse_datatype gamma_type,
+                                              const void*        z,
+                                              rocsparse_datatype z_type)
+try
+{
+    ROCSPARSE_CHECKARG_HANDLE(0, handle);
+    ROCSPARSE_CHECKARG_POINTER(1, info);
+    ROCSPARSE_CHECKARG_POINTER(2, gamma);
+    ROCSPARSE_CHECKARG_POINTER(4, z);
+    ROCSPARSE_CHECKARG_ENUM(3, gamma_type);
+    ROCSPARSE_CHECKARG_ENUM(5, z_type);
+
+    rocsparse::log_trace(handle,
+                         "rocsparse_csrmv_set_residual",
+                         (const void*&)info,
+                         (const void*&)gamma,
+                         gamma_type,
+                         (const void*&)z,
+                         z_type);
+
+    rocsparse_csrmv_info csrmv_info = info->get_csrmv_info();
+
+    if(csrmv_info == nullptr)
+    {
+        csrmv_info = new _rocsparse_csrmv_info();
+        info->set_csrmv_info(csrmv_info);
+    }
+
+    csrmv_info->set_residual_params(gamma, gamma_type, z, z_type);
+
+    return rocsparse_status_success;
+    // LCOV_EXCL_START
+}
+catch(...)
+{
+    RETURN_ROCSPARSE_EXCEPTION();
+}
+// LCOV_EXCL_STOP
+
+rocsparse_status rocsparse_csrmv_clear_residual(rocsparse_handle handle, rocsparse_mat_info info)
+try
+{
+    ROCSPARSE_CHECKARG_HANDLE(0, handle);
+    ROCSPARSE_CHECKARG_POINTER(1, info);
+
+    rocsparse::log_trace(handle, "rocsparse_csrmv_clear_residual", (const void*&)info);
+
+    rocsparse_csrmv_info csrmv_info = info->get_csrmv_info();
+
+    if(csrmv_info != nullptr)
+    {
+        csrmv_info->clear_residual_params();
+    }
+
+    return rocsparse_status_success;
+    // LCOV_EXCL_START
+}
+catch(...)
+{
+    RETURN_ROCSPARSE_EXCEPTION();
+}
+// LCOV_EXCL_STOP
+
 ROCSPARSE_EXPORT
 rocsparse_status rocsparse_create_csr_descr_SWDEV_453599(rocsparse_spmat_descr* descr,
                                                          int64_t                rows,

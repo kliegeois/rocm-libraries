@@ -2592,6 +2592,57 @@ rocsparse_status rocsparse_dnmat_set_strided_batch(rocsparse_dnmat_descr descr,
                                                    rocsparse_int         batch_count,
                                                    int64_t               batch_stride);
 
+/*! \ingroup aux_module
+ *  \brief Set residual computation parameters for csrmv
+ *
+ *  \details
+ *  \p rocsparse_csrmv_set_residual sets the gamma scalar and z vector
+ *  for residual computation. The computation will be:
+ *  y = alpha * A * x + beta * y + gamma * z
+ *
+ *  @param[in]
+ *  handle      handle to the rocsparse library context queue.
+ *  @param[inout]
+ *  info        matrix info structure.
+ *  @param[in]
+ *  gamma       scalar gamma (host or device pointer based on pointer mode)
+ *  @param[in]
+ *  gamma_type  data type of gamma
+ *  @param[in]
+ *  z           vector z (device pointer)
+ *  @param[in]
+ *  z_type      data type of z
+ *
+ *  \retval rocsparse_status_success the operation completed successfully.
+ *  \retval rocsparse_status_invalid_handle the library context was not initialized.
+ *  \retval rocsparse_status_invalid_pointer \p info, \p gamma or \p z is invalid.
+ */
+ROCSPARSE_EXPORT
+rocsparse_status rocsparse_csrmv_set_residual(rocsparse_handle   handle,
+                                              rocsparse_mat_info info,
+                                              const void*        gamma,
+                                              rocsparse_datatype gamma_type,
+                                              const void*        z,
+                                              rocsparse_datatype z_type);
+
+/*! \ingroup aux_module
+ *  \brief Clear residual computation parameters for csrmv
+ *
+ *  \details
+ *  \p rocsparse_csrmv_clear_residual clears the gamma and z parameters.
+ *
+ *  @param[in]
+ *  handle      handle to the rocsparse library context queue.
+ *  @param[inout]
+ *  info        matrix info structure.
+ *
+ *  \retval rocsparse_status_success the operation completed successfully.
+ *  \retval rocsparse_status_invalid_handle the library context was not initialized.
+ *  \retval rocsparse_status_invalid_pointer \p info is invalid.
+ */
+ROCSPARSE_EXPORT
+rocsparse_status rocsparse_csrmv_clear_residual(rocsparse_handle handle, rocsparse_mat_info info);
+
 //
 // If ROCSPARSE_WITH_MEMSTAT is defined
 // then a set of extra routines is offered

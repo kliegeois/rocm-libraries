@@ -577,24 +577,76 @@ static rocsparse_status rocsparse_csrmv_impl(rocsparse_handle          handle,
     static constexpr bool fallback_algorithm = true;
     static constexpr bool force_conj         = false;
 
-    RETURN_IF_ROCSPARSE_ERROR((rocsparse::csrmv_template<T, I, J, A, X, Y>(handle,
-                                                                           trans,
-                                                                           alg_to_apply,
-                                                                           m,
-                                                                           n,
-                                                                           nnz,
-                                                                           alpha_device_host,
-                                                                           descr,
-                                                                           csr_val,
-                                                                           csr_row_ptr,
-                                                                           csr_row_ptr + 1,
-                                                                           csr_col_ind,
-                                                                           csrmv_info,
-                                                                           x,
-                                                                           beta_device_host,
-                                                                           y,
-                                                                           force_conj,
-                                                                           fallback_algorithm)));
+    // Check if residual computation is enabled
+    if(csrmv_info != nullptr && csrmv_info->is_residual_enabled())
+    {
+        const void*        gamma_ptr = nullptr;
+        const void*        z_ptr     = nullptr;
+        rocsparse_datatype gamma_type, z_type;
+        csrmv_info->get_residual_params(&gamma_ptr, &gamma_type, &z_ptr, &z_type);
+
+        // Validate data types match
+        if(gamma_type != rocsparse::get_datatype<T>())
+        {
+            RETURN_WITH_MESSAGE_IF_ROCSPARSE_ERROR(
+                rocsparse_status_invalid_value, "gamma data type does not match computation type");
+        }
+
+        if(z_type != rocsparse::get_datatype<Y>())
+        {
+            RETURN_WITH_MESSAGE_IF_ROCSPARSE_ERROR(rocsparse_status_invalid_value,
+                                                   "z data type does not match y data type");
+        }
+
+        const T* gamma_device_host = reinterpret_cast<const T*>(gamma_ptr);
+        const Y* z                 = reinterpret_cast<const Y*>(z_ptr);
+
+        // Call the extended template with gamma and z
+        RETURN_IF_ROCSPARSE_ERROR(
+            (rocsparse::csrmv_template<T, I, J, A, X, Y, Y>(handle,
+                                                            trans,
+                                                            alg_to_apply,
+                                                            m,
+                                                            n,
+                                                            nnz,
+                                                            alpha_device_host,
+                                                            descr,
+                                                            csr_val,
+                                                            csr_row_ptr,
+                                                            csr_row_ptr + 1,
+                                                            csr_col_ind,
+                                                            csrmv_info,
+                                                            x,
+                                                            beta_device_host,
+                                                            y,
+                                                            gamma_device_host,
+                                                            z,
+                                                            force_conj,
+                                                            fallback_algorithm)));
+    }
+    else
+    {
+        // Call the standard template without residual
+        RETURN_IF_ROCSPARSE_ERROR(
+            (rocsparse::csrmv_template<T, I, J, A, X, Y>(handle,
+                                                         trans,
+                                                         alg_to_apply,
+                                                         m,
+                                                         n,
+                                                         nnz,
+                                                         alpha_device_host,
+                                                         descr,
+                                                         csr_val,
+                                                         csr_row_ptr,
+                                                         csr_row_ptr + 1,
+                                                         csr_col_ind,
+                                                         csrmv_info,
+                                                         x,
+                                                         beta_device_host,
+                                                         y,
+                                                         force_conj,
+                                                         fallback_algorithm)));
+    }
     return rocsparse_status_success;
 }
 
