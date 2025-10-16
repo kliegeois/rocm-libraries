@@ -498,7 +498,7 @@ Tests:
   transA: [rocsparse_operation_none]
   baseA: [rocsparse_index_base_zero, rocsparse_index_base_one]
   matrix: [rocsparse_matrix_random]
-  spmv_alg: [rocsparse_spmv_alg_csr_stream, rocsparse_spmv_alg_csr_adaptive]
+  spmv_alg: [rocsparse_spmv_alg_csr_rowsplit, rocsparse_spmv_alg_csr_adaptive]
 
 - name: csrmv_residual
   category: pre_checkin
@@ -510,4 +510,4 @@ Tests:
   transA: [rocsparse_operation_none]
   baseA: [rocsparse_index_base_zero, rocsparse_index_base_one]
   matrix: [rocsparse_matrix_random]
-  spmv_alg: [rocsparse_spmv_alg_csr_stream, rocsparse_spmv_alg_csr_adaptive]
+  spmv_alg: [rocsparse_spmv_alg_csr_rowsplit, rocsparse_spmv_alg_csr_adaptive]
