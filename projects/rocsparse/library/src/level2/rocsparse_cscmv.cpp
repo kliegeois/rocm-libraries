@@ -412,21 +412,9 @@ rocsparse_status rocsparse::cscmv(rocsparse_handle          handle,
                                   const void*               beta_device_host,
                                   rocsparse_datatype        y_datatype,
                                   void*                     y,
-                                  rocsparse_int                num_extra,
-                                  rocsparse_datatype*          gamma_types,
-                                  const void**                 gamma_ptrs,
-                                  rocsparse_const_dnvec_descr* z_vecs,
                                   bool                      fallback_algorithm)
 {
     ROCSPARSE_ROUTINE_TRACE;
-    
-    // Extract z vector information from dnvec descriptor
-    // Note: CSC format currently doesn't use gamma/z in the template,
-    // but we accept the parameters for API consistency
-    (void)num_extra;
-    (void)gamma_types;
-    (void)gamma_ptrs;
-    (void)z_vecs;
     
     rocsparse::cscmv_t f;
     RETURN_IF_ROCSPARSE_ERROR(rocsparse::cscmv_find(&f,

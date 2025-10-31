@@ -474,9 +474,6 @@ namespace rocsparse
         const rocsparse_spmv_alg  alg       = spmv_descr->get_alg();
 
         RETURN_IF_ROCSPARSE_ERROR((rocsparse::check_spmv_alg(format, alg)));
-
-        const bool use_extra_vectors
-            = (spmv_descr->extras.enabled && spmv_descr->extras.count == 1);
         
         // Pass gamma arrays and dnvec descriptors for z vectors
         const rocsparse_int num_extra = spmv_descr->extras.enabled ? spmv_descr->extras.count : 0;
@@ -818,11 +815,7 @@ namespace rocsparse
                                                             compute_datatype,
                                                             local_beta,
                                                             y_data_type,
-                                                            y_values,
-                                                            num_extra,
-                                                            gamma_types,
-                                                            gamma_ptrs,
-                                                            z_vecs,
+                                                            y_values, 
                                                             fallback_algorithm)));
                 return rocsparse_status_success;
             }
