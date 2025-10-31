@@ -72,7 +72,6 @@ namespace rocsparse
                            typename rocsparse::indextype_traits<J>::type_t, \
                            typename rocsparse::datatype_traits<A>::type_t,  \
                            typename rocsparse::datatype_traits<X>::type_t,  \
-                           typename rocsparse::datatype_traits<Y>::type_t,  \
                            typename rocsparse::datatype_traits<Y>::type_t>  \
     }
     // clang-format on
