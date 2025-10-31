@@ -150,7 +150,8 @@ rocsparse_status rocsparse::csrmv_template(rocsparse_handle          handle,
                                                               beta_device_host_,
                                                               y_,
                                                               gamma,
-                                                              (const void*)nullptr,
+                                                              0,
+                                                              nullptr,
                                                               force_conj,
                                                               fallback_algorithm);
     }
@@ -177,7 +178,8 @@ rocsparse_status rocsparse::csrmv_template(rocsparse_handle          handle,
                                                              beta_device_host_,
                                                              y_,
                                                              gamma,
-                                                             (const void*)nullptr,
+                                                             0,
+                                                             nullptr,
                                                              force_conj,
                                                              fallback_algorithm);
         RETURN_IF_HIP_ERROR(rocsparse_hipFreeAsync(gamma, handle->stream));
@@ -203,7 +205,8 @@ rocsparse_status rocsparse::csrmv_template(rocsparse_handle          handle,
                                            const void*               beta_device_host_,
                                            void*                     y_,
                                            const void*               gamma_device_host_,
-                                           const void*               z_,
+                                           rocsparse_int                num_z_vecs,
+                                           rocsparse_const_dnvec_descr* z_vecs,
                                            bool                      force_conj,
                                            bool                      fallback_algorithm)
 {
@@ -221,7 +224,13 @@ rocsparse_status rocsparse::csrmv_template(rocsparse_handle          handle,
     const J* csr_col_ind       = reinterpret_cast<const J*>(csr_col_ind_);
     const X* x                 = reinterpret_cast<const X*>(x_);
     Y*       y                 = reinterpret_cast<Y*>(y_);
-    const Z* z                 = reinterpret_cast<const Z*>(z_);
+    
+    // Extract z vector from dnvec descriptor
+    const Z* z = nullptr;
+    if(num_z_vecs > 0 && z_vecs != nullptr && z_vecs[0] != nullptr)
+    {
+        z = reinterpret_cast<const Z*>(z_vecs[0]->const_values);
+    }
 
     const rocsparse_int ysize = (trans == rocsparse_operation_none) ? m : n;
 

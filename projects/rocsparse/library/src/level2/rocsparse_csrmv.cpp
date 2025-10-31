@@ -50,7 +50,8 @@ namespace rocsparse
                                         const void*,
                                         void*,
                                         const void*,
-                                        const void*,
+                                        rocsparse_int,
+                                        rocsparse_const_dnvec_descr*,
                                         bool,
                                         bool);
 
@@ -421,12 +422,13 @@ rocsparse_status rocsparse::csrmv(rocsparse_handle          handle,
                                   void*                     y,
                                   rocsparse_datatype        gamma_device_host_datatype,
                                   const void*               gamma_device_host,
-                                  rocsparse_datatype        z_datatype,
-                                  const void*               z,
+                                  rocsparse_int                num_z_vecs,
+                                  rocsparse_const_dnvec_descr* z_vecs,
                                   bool                      fallback_algorithm)
 {
 
     ROCSPARSE_ROUTINE_TRACE;
+    
     rocsparse::csrmv_t f;
     RETURN_IF_ROCSPARSE_ERROR(rocsparse::csrmv_find(&f,
                                                     alpha_device_host_datatype,
@@ -454,7 +456,8 @@ rocsparse_status rocsparse::csrmv(rocsparse_handle          handle,
                                 beta_device_host,
                                 y,
                                 gamma_device_host,
-                                z,
+                                num_z_vecs,
+                                z_vecs,
                                 force_conj,
                                 fallback_algorithm));
 

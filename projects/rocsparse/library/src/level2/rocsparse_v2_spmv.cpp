@@ -478,16 +478,13 @@ namespace rocsparse
         const bool use_extra_vectors
             = (spmv_descr->extras.enabled && spmv_descr->extras.count == 1);
         const void* gamma = use_extra_vectors ? spmv_descr->extras.gamma_ptrs[0] : nullptr;
-        const void* z_const_values
-            = use_extra_vectors && spmv_descr->extras.z_vecs[0] != nullptr
-                  ? spmv_descr->extras.z_vecs[0]->const_values
-                  : nullptr;
 
         const rocsparse_datatype gamma_type
             = spmv_descr->extras.enabled ? spmv_descr->extras.gamma_types[0] : y->data_type;
-        const rocsparse_datatype z_data_type = spmv_descr->extras.enabled
-                                                   ? spmv_descr->extras.z_vecs[0]->data_type
-                                                   : y->data_type;
+        
+        // Pass dnvec descriptors for z vectors
+        const rocsparse_int num_z_vecs = spmv_descr->extras.enabled ? spmv_descr->extras.count : 0;
+        rocsparse_const_dnvec_descr* z_vecs = spmv_descr->extras.enabled ? spmv_descr->extras.z_vecs : nullptr;
 
         switch(stage)
         {
@@ -792,8 +789,8 @@ namespace rocsparse
                                       y_values,
                                       gamma_type,
                                       gamma,
-                                      z_data_type,
-                                      z_const_values,
+                                      num_z_vecs,
+                                      z_vecs,
                                       fallback_algorithm)));
                 return rocsparse_status_success;
             }
@@ -824,6 +821,10 @@ namespace rocsparse
                                                             local_beta,
                                                             y_data_type,
                                                             y_values,
+                                                            gamma_type,
+                                                            gamma,
+                                                            num_z_vecs,
+                                                            z_vecs,
                                                             fallback_algorithm)));
                 return rocsparse_status_success;
             }

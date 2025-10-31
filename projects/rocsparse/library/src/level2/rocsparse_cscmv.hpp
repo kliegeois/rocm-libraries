@@ -98,6 +98,10 @@ namespace rocsparse
                            const void*               beta_device_host,
                            rocsparse_datatype        y_datatype,
                            void*                     y,
+                           rocsparse_datatype        gamma_device_host_datatype,
+                           const void*               gamma_device_host,
+                           rocsparse_int                num_z_vecs,
+                           rocsparse_const_dnvec_descr* z_vecs,
                            bool                      fallback_algorithm);
 
 }

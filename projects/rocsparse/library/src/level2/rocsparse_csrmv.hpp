@@ -250,7 +250,8 @@ namespace rocsparse
                                     const void*               beta,
                                     void*                     y,
                                     const void*               gamma,
-                                    const void*               z,
+                                    rocsparse_int                num_z_vecs,
+                                    rocsparse_const_dnvec_descr* z_vecs,
                                     bool                      force_conj,
                                     bool                      fallback_algorithm);
 
@@ -295,8 +296,8 @@ namespace rocsparse
                            void*                     y,
                            rocsparse_datatype        gamma_device_host_datatype,
                            const void*               gamma_device_host,
-                           rocsparse_datatype        z_datatype,
-                           const void*               z,
+                           rocsparse_int                num_z_vecs,
+                           rocsparse_const_dnvec_descr* z_vecs,
                            bool                      fallback_algorithm);
 
 }
