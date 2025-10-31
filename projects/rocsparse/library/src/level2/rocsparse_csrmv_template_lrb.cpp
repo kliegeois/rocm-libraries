@@ -454,12 +454,21 @@ rocsparse_status rocsparse::csrmv_lrb_template_dispatch(rocsparse_handle        
                                                         const X*                  x,
                                                         const T*                  beta_device_host,
                                                         Y*                        y,
-                                                        const T*                  gamma_device_host,
+                                                        rocsparse_int                num_gammas,
+                                                        rocsparse_datatype*          gamma_types,
+                                                        const void**                 gamma_ptrs,
                                                         rocsparse_int                num_z_vecs,
                                                         rocsparse_const_dnvec_descr* z_vecs,
                                                         bool                      force_conj)
 {
     ROCSPARSE_ROUTINE_TRACE;
+    
+    // Extract gamma from arrays
+    const T* gamma_device_host = nullptr;
+    if(num_gammas > 0 && gamma_ptrs != nullptr && gamma_ptrs[0] != nullptr)
+    {
+        gamma_device_host = reinterpret_cast<const T*>(gamma_ptrs[0]);
+    }
     
     // Extract z vector from dnvec descriptor
     const Z* z = nullptr;

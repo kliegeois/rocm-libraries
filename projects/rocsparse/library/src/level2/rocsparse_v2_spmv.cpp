@@ -477,12 +477,11 @@ namespace rocsparse
 
         const bool use_extra_vectors
             = (spmv_descr->extras.enabled && spmv_descr->extras.count == 1);
-        const void* gamma = use_extra_vectors ? spmv_descr->extras.gamma_ptrs[0] : nullptr;
-
-        const rocsparse_datatype gamma_type
-            = spmv_descr->extras.enabled ? spmv_descr->extras.gamma_types[0] : y->data_type;
         
-        // Pass dnvec descriptors for z vectors
+        // Pass gamma arrays and dnvec descriptors for z vectors
+        const rocsparse_int num_gammas = spmv_descr->extras.enabled ? spmv_descr->extras.count : 0;
+        rocsparse_datatype* gamma_types = spmv_descr->extras.enabled ? spmv_descr->extras.gamma_types : nullptr;
+        const void** gamma_ptrs = spmv_descr->extras.enabled ? spmv_descr->extras.gamma_ptrs : nullptr;
         const rocsparse_int num_z_vecs = spmv_descr->extras.enabled ? spmv_descr->extras.count : 0;
         rocsparse_const_dnvec_descr* z_vecs = spmv_descr->extras.enabled ? spmv_descr->extras.z_vecs : nullptr;
 
@@ -787,8 +786,9 @@ namespace rocsparse
                                       local_beta,
                                       y_data_type,
                                       y_values,
-                                      gamma_type,
-                                      gamma,
+                                      num_gammas,
+                                      gamma_types,
+                                      gamma_ptrs,
                                       num_z_vecs,
                                       z_vecs,
                                       fallback_algorithm)));
@@ -821,8 +821,9 @@ namespace rocsparse
                                                             local_beta,
                                                             y_data_type,
                                                             y_values,
-                                                            gamma_type,
-                                                            gamma,
+                                                            num_gammas,
+                                                            gamma_types,
+                                                            gamma_ptrs,
                                                             num_z_vecs,
                                                             z_vecs,
                                                             fallback_algorithm)));

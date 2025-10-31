@@ -149,7 +149,9 @@ rocsparse_status rocsparse::csrmv_template(rocsparse_handle          handle,
                                                               x_,
                                                               beta_device_host_,
                                                               y_,
-                                                              gamma,
+                                                              0,
+                                                              nullptr,
+                                                              nullptr,
                                                               0,
                                                               nullptr,
                                                               force_conj,
@@ -177,7 +179,9 @@ rocsparse_status rocsparse::csrmv_template(rocsparse_handle          handle,
                                                              x_,
                                                              beta_device_host_,
                                                              y_,
-                                                             gamma,
+                                                             0,
+                                                             nullptr,
+                                                             nullptr,
                                                              0,
                                                              nullptr,
                                                              force_conj,
@@ -204,7 +208,9 @@ rocsparse_status rocsparse::csrmv_template(rocsparse_handle          handle,
                                            const void*               x_,
                                            const void*               beta_device_host_,
                                            void*                     y_,
-                                           const void*               gamma_device_host_,
+                                           rocsparse_int                num_gammas,
+                                           rocsparse_datatype*          gamma_types,
+                                           const void**                 gamma_ptrs,
                                            rocsparse_int                num_z_vecs,
                                            rocsparse_const_dnvec_descr* z_vecs,
                                            bool                      force_conj,
@@ -217,13 +223,19 @@ rocsparse_status rocsparse::csrmv_template(rocsparse_handle          handle,
     const I  nnz               = static_cast<I>(nnz_);
     const T* alpha_device_host = reinterpret_cast<const T*>(alpha_device_host_);
     const T* beta_device_host  = reinterpret_cast<const T*>(beta_device_host_);
-    const T* gamma_device_host = reinterpret_cast<const T*>(gamma_device_host_);
     const A* csr_val           = reinterpret_cast<const A*>(csr_val_);
     const I* csr_row_ptr_begin = reinterpret_cast<const I*>(csr_row_ptr_begin_);
     const I* csr_row_ptr_end   = reinterpret_cast<const I*>(csr_row_ptr_end_);
     const J* csr_col_ind       = reinterpret_cast<const J*>(csr_col_ind_);
     const X* x                 = reinterpret_cast<const X*>(x_);
     Y*       y                 = reinterpret_cast<Y*>(y_);
+
+    // Extract gamma from arrays
+    const T* gamma_device_host = nullptr;
+    if(num_gammas > 0 && gamma_ptrs != nullptr && gamma_ptrs[0] != nullptr)
+    {
+        gamma_device_host = reinterpret_cast<const T*>(gamma_ptrs[0]);
+    }
 
     const rocsparse_int ysize = (trans == rocsparse_operation_none) ? m : n;
 
@@ -244,7 +256,7 @@ rocsparse_status rocsparse::csrmv_template(rocsparse_handle          handle,
 
     if(handle->pointer_mode == rocsparse_pointer_mode_host
        && *alpha_device_host == static_cast<T>(0) && *beta_device_host == static_cast<T>(1)
-       && *gamma_device_host == static_cast<T>(0))
+       && (gamma_device_host == nullptr || *gamma_device_host == static_cast<T>(0)))
     {
         return rocsparse_status_success;
     }
@@ -292,7 +304,9 @@ rocsparse_status rocsparse::csrmv_template(rocsparse_handle          handle,
                                                                               x,
                                                                               beta_device_host,
                                                                               y,
-                                                                              gamma_device_host,
+                                                                              num_gammas,
+                                                                              gamma_types,
+                                                                              gamma_ptrs,
                                                                               num_z_vecs,
                                                                               z_vecs,
                                                                               force_conj));
@@ -325,7 +339,9 @@ rocsparse_status rocsparse::csrmv_template(rocsparse_handle          handle,
                                                                               x,
                                                                               beta_device_host,
                                                                               y,
-                                                                              gamma_device_host,
+                                                                              num_gammas,
+                                                                              gamma_types,
+                                                                              gamma_ptrs,
                                                                               num_z_vecs,
                                                                               z_vecs,
                                                                               force_conj));
@@ -359,7 +375,9 @@ rocsparse_status rocsparse::csrmv_template(rocsparse_handle          handle,
                                                                          x,
                                                                          beta_device_host,
                                                                          y,
-                                                                         gamma_device_host,
+                                                                         num_gammas,
+                                                                         gamma_types,
+                                                                         gamma_ptrs,
                                                                          num_z_vecs,
                                                                          z_vecs,
                                                                          force_conj));
@@ -392,7 +410,9 @@ rocsparse_status rocsparse::csrmv_template(rocsparse_handle          handle,
                                                                               x,
                                                                               beta_device_host,
                                                                               y,
-                                                                              gamma_device_host,
+                                                                              num_gammas,
+                                                                              gamma_types,
+                                                                              gamma_ptrs,
                                                                               num_z_vecs,
                                                                               z_vecs,
                                                                               force_conj));

@@ -617,8 +617,11 @@ rocsparse_status rocsparse::csrmv_adaptive_template_dispatch(rocsparse_handle   
                                                            x,
                                                            beta_device_host,
                                                            y,
-                                                           gamma,
-                                                           (const Y*)nullptr,
+                                                           0,
+                                                           nullptr,
+                                                           nullptr,
+                                                           0,
+                                                           nullptr,
                                                            force_conj);
     }
     else
@@ -640,8 +643,11 @@ rocsparse_status rocsparse::csrmv_adaptive_template_dispatch(rocsparse_handle   
                                                                               x,
                                                                               beta_device_host,
                                                                               y,
-                                                                              gamma,
-                                                                              (const Y*)nullptr,
+                                                                              0,
+                                                                              nullptr,
+                                                                              nullptr,
+                                                                              0,
+                                                                              nullptr,
                                                                               force_conj);
         RETURN_IF_HIP_ERROR(rocsparse_hipFreeAsync(gamma, handle->stream));
         return status;
@@ -663,12 +669,21 @@ rocsparse_status rocsparse::csrmv_adaptive_template_dispatch(rocsparse_handle   
                                                              const X*                  x,
                                                              const T* beta_device_host,
                                                              Y*       y,
-                                                             const T* gamma_device_host,
+                                                             rocsparse_int                num_gammas,
+                                                             rocsparse_datatype*          gamma_types,
+                                                             const void**                 gamma_ptrs,
                                                              rocsparse_int                num_z_vecs,
                                                              rocsparse_const_dnvec_descr* z_vecs,
                                                              bool     force_conj)
 {
     ROCSPARSE_ROUTINE_TRACE;
+    
+    // Extract gamma from arrays
+    const T* gamma_device_host = nullptr;
+    if(num_gammas > 0 && gamma_ptrs != nullptr && gamma_ptrs[0] != nullptr)
+    {
+        gamma_device_host = reinterpret_cast<const T*>(gamma_ptrs[0]);
+    }
     
     // Extract z vector from dnvec descriptor
     const Z* z = nullptr;
