@@ -664,10 +664,18 @@ rocsparse_status rocsparse::csrmv_adaptive_template_dispatch(rocsparse_handle   
                                                              const T* beta_device_host,
                                                              Y*       y,
                                                              const T* gamma_device_host,
-                                                             const Z* z,
+                                                             rocsparse_int                num_z_vecs,
+                                                             rocsparse_const_dnvec_descr* z_vecs,
                                                              bool     force_conj)
 {
     ROCSPARSE_ROUTINE_TRACE;
+    
+    // Extract z vector from dnvec descriptor
+    const Z* z = nullptr;
+    if(num_z_vecs > 0 && z_vecs != nullptr && z_vecs[0] != nullptr)
+    {
+        z = reinterpret_cast<const Z*>(z_vecs[0]->const_values);
+    }
 
     ROCSPARSE_CHECKARG_HANDLE(0, handle);
     ROCSPARSE_CHECKARG_POINTER(6, descr);

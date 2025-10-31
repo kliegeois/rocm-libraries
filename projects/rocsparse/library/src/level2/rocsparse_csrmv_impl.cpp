@@ -224,19 +224,18 @@ rocsparse_status rocsparse::csrmv_template(rocsparse_handle          handle,
     const J* csr_col_ind       = reinterpret_cast<const J*>(csr_col_ind_);
     const X* x                 = reinterpret_cast<const X*>(x_);
     Y*       y                 = reinterpret_cast<Y*>(y_);
-    
-    // Extract z vector from dnvec descriptor
-    const Z* z = nullptr;
-    if(num_z_vecs > 0 && z_vecs != nullptr && z_vecs[0] != nullptr)
-    {
-        z = reinterpret_cast<const Z*>(z_vecs[0]->const_values);
-    }
 
     const rocsparse_int ysize = (trans == rocsparse_operation_none) ? m : n;
 
     // Another quick return.
     if(m == 0 || n == 0 || nnz == 0)
     {
+        // Extract z for axpby_array call in early return case
+        const Z* z = nullptr;
+        if(num_z_vecs > 0 && z_vecs != nullptr && z_vecs[0] != nullptr)
+        {
+            z = reinterpret_cast<const Z*>(z_vecs[0]->const_values);
+        }
         // matrix never accessed however still need to update y vector
         RETURN_IF_ROCSPARSE_ERROR(
             rocsparse::axpby_array(handle, ysize, gamma_device_host, z, beta_device_host, y));
@@ -294,7 +293,8 @@ rocsparse_status rocsparse::csrmv_template(rocsparse_handle          handle,
                                                                               beta_device_host,
                                                                               y,
                                                                               gamma_device_host,
-                                                                              z,
+                                                                              num_z_vecs,
+                                                                              z_vecs,
                                                                               force_conj));
         return rocsparse_status_success;
     }
@@ -326,7 +326,8 @@ rocsparse_status rocsparse::csrmv_template(rocsparse_handle          handle,
                                                                               beta_device_host,
                                                                               y,
                                                                               gamma_device_host,
-                                                                              z,
+                                                                              num_z_vecs,
+                                                                              z_vecs,
                                                                               force_conj));
 
         return rocsparse_status_success;
@@ -359,7 +360,8 @@ rocsparse_status rocsparse::csrmv_template(rocsparse_handle          handle,
                                                                          beta_device_host,
                                                                          y,
                                                                          gamma_device_host,
-                                                                         z,
+                                                                         num_z_vecs,
+                                                                         z_vecs,
                                                                          force_conj));
         return rocsparse_status_success;
     }
@@ -391,7 +393,8 @@ rocsparse_status rocsparse::csrmv_template(rocsparse_handle          handle,
                                                                               beta_device_host,
                                                                               y,
                                                                               gamma_device_host,
-                                                                              z,
+                                                                              num_z_vecs,
+                                                                              z_vecs,
                                                                               force_conj));
 
         return rocsparse_status_success;

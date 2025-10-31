@@ -118,7 +118,8 @@ namespace rocsparse
                                                       const T*                  beta_device_host,
                                                       Y*                        y,
                                                       const T*                  gamma_device_host,
-                                                      const Z*                  z,
+                                                      rocsparse_int                num_z_vecs,
+                                                      rocsparse_const_dnvec_descr* z_vecs,
                                                       bool                      force_conj);
 
     template <typename T, typename I, typename J, typename A, typename X, typename Y>
@@ -154,7 +155,8 @@ namespace rocsparse
                                                       const T*                  beta_device_host,
                                                       Y*                        y,
                                                       const T*                  gamma_device_host,
-                                                      const Z*                  z,
+                                                      rocsparse_int                num_z_vecs,
+                                                      rocsparse_const_dnvec_descr* z_vecs,
                                                       bool                      force_conj);
 
     template <typename T, typename I, typename J, typename A, typename X, typename Y, typename Z>
@@ -173,7 +175,8 @@ namespace rocsparse
                                                  const T*                  beta_device_host,
                                                  Y*                        y,
                                                  const T*                  gamma_device_host,
-                                                 const Z*                  z,
+                                                 rocsparse_int                num_z_vecs,
+                                                 rocsparse_const_dnvec_descr* z_vecs,
                                                  bool                      force_conj);
 
     template <typename T, typename I, typename J, typename A, typename X, typename Y, typename Z>
@@ -192,7 +195,8 @@ namespace rocsparse
                                                       const T*                  beta_device_host,
                                                       Y*                        y,
                                                       const T*                  gamma_device_host,
-                                                      const Z*                  z,
+                                                      rocsparse_int                num_z_vecs,
+                                                      rocsparse_const_dnvec_descr* z_vecs,
                                                       bool                      force_conj);
 
     template <typename T, typename I, typename J, typename A, typename X, typename Y>
