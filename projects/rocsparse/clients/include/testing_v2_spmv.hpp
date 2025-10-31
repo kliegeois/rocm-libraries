@@ -513,9 +513,8 @@ public:
             rocsparse_datatype z_types[1] = {ttype};
             const void*        z_ptrs[1]  = {d_extra.data()};
 
-            rocsparse_status error;
             CHECK_ROCSPARSE_ERROR(rocsparse_spmv_set_extra(
-                spmv_descr, 1, gamma_types, gamma_ptrs, z_types, z_ptrs, &error));
+                spmv_descr, 1, gamma_types, gamma_ptrs, z_types, z_ptrs));
 
             size_t buffer_size = 0;
             CHECK_ROCSPARSE_ERROR(rocsparse_v2_spmv_buffer_size(handle,

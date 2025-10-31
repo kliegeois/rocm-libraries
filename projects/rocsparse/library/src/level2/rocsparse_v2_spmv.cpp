@@ -1067,8 +1067,7 @@ extern "C" rocsparse_status rocsparse_spmv_set_extra(rocsparse_spmv_descr descr,
                                                      rocsparse_datatype*  gamma_types,
                                                      const void**         gamma_ptrs,
                                                      rocsparse_datatype*  z_types,
-                                                     const void**         z_ptrs,
-                                                     rocsparse_status*    error)
+                                                     const void**         z_ptrs)
 try
 {
     ROCSPARSE_CHECKARG_POINTER(0, descr);
@@ -1078,12 +1077,7 @@ try
     ROCSPARSE_CHECKARG_ARRAY(4, num_extras, z_types);
     ROCSPARSE_CHECKARG_ARRAY(5, num_extras, z_ptrs);
 
-    rocsparse_status status
-        = descr->extras.set(num_extras, gamma_types, gamma_ptrs, z_types, z_ptrs);
-
-    if(error)
-        *error = status;
-    return status;
+    return descr->extras.set(num_extras, gamma_types, gamma_ptrs, z_types, z_ptrs);
     // LCOV_EXCL_START
 }
 catch(...)

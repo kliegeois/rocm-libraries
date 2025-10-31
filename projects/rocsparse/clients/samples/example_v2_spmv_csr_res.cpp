@@ -109,10 +109,9 @@ int main()
     const void*        gamma_ptrs[1]  = {&gamma};
     rocsparse_datatype z_types[1]     = {rocsparse_datatype_f32_r};
     const void*        z_ptrs[1]      = {dz};
-    rocsparse_status   error;
 
     ROCSPARSE_CHECK(
-        rocsparse_spmv_set_extra(spmv_descr, 1, gamma_types, gamma_ptrs, z_types, z_ptrs, &error));
+        rocsparse_spmv_set_extra(spmv_descr, 1, gamma_types, gamma_ptrs, z_types, z_ptrs));
 
     float alpha = 1.0f, beta = 0.0f;
 
