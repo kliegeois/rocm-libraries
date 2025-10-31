@@ -102,7 +102,7 @@ namespace rocsparse
                                                       Y*                        y,
                                                       bool                      force_conj);
 
-    template <typename T, typename I, typename J, typename A, typename X, typename Y, typename Z>
+    template <typename T, typename I, typename J, typename A, typename X, typename Y>
     rocsparse_status csrmv_rowsplit_template_dispatch(rocsparse_handle          handle,
                                                       rocsparse_operation       trans,
                                                       J                         m,
@@ -140,7 +140,7 @@ namespace rocsparse
                                                       Y*                        y,
                                                       bool                      force_conj);
 
-    template <typename T, typename I, typename J, typename A, typename X, typename Y, typename Z>
+    template <typename T, typename I, typename J, typename A, typename X, typename Y>
     rocsparse_status csrmv_adaptive_template_dispatch(rocsparse_handle          handle,
                                                       rocsparse_operation       trans,
                                                       J                         m,
@@ -161,7 +161,7 @@ namespace rocsparse
                                                       rocsparse_const_dnvec_descr* z_vecs,
                                                       bool                      force_conj);
 
-    template <typename T, typename I, typename J, typename A, typename X, typename Y, typename Z>
+    template <typename T, typename I, typename J, typename A, typename X, typename Y>
     rocsparse_status csrmv_lrb_template_dispatch(rocsparse_handle          handle,
                                                  rocsparse_operation       trans,
                                                  J                         m,
@@ -182,7 +182,7 @@ namespace rocsparse
                                                  rocsparse_const_dnvec_descr* z_vecs,
                                                  bool                      force_conj);
 
-    template <typename T, typename I, typename J, typename A, typename X, typename Y, typename Z>
+    template <typename T, typename I, typename J, typename A, typename X, typename Y>
     rocsparse_status csrmv_nnzsplit_template_dispatch(rocsparse_handle          handle,
                                                       rocsparse_operation       trans,
                                                       J                         m,
@@ -240,7 +240,7 @@ namespace rocsparse
                                     bool                      force_conj,
                                     bool                      fallback_algorithm);
 
-    template <typename T, typename I, typename J, typename A, typename X, typename Y, typename Z>
+    template <typename T, typename I, typename J, typename A, typename X, typename Y>
     rocsparse_status csrmv_template(rocsparse_handle          handle,
                                     rocsparse_operation       trans,
                                     rocsparse::csrmv_alg      alg,

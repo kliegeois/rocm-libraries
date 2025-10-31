@@ -439,7 +439,7 @@ namespace rocsparse
     }
 }
 
-template <typename T, typename I, typename J, typename A, typename X, typename Y, typename Z>
+template <typename T, typename I, typename J, typename A, typename X, typename Y>
 rocsparse_status rocsparse::csrmv_lrb_template_dispatch(rocsparse_handle          handle,
                                                         rocsparse_operation       trans,
                                                         J                         m,
@@ -470,6 +470,7 @@ rocsparse_status rocsparse::csrmv_lrb_template_dispatch(rocsparse_handle        
     }
     
     // Extract z vector from dnvec descriptor
+    using Z = Y;
     const Z* z = nullptr;
     if(num_extra > 0 && z_vecs != nullptr && z_vecs[0] != nullptr)
     {
@@ -779,8 +780,10 @@ INSTANTIATE(int64_t, int64_t, rocsparse_bfloat16);
         const XTYPE*              x,                                  \
         const TTYPE*              beta_device_host,                   \
         YTYPE*                    y,                                  \
-        const TTYPE*              gamma_device_host,                  \
-        const YTYPE*              z,                                  \
+        rocsparse_int                num_extra,                       \
+        rocsparse_datatype*          gamma_types,                     \
+        const void**                 gamma_ptrs,                      \
+        rocsparse_const_dnvec_descr* z_vecs,                          \
         bool                      force_conj);
 
 // Uniform precision
