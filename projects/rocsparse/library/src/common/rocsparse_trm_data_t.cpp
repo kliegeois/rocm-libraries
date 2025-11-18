@@ -67,6 +67,7 @@ void rocsparse::trm_data_t::uncouple(const rocsparse::trm_data_t* that)
 
 rocsparse::trm_data_t::~trm_data_t()
 {
+    std::cout << __LINE__ << ": trm_data_t\n";
     // Clear zero pivot
     for(int i = 0; i < 4; ++i)
     {
@@ -77,6 +78,7 @@ rocsparse::trm_data_t::~trm_data_t()
             this->m_data[i] = nullptr;
         }
     }
+    std::cout << __LINE__ << ": trm_data_t\n";
 }
 
 rocsparse::trm_info_t* rocsparse::trm_data_t::get(rocsparse_operation operation,

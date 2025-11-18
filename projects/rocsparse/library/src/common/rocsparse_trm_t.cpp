@@ -241,7 +241,8 @@ void rocsparse::trm_t::copy(const trm_t& that, hipStream_t stream)
 
 rocsparse::trm_t::~trm_t()
 {
-
+    std::cout << __LINE__ << ": trm_t\n";
+    #if 1
     this->uncouple(m_csrsv_info.get());
     m_csrsv_info.reset();
 
@@ -265,6 +266,10 @@ rocsparse::trm_t::~trm_t()
 
     this->uncouple(m_bsric0_info.get());
     m_bsric0_info.reset();
+    #endif
+    std::cout << __LINE__ << ": trm_t\n";
+
+    WARNING_IF_HIP_ERROR(hipDeviceSynchronize());
 }
 
 #define GET_SHARED_INFO(TOKEN)                                                               \

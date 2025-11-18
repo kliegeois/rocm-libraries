@@ -122,6 +122,13 @@ rocsparse_status rocsparse::csrsv_buffer_size_template(rocsparse_handle         
 
     // rocprim buffer
     *buffer_size += rocprim_size;
+    
+    // Add space for onesweep lookback states and additional workspace
+    // The onesweep algorithm needs extra memory beyond what rocprim_size reports
+    // For safety, add significant padding for large problem sizes
+    // This accounts for lookback_states, global_digit_offsets, and other internals
+    const size_t extra_workspace = ((sizeof(J) * m * 2 + sizeof(int) * m - 1) / 256 + 1) * 48; // 32 KO 48 OK
+    //*buffer_size += extra_workspace ;
 
     // On transposed case, we might need more temporary storage for transposing
     if(trans == rocsparse_operation_transpose || trans == rocsparse_operation_conjugate_transpose)

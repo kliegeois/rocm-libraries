@@ -271,43 +271,76 @@ _rocsparse_mat_info::~_rocsparse_mat_info()
 {
 
     // Clear csrgemm info struct
+    std::cout << __LINE__ << ": _rocsparse_mat_info\n";
     WARNING_IF_ROCSPARSE_ERROR(rocsparse::destroy_csrgemm_info(this->csrgemm_info));
+    std::cout << __LINE__ << ": _rocsparse_mat_info\n";
 
+    std::cout << __LINE__ << ": _rocsparse_mat_info\n";
     if(this->csritsv_info != nullptr)
     {
+        std::cout << __LINE__ << ": _rocsparse_mat_info\n";
         delete this->csritsv_info;
+        std::cout << __LINE__ << ": _rocsparse_mat_info\n";
         this->csritsv_info = nullptr;
+        std::cout << __LINE__ << ": _rocsparse_mat_info\n";
     }
+    std::cout << __LINE__ << ": _rocsparse_mat_info\n";
 
+    std::cout << __LINE__ << ": _rocsparse_mat_info\n";
     // Due to the changes in the hipFree introduced in HIP 7.0
     // https://rocm.docs.amd.com/projects/HIP/en/latest/hip-7-changes.html#update-hipfree
     // we need to introduce a device synchronize here as the below hipFree calls are now asynchronous.
     // hipFree() previously had an implicit wait for synchronization purpose which is applicable for all memory allocations.
     // This wait has been disabled in the HIP 7.0 runtime for allocations made with hipMallocAsync and hipMallocFromPoolAsync.
     WARNING_IF_HIP_ERROR(hipDeviceSynchronize());
+    std::cout << __LINE__ << ": _rocsparse_mat_info\n";
 
+    std::cout << __LINE__ << ": _rocsparse_mat_info\n";
     //
+    std::cout << __LINE__ << ": _rocsparse_mat_info\n";
     // TRM_INFO data are automatically destroyed.
+    std::cout << __LINE__ << ": _rocsparse_mat_info\n";
     //
+    std::cout << __LINE__ << ": _rocsparse_mat_info\n";
     if(this->csrmv_info != nullptr)
     {
+        std::cout << __LINE__ << ": _rocsparse_mat_info\n";
         delete this->csrmv_info;
+        std::cout << __LINE__ << ": _rocsparse_mat_info\n";
         this->csrmv_info = nullptr;
+        std::cout << __LINE__ << ": _rocsparse_mat_info\n";
     }
+    std::cout << __LINE__ << ": _rocsparse_mat_info\n";
 
+    std::cout << __LINE__ << ": _rocsparse_mat_info\n";
     if(this->bsrmv_info != nullptr)
     {
+        std::cout << __LINE__ << ": _rocsparse_mat_info\n";
         delete this->bsrmv_info;
+        std::cout << __LINE__ << ": _rocsparse_mat_info\n";
         this->bsrmv_info = nullptr;
+        std::cout << __LINE__ << ": _rocsparse_mat_info\n";
     }
+    std::cout << __LINE__ << ": _rocsparse_mat_info\n";
 
+    std::cout << __LINE__ << ": _rocsparse_mat_info\n";
     rocsparse::sorted_coo2csr_info_t* sorted_coo2csr_info = this->get_sorted_coo2csr_info();
+    std::cout << __LINE__ << ": _rocsparse_mat_info\n";
     if(sorted_coo2csr_info != nullptr)
     {
+        std::cout << __LINE__ << ": _rocsparse_mat_info\n";
         hipStream_t default_stream = 0;
+        std::cout << __LINE__ << ": _rocsparse_mat_info\n";
         std::ignore                = sorted_coo2csr_info->free_memory(default_stream);
+        std::cout << __LINE__ << ": _rocsparse_mat_info\n";
 
+        std::cout << __LINE__ << ": _rocsparse_mat_info\n";
         delete sorted_coo2csr_info;
+        std::cout << __LINE__ << ": _rocsparse_mat_info\n";
         this->set_sorted_coo2csr_info(nullptr);
+        std::cout << __LINE__ << ": _rocsparse_mat_info\n";
     }
+    std::cout << __LINE__ << ": _rocsparse_mat_info\n";
+
+    WARNING_IF_HIP_ERROR(hipDeviceSynchronize());
 }
