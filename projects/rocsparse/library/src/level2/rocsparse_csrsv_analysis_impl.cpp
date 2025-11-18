@@ -56,15 +56,52 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
     // If analyzing transposed, allocate some info memory to hold the transposed matrix
     if(trans == rocsparse_operation_transpose || trans == rocsparse_operation_conjugate_transpose)
     {
-        // TODO: this need to be changed.
-        // LCOV_EXCL_START
-        if(trm_info->get_transposed_perm() != nullptr
-           || trm_info->get_transposed_row_ptr() != nullptr
-           || trm_info->get_transposed_col_ind() != nullptr)
+
+        // Check if analysis was already done: buffers exist and dimensions already stored
+        bool analysis_already_done = (trm_info->get_transposed_perm() != nullptr
+                                      && trm_info->get_transposed_row_ptr() != nullptr
+                                      && trm_info->get_transposed_col_ind() != nullptr
+                                      && trm_info->get_m() == m && trm_info->get_nnz() == nnz);
+
+        if(analysis_already_done)
         {
-            RETURN_IF_ROCSPARSE_ERROR(rocsparse_status_internal_error);
+            // Buffers already contain the transposed matrix from previous call
+            // Skip all transpose logic below and return
+            return rocsparse_status_success;
         }
-        // LCOV_EXCL_STOP
+
+        // Check if dimensions changed and we need to free old buffers
+        bool buffers_exist = (trm_info->get_transposed_perm() != nullptr
+                              || trm_info->get_transposed_row_ptr() != nullptr
+                              || trm_info->get_transposed_col_ind() != nullptr);
+
+        if(buffers_exist && (trm_info->get_m() != m || trm_info->get_nnz() != nnz))
+        {
+            // Free existing buffers
+            void** ref_transposed_perm = trm_info->get_ref_transposed_perm();
+            if(*ref_transposed_perm != nullptr)
+            {
+                RETURN_IF_HIP_ERROR(rocsparse_hipFreeAsync(*ref_transposed_perm, stream));
+                *ref_transposed_perm = nullptr;
+            }
+
+            void** ref_transposed_row_ptr = trm_info->get_ref_transposed_row_ptr();
+            if(*ref_transposed_row_ptr != nullptr)
+            {
+                RETURN_IF_HIP_ERROR(rocsparse_hipFreeAsync(*ref_transposed_row_ptr, stream));
+                *ref_transposed_row_ptr = nullptr;
+            }
+
+            void** ref_transposed_col_ind = trm_info->get_ref_transposed_col_ind();
+            if(*ref_transposed_col_ind != nullptr)
+            {
+                RETURN_IF_HIP_ERROR(rocsparse_hipFreeAsync(*ref_transposed_col_ind, stream));
+                *ref_transposed_col_ind = nullptr;
+            }
+
+            // Synchronize after freeing before reallocating
+            RETURN_IF_HIP_ERROR(hipStreamSynchronize(stream));
+        }
 
         // Buffer
         char* ptr = reinterpret_cast<char*>(temp_buffer);
@@ -84,22 +121,35 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
         RETURN_IF_HIP_ERROR(hipMemcpyAsync(
             tmp_work1, csr_col_ind, sizeof(J) * nnz, hipMemcpyDeviceToDevice, stream));
 
-        RETURN_IF_HIP_ERROR(rocsparse_hipMallocAsync(
-            trm_info->get_ref_transposed_row_ptr(), sizeof(I) * (m + 1), stream));
+        // Allocate transposed arrays if they don't exist
+        if(trm_info->get_transposed_row_ptr() == nullptr)
+        {
+            RETURN_IF_HIP_ERROR(rocsparse_hipMallocAsync(
+                trm_info->get_ref_transposed_row_ptr(), sizeof(I) * (m + 1), stream));
+        }
 
         if(nnz > 0)
         {
-            RETURN_IF_HIP_ERROR(rocsparse_hipMallocAsync(
-                trm_info->get_ref_transposed_perm(), sizeof(I) * nnz, stream));
-            RETURN_IF_HIP_ERROR(rocsparse_hipMallocAsync(
-                trm_info->get_ref_transposed_col_ind(), sizeof(J) * nnz, stream));
+            if(trm_info->get_transposed_perm() == nullptr)
+            {
+                RETURN_IF_HIP_ERROR(rocsparse_hipMallocAsync(
+                    trm_info->get_ref_transposed_perm(), sizeof(I) * nnz, stream));
+                RETURN_IF_HIP_ERROR(rocsparse_hipMallocAsync(
+                    trm_info->get_ref_transposed_col_ind(), sizeof(J) * nnz, stream));
+            }
 
             RETURN_IF_HIP_ERROR(hipStreamSynchronize(stream));
 
             I* transposed_perm = (I*)trm_info->get_transposed_perm();
-            // Create identity permutation
+
+            // Create identity permutation in BOTH buffers
+            // This is critical because radix_sort_pairs may swap current/alternate
+            // and we need both buffers to have valid data initially
             RETURN_IF_ROCSPARSE_ERROR(
                 rocsparse::create_identity_permutation_template(handle, nnz, transposed_perm));
+
+            RETURN_IF_ROCSPARSE_ERROR(
+                rocsparse::create_identity_permutation_template(handle, nnz, tmp_work2));
 
             // Stable sort COO by columns
             J* transposed_col_ind = (J*)trm_info->get_transposed_col_ind();
@@ -177,16 +227,46 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
     // rocprim buffer
     void* rocprim_buffer = reinterpret_cast<void*>(ptr);
 
-    // Allocate buffer to hold diagonal entry point
-    RETURN_IF_HIP_ERROR(
-        rocsparse_hipMallocAsync(trm_info->get_ref_diag_ind(), sizeof(I) * m, stream));
+    // Check if we need to reallocate diag_ind and row_map
+    // These should always match the current dimension m
+    bool need_realloc_main = false;
+    if(trm_info->get_diag_ind() == nullptr || trm_info->get_row_map() == nullptr)
+    {
+        need_realloc_main = true;
+    }
+    else if(trm_info->get_m() != m)
+    {
+        need_realloc_main = true;
+
+        void** ref_diag_ind = trm_info->get_ref_diag_ind();
+        if(*ref_diag_ind != nullptr)
+        {
+            RETURN_IF_HIP_ERROR(rocsparse_hipFreeAsync(*ref_diag_ind, stream));
+            *ref_diag_ind = nullptr;
+        }
+
+        void** ref_row_map = trm_info->get_ref_row_map();
+        if(*ref_row_map != nullptr)
+        {
+            RETURN_IF_HIP_ERROR(rocsparse_hipFreeAsync(*ref_row_map, stream));
+            *ref_row_map = nullptr;
+        }
+
+        RETURN_IF_HIP_ERROR(hipStreamSynchronize(stream));
+    }
+
+    // Allocate buffers only if needed
+    if(need_realloc_main)
+    {
+        RETURN_IF_HIP_ERROR(
+            rocsparse_hipMallocAsync(trm_info->get_ref_diag_ind(), sizeof(I) * m, stream));
+
+        RETURN_IF_HIP_ERROR(
+            rocsparse_hipMallocAsync(trm_info->get_ref_row_map(), sizeof(J) * m, stream));
+    }
 
     // Allocate buffer to hold zero pivot
     pivot_info->create_zero_pivot_async(rocsparse::get_indextype<J>(), stream);
-
-    // Allocate buffer to hold row map
-    RETURN_IF_HIP_ERROR(
-        rocsparse_hipMallocAsync(trm_info->get_ref_row_map(), sizeof(J) * m, stream));
 
     //
     // Synchronization needed.

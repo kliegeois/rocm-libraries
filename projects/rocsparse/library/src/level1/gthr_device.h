@@ -39,6 +39,7 @@ namespace rocsparse
             return;
         }
 
+        //
         x_val[idx] = y[x_ind[idx] - idx_base];
     }
 }

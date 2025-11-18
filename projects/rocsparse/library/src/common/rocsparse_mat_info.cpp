@@ -269,7 +269,6 @@ rocsparse::sorted_coo2csr_info_t* _rocsparse_mat_info::get_sorted_coo2csr_info()
 
 _rocsparse_mat_info::~_rocsparse_mat_info()
 {
-
     // Clear csrgemm info struct
     WARNING_IF_ROCSPARSE_ERROR(rocsparse::destroy_csrgemm_info(this->csrgemm_info));
 
@@ -310,4 +309,6 @@ _rocsparse_mat_info::~_rocsparse_mat_info()
         delete sorted_coo2csr_info;
         this->set_sorted_coo2csr_info(nullptr);
     }
+
+    WARNING_IF_HIP_ERROR(hipDeviceSynchronize());
 }

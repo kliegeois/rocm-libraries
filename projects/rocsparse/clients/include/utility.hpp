@@ -378,8 +378,12 @@ public:
     {
         ROCSPARSE_CLIENTS_ROUTINE_TRACE;
 
-        rocsparse_destroy_mat_info(this->info);
-        const rocsparse_status status = rocsparse_create_mat_info(&this->info);
+        rocsparse_status status = rocsparse_destroy_mat_info(this->info);
+        if(status != rocsparse_status_success)
+        {
+            throw(status);
+        }
+        status = rocsparse_create_mat_info(&this->info);
         if(status != rocsparse_status_success)
         {
             throw(status);
