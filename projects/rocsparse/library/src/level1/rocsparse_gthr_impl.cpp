@@ -39,9 +39,13 @@ rocsparse_status rocsparse::gthr_template(rocsparse_handle     handle,
                                           rocsparse_index_base idx_base)
 {
     ROCSPARSE_ROUTINE_TRACE;
+    hipDeviceSynchronize();
+    std::cout << "gthr_template:" << __LINE__ << ": start\n";
 
     // Check for valid handle
     ROCSPARSE_CHECKARG_HANDLE(0, handle);
+    hipDeviceSynchronize();
+    std::cout << "gthr_template:" << __LINE__ << ": checked handle\n";
 
     // Logging
     rocsparse::log_trace(handle,
@@ -54,13 +58,19 @@ rocsparse_status rocsparse::gthr_template(rocsparse_handle     handle,
 
     // Check index base
     ROCSPARSE_CHECKARG_ENUM(5, idx_base);
+    hipDeviceSynchronize();
+    std::cout << "gthr_template:" << __LINE__ << ": checked index base\n";
 
     // Check size
     ROCSPARSE_CHECKARG_SIZE(1, nnz);
+    hipDeviceSynchronize();
+    std::cout << "gthr_template:" << __LINE__ << ": checked size, nnz=" << nnz << "\n";
 
     // Quick return if possible
     if(nnz == 0)
     {
+        hipDeviceSynchronize();
+        std::cout << "gthr_template:" << __LINE__ << ": early return (nnz=0)\n";
         return rocsparse_status_success;
     }
 
@@ -68,13 +78,25 @@ rocsparse_status rocsparse::gthr_template(rocsparse_handle     handle,
     ROCSPARSE_CHECKARG_POINTER(2, y);
     ROCSPARSE_CHECKARG_POINTER(3, x_val);
     ROCSPARSE_CHECKARG_POINTER(4, x_ind);
+    hipDeviceSynchronize();
+    std::cout << "gthr_template:" << __LINE__ << ": checked pointers\n";
 
     // Stream
     hipStream_t stream = handle->stream;
+    hipDeviceSynchronize();
+    std::cout << "gthr_template:" << __LINE__ << ": got stream\n";
 
 #define GTHR_DIM 512
     dim3 gthr_blocks((nnz - 1) / GTHR_DIM + 1);
     dim3 gthr_threads(GTHR_DIM);
+    hipDeviceSynchronize();
+    std::cout << "gthr_template:" << __LINE__ << ": setup kernel dims, blocks=" << gthr_blocks.x
+              << "\n";
+
+    hipDeviceSynchronize();
+    std::cout << "gthr_template:" << __LINE__ << ": launching kernel with args: nnz=" << nnz
+              << ", y=" << (const void*)y << ", x_val=" << (void*)x_val
+              << ", x_ind=" << (const void*)x_ind << ", idx_base=" << idx_base << "\n";
 
     RETURN_IF_HIPLAUNCHKERNELGGL_ERROR((rocsparse::gthr_kernel<GTHR_DIM, I, T>),
                                        gthr_blocks,
@@ -87,6 +109,8 @@ rocsparse_status rocsparse::gthr_template(rocsparse_handle     handle,
                                        (const I*)x_ind,
                                        idx_base);
 #undef GTHR_DIM
+    hipDeviceSynchronize();
+    std::cout << "gthr_template:" << __LINE__ << ": kernel completed successfully\n";
     return rocsparse_status_success;
 }
 

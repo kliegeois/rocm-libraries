@@ -229,9 +229,9 @@ void testing_csrsv(const Arguments& arg)
 
     // test 1.
 
-    #define SYNC_PRINT()                     \
-        hipDeviceSynchronize();               \
-        std::cout << __LINE__ << ": test\n";
+#define SYNC_PRINT()        \
+    hipDeviceSynchronize(); \
+    std::cout << __LINE__ << ": test\n";
 
     if(arg.unit_check)
     {
@@ -241,6 +241,8 @@ void testing_csrsv(const Arguments& arg)
         SYNC_PRINT();
 
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
+        CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
+        CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
 
         SYNC_PRINT();
 
@@ -248,6 +250,8 @@ void testing_csrsv(const Arguments& arg)
 
         SYNC_PRINT();
 
+        CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
+        CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
 
         SYNC_PRINT();
