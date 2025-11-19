@@ -62,36 +62,66 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
         hipDeviceSynchronize();
         std::cout << "trm_analysis:" << __LINE__ << ": transposed case\n";
 
-        // Free any existing transposed arrays before reallocating
-        // This is necessary when the analysis is called multiple times
-        void** ref_transposed_perm = trm_info->get_ref_transposed_perm();
-        if(*ref_transposed_perm != nullptr)
+        // Check if analysis was already done: buffers exist and dimensions already stored
+        bool analysis_already_done = (trm_info->get_transposed_perm() != nullptr
+                                      && trm_info->get_transposed_row_ptr() != nullptr
+                                      && trm_info->get_transposed_col_ind() != nullptr
+                                      && trm_info->get_m() == m && trm_info->get_nnz() == nnz);
+
+        if(analysis_already_done)
         {
-            std::cout << "trm_analysis:" << __LINE__ << ": freeing existing transposed_perm\n";
-            RETURN_IF_HIP_ERROR(rocsparse_hipFreeAsync(*ref_transposed_perm, stream));
-            *ref_transposed_perm = nullptr;
+            std::cout << "trm_analysis:" << __LINE__
+                      << ": reusing existing transposed arrays (m=" << m << ", nnz=" << nnz
+                      << "), skipping transpose computation\n";
+            // Buffers already contain the transposed matrix from previous call
+            // Skip all transpose logic below and return
+            return rocsparse_status_success;
         }
 
-        void** ref_transposed_row_ptr = trm_info->get_ref_transposed_row_ptr();
-        if(*ref_transposed_row_ptr != nullptr)
-        {
-            std::cout << "trm_analysis:" << __LINE__ << ": freeing existing transposed_row_ptr\n";
-            RETURN_IF_HIP_ERROR(rocsparse_hipFreeAsync(*ref_transposed_row_ptr, stream));
-            *ref_transposed_row_ptr = nullptr;
-        }
+        // Check if dimensions changed and we need to free old buffers
+        bool buffers_exist = (trm_info->get_transposed_perm() != nullptr
+                              || trm_info->get_transposed_row_ptr() != nullptr
+                              || trm_info->get_transposed_col_ind() != nullptr);
 
-        void** ref_transposed_col_ind = trm_info->get_ref_transposed_col_ind();
-        if(*ref_transposed_col_ind != nullptr)
+        if(buffers_exist && (trm_info->get_m() != m || trm_info->get_nnz() != nnz))
         {
-            std::cout << "trm_analysis:" << __LINE__ << ": freeing existing transposed_col_ind\n";
-            RETURN_IF_HIP_ERROR(rocsparse_hipFreeAsync(*ref_transposed_col_ind, stream));
-            *ref_transposed_col_ind = nullptr;
-        }
+            std::cout << "trm_analysis:" << __LINE__
+                      << ": dimensions changed (m: " << trm_info->get_m() << " -> " << m
+                      << ", nnz: " << trm_info->get_nnz() << " -> " << nnz
+                      << "), freeing old buffers\n";
 
-        // CRITICAL: Must synchronize after freeing before reallocating to same pointers
-        // Otherwise the new allocations may fail or reuse stale addresses
-        RETURN_IF_HIP_ERROR(hipStreamSynchronize(stream));
-        std::cout << "trm_analysis:" << __LINE__ << ": synchronized after freeing old buffers\n";
+            // Free existing buffers
+            void** ref_transposed_perm = trm_info->get_ref_transposed_perm();
+            if(*ref_transposed_perm != nullptr)
+            {
+                std::cout << "trm_analysis:" << __LINE__ << ": freeing existing transposed_perm\n";
+                RETURN_IF_HIP_ERROR(rocsparse_hipFreeAsync(*ref_transposed_perm, stream));
+                *ref_transposed_perm = nullptr;
+            }
+
+            void** ref_transposed_row_ptr = trm_info->get_ref_transposed_row_ptr();
+            if(*ref_transposed_row_ptr != nullptr)
+            {
+                std::cout << "trm_analysis:" << __LINE__
+                          << ": freeing existing transposed_row_ptr\n";
+                RETURN_IF_HIP_ERROR(rocsparse_hipFreeAsync(*ref_transposed_row_ptr, stream));
+                *ref_transposed_row_ptr = nullptr;
+            }
+
+            void** ref_transposed_col_ind = trm_info->get_ref_transposed_col_ind();
+            if(*ref_transposed_col_ind != nullptr)
+            {
+                std::cout << "trm_analysis:" << __LINE__
+                          << ": freeing existing transposed_col_ind\n";
+                RETURN_IF_HIP_ERROR(rocsparse_hipFreeAsync(*ref_transposed_col_ind, stream));
+                *ref_transposed_col_ind = nullptr;
+            }
+
+            // CRITICAL: Must synchronize after freeing before reallocating
+            RETURN_IF_HIP_ERROR(hipStreamSynchronize(stream));
+            std::cout << "trm_analysis:" << __LINE__
+                      << ": synchronized after freeing old buffers\n";
+        }
 
         // Buffer
         char* ptr = reinterpret_cast<char*>(temp_buffer);
@@ -115,17 +145,28 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
         hipDeviceSynchronize();
         std::cout << "trm_analysis:" << __LINE__ << ": copied col_ind\n";
 
-        RETURN_IF_HIP_ERROR(rocsparse_hipMallocAsync(
-            trm_info->get_ref_transposed_row_ptr(), sizeof(I) * (m + 1), stream));
+        // Allocate transposed arrays if they don't exist
+        if(trm_info->get_transposed_row_ptr() == nullptr)
+        {
+            std::cout << "trm_analysis:" << __LINE__ << ": allocating transposed_row_ptr\n";
+            RETURN_IF_HIP_ERROR(rocsparse_hipMallocAsync(
+                trm_info->get_ref_transposed_row_ptr(), sizeof(I) * (m + 1), stream));
+        }
 
         if(nnz > 0)
         {
             hipDeviceSynchronize();
-            std::cout << "trm_analysis:" << __LINE__ << ": nnz > 0, allocating transpose arrays\n";
-            RETURN_IF_HIP_ERROR(rocsparse_hipMallocAsync(
-                trm_info->get_ref_transposed_perm(), sizeof(I) * nnz, stream));
-            RETURN_IF_HIP_ERROR(rocsparse_hipMallocAsync(
-                trm_info->get_ref_transposed_col_ind(), sizeof(J) * nnz, stream));
+            std::cout << "trm_analysis:" << __LINE__ << ": nnz > 0\n";
+
+            if(trm_info->get_transposed_perm() == nullptr)
+            {
+                std::cout << "trm_analysis:" << __LINE__
+                          << ": allocating transposed_perm and transposed_col_ind\n";
+                RETURN_IF_HIP_ERROR(rocsparse_hipMallocAsync(
+                    trm_info->get_ref_transposed_perm(), sizeof(I) * nnz, stream));
+                RETURN_IF_HIP_ERROR(rocsparse_hipMallocAsync(
+                    trm_info->get_ref_transposed_col_ind(), sizeof(J) * nnz, stream));
+            }
 
             RETURN_IF_HIP_ERROR(hipStreamSynchronize(stream));
 
@@ -145,6 +186,12 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
                 rocsparse::create_identity_permutation_template(handle, nnz, tmp_work2));
             std::cout << "trm_analysis:" << __LINE__
                       << ": created identity permutation in tmp_work2\n";
+
+            // CRITICAL: Synchronize to ensure identity permutations are written
+            // before radix_sort_pairs reads them
+            RETURN_IF_HIP_ERROR(hipStreamSynchronize(stream));
+            std::cout << "trm_analysis:" << __LINE__
+                      << ": synchronized after identity permutation creation\n";
 
             // Stable sort COO by columns
             J* transposed_col_ind = (J*)trm_info->get_transposed_col_ind();
@@ -249,9 +296,12 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
                 I idx = h_transposed_perm[i] - rocsparse_index_base_zero;
                 if(idx < 0 || idx >= nnz)
                 {
-                    std::cout << "trm_analysis:" << __LINE__ << ": ERROR: transposed_perm[" << i
-                              << "] = " << h_transposed_perm[i] << " is out of bounds [0, " << nnz
-                              << ")\n";
+                    if(valid)
+                    {
+                        std::cout << "trm_analysis:" << __LINE__ << ": ERROR: transposed_perm[" << i
+                                  << "] = " << h_transposed_perm[i] << " is out of bounds [0, "
+                                  << nnz << ")\n";
+                    }
                     valid = false;
                 }
             }
@@ -322,41 +372,61 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
     hipDeviceSynchronize();
     std::cout << "trm_analysis:" << __LINE__ << ": rocprim_buffer setup\n";
 
-    // Free existing buffers before reallocating (for repeated analysis calls)
-    void** ref_diag_ind = trm_info->get_ref_diag_ind();
-    if(*ref_diag_ind != nullptr)
+    // Check if we need to reallocate diag_ind and row_map
+    // These should always match the current dimension m
+    bool need_realloc_main = false;
+    if(trm_info->get_diag_ind() == nullptr || trm_info->get_row_map() == nullptr)
     {
-        std::cout << "trm_analysis:" << __LINE__ << ": freeing existing diag_ind\n";
-        RETURN_IF_HIP_ERROR(rocsparse_hipFreeAsync(*ref_diag_ind, stream));
-        *ref_diag_ind = nullptr;
+        need_realloc_main = true;
+        std::cout << "trm_analysis:" << __LINE__ << ": main arrays not allocated, will allocate\n";
+    }
+    else if(trm_info->get_m() != m)
+    {
+        need_realloc_main = true;
+        std::cout << "trm_analysis:" << __LINE__ << ": dimension m changed, will reallocate\n";
+
+        void** ref_diag_ind = trm_info->get_ref_diag_ind();
+        if(*ref_diag_ind != nullptr)
+        {
+            std::cout << "trm_analysis:" << __LINE__ << ": freeing existing diag_ind\n";
+            RETURN_IF_HIP_ERROR(rocsparse_hipFreeAsync(*ref_diag_ind, stream));
+            *ref_diag_ind = nullptr;
+        }
+
+        void** ref_row_map = trm_info->get_ref_row_map();
+        if(*ref_row_map != nullptr)
+        {
+            std::cout << "trm_analysis:" << __LINE__ << ": freeing existing row_map\n";
+            RETURN_IF_HIP_ERROR(rocsparse_hipFreeAsync(*ref_row_map, stream));
+            *ref_row_map = nullptr;
+        }
+
+        RETURN_IF_HIP_ERROR(hipStreamSynchronize(stream));
+    }
+    else
+    {
+        std::cout << "trm_analysis:" << __LINE__ << ": reusing existing main arrays (m=" << m
+                  << ")\n";
     }
 
-    void** ref_row_map = trm_info->get_ref_row_map();
-    if(*ref_row_map != nullptr)
+    // Allocate buffers only if needed
+    if(need_realloc_main)
     {
-        std::cout << "trm_analysis:" << __LINE__ << ": freeing existing row_map\n";
-        RETURN_IF_HIP_ERROR(rocsparse_hipFreeAsync(*ref_row_map, stream));
-        *ref_row_map = nullptr;
+        RETURN_IF_HIP_ERROR(
+            rocsparse_hipMallocAsync(trm_info->get_ref_diag_ind(), sizeof(I) * m, stream));
+        hipDeviceSynchronize();
+        std::cout << "trm_analysis:" << __LINE__ << ": allocated diag_ind\n";
+
+        RETURN_IF_HIP_ERROR(
+            rocsparse_hipMallocAsync(trm_info->get_ref_row_map(), sizeof(J) * m, stream));
+        hipDeviceSynchronize();
+        std::cout << "trm_analysis:" << __LINE__ << ": allocated row_map\n";
     }
 
-    RETURN_IF_HIP_ERROR(hipStreamSynchronize(stream));
-
-    // Allocate buffer to hold diagonal entry point
-    RETURN_IF_HIP_ERROR(
-        rocsparse_hipMallocAsync(trm_info->get_ref_diag_ind(), sizeof(I) * m, stream));
-    hipDeviceSynchronize();
-    std::cout << "trm_analysis:" << __LINE__ << ": allocated diag_ind\n";
-
-    // Allocate buffer to hold zero pivot
+    // Allocate buffer to hold zero pivot (always reallocate as it's small and simple)
     pivot_info->create_zero_pivot_async(rocsparse::get_indextype<J>(), stream);
     hipDeviceSynchronize();
     std::cout << "trm_analysis:" << __LINE__ << ": created zero_pivot\n";
-
-    // Allocate buffer to hold row map
-    RETURN_IF_HIP_ERROR(
-        rocsparse_hipMallocAsync(trm_info->get_ref_row_map(), sizeof(J) * m, stream));
-    hipDeviceSynchronize();
-    std::cout << "trm_analysis:" << __LINE__ << ": allocated row_map\n";
 
     //
     // Synchronization needed.
