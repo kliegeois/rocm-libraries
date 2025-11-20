@@ -218,7 +218,7 @@ void testing_csrsv(const Arguments& arg)
     device_csr_matrix<T>       dA(hA);
     device_dense_matrix<T>     dx(hx), dy(M, 1);
     host_scalar<rocsparse_int> h_analysis_pivot, h_solve_pivot;
-    size_t dbuffer_size;
+    size_t                     dbuffer_size;
 
     // Obtain required buffer size
     void* dbuffer;
@@ -228,38 +228,38 @@ void testing_csrsv(const Arguments& arg)
         CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
     }
 
-    #define SYNC_PRINT()                     \
-        hipDeviceSynchronize();               \
-        std::cout << __LINE__ << ": test\n";
- 
+#define SYNC_PRINT()        \
+    hipDeviceSynchronize(); \
+    std::cout << __FILE__ << ":" << __LINE__ << " : test\n ";
+
     if(arg.unit_check)
     {
         info.reset();
- 
+
         SYNC_PRINT();
- 
+
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
         CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
         CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
         CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
- 
+
         SYNC_PRINT();
- 
+
         info.reset();
- 
+
         SYNC_PRINT();
- 
+
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
         CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
         CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
         CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
- 
+
         SYNC_PRINT();
- 
+
         // Quick return if possible
         std::cout << " completed " << std::endl;
         return;

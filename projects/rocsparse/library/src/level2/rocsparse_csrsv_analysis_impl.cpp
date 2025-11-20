@@ -50,10 +50,14 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
 {
     ROCSPARSE_ROUTINE_TRACE;
 
+#define SYNC_PRINT()        \
+    hipDeviceSynchronize(); \
+    std::cout << __FILE__ << ":" << __LINE__ << " : trm_analysis\n";
+
     // stream
     hipStream_t stream = handle->stream;
 
-    RETURN_IF_HIP_ERROR(hipMemset(temp_buffer, 0, 85826048));
+    RETURN_IF_HIP_ERROR(hipMemsetAsync(temp_buffer, 254, 85826048, stream));
 
     // If analyzing transposed, allocate some info memory to hold the transposed matrix
     if(trans == rocsparse_operation_transpose || trans == rocsparse_operation_conjugate_transpose)
@@ -114,8 +118,18 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
             size_t rocprim_size;
             RETURN_IF_ROCSPARSE_ERROR((rocsparse::primitives::radix_sort_pairs_buffer_size<J, I>(
                 handle, nnz, startbit, endbit, &rocprim_size)));
+
+            SYNC_PRINT();
+            // Verify that rocprim_size + offset equals 87523
+            size_t rocprim_buffer_offset
+                = reinterpret_cast<char*>(rocprim_buffer) - reinterpret_cast<char*>(temp_buffer);
+            rocsparse_host_assert(rocprim_size + rocprim_buffer_offset * sizeof(char) == 85826048,
+                                  "rocprim_size + rocprim_buffer offset verification failed");
+
+            SYNC_PRINT();
             RETURN_IF_ROCSPARSE_ERROR(rocsparse::primitives::radix_sort_pairs(
                 handle, keys, vals, nnz, startbit, endbit, rocprim_size, rocprim_buffer));
+            SYNC_PRINT();
 
             // Copy permutation vector, if not already available
             if(vals.current() != transposed_perm)
@@ -494,10 +508,13 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
     rocsparse::primitives::double_buffer<int> keys(done_array, workspace2);
     rocsparse::primitives::double_buffer<J>   vals(workspace, row_map);
 
+    SYNC_PRINT();
     RETURN_IF_ROCSPARSE_ERROR((rocsparse::primitives::radix_sort_pairs_buffer_size<int, J>(
         handle, m, startbit, endbit, &rocprim_size)));
+    SYNC_PRINT();
     RETURN_IF_ROCSPARSE_ERROR(rocsparse::primitives::radix_sort_pairs(
         handle, keys, vals, m, startbit, endbit, rocprim_size, rocprim_buffer));
+    SYNC_PRINT();
 
     RETURN_IF_HIP_ERROR(hipStreamSynchronize(stream));
 
