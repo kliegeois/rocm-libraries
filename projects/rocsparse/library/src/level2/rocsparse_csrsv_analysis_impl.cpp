@@ -35,6 +35,21 @@
 #include "rocsparse_primitives.hpp"
 #include "rocsparse_utility.hpp"
 
+inline uint32_t rocsparse_array_hash(const void* data, size_t size)
+{
+    void* buffer                   = malloc(size);
+    std::ignore                    = hipMemcpy(buffer, data, size, hipMemcpyDefault);
+    const unsigned char* byte_data = static_cast<const unsigned char*>(buffer);
+    uint32_t             hash      = 0x811C9DC5; // FNV_prime_32
+    for(size_t i = 0; i < size; ++i)
+    {
+        hash ^= byte_data[i];
+        hash *= 0x01000193; // FNV_offset_basis_32
+    }
+    free(buffer);
+    return hash;
+}
+
 template <typename I, typename J, typename T>
 rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
                                          rocsparse_operation       trans,
@@ -50,9 +65,9 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
 {
     ROCSPARSE_ROUTINE_TRACE;
 
-#define SYNC_PRINT()        \
-    hipDeviceSynchronize(); \
-    std::cout << __FILE__ << ":" << __LINE__ << " : trm_analysis\n";
+#define SYNC_PRINT()                             \
+    RETURN_IF_HIP_ERROR(hipDeviceSynchronize()); \
+    std::cout << "------ " << __FILE__ << ":" << __LINE__ << "\n";
 
     // stream
     hipStream_t stream = handle->stream;
@@ -127,6 +142,88 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
                                   "rocprim_size + rocprim_buffer offset verification failed");
 
             SYNC_PRINT();
+            if(1)
+            {
+                // Print hash, size, and address for tmp_work1
+                {
+                    size_t keys_size = sizeof(J) * nnz;
+                    std::cout << "--------- tmp_work1 address=" << tmp_work1
+                              << " size=" << keys_size
+                              << " hash=" << rocsparse_array_hash(tmp_work1, keys_size) << "\n";
+                }
+
+                // Print hash, size, and address for transposed_col_ind
+                {
+                    size_t transposed_col_ind_size = sizeof(J) * nnz;
+                    std::cout << "--------- transposed_col_ind address=" << transposed_col_ind
+                              << " size=" << transposed_col_ind_size << " hash="
+                              << rocsparse_array_hash(transposed_col_ind, transposed_col_ind_size)
+                              << "\n";
+                }
+                // Print hash, size, and address for transposed_perm
+                {
+                    size_t transposed_perm_size = sizeof(I) * nnz;
+                    std::cout << "--------- transposed_perm address=" << transposed_perm
+                              << " size=" << transposed_perm_size << " hash="
+                              << rocsparse_array_hash(transposed_perm, transposed_perm_size)
+                              << "\n";
+                }
+
+                // Print hash, size, and address for tmp_work2
+                {
+                    size_t tmp_work2_size = sizeof(I) * nnz;
+                    std::cout << "--------- tmp_work2 address=" << tmp_work2
+                              << " size=" << tmp_work2_size
+                              << " hash=" << rocsparse_array_hash(tmp_work2, tmp_work2_size)
+                              << "\n";
+                }
+
+                // Print hash, size, and address for keys.current()
+                {
+                    size_t keys_size = sizeof(J) * nnz;
+                    std::cout << "--------- keys.current() address=" << keys.current()
+                              << " size=" << keys_size
+                              << " hash=" << rocsparse_array_hash(keys.current(), keys_size)
+                              << "\n";
+                }
+
+                // Print hash, size, and address for keys.alternate()
+                {
+                    size_t keys_size = sizeof(J) * nnz;
+                    std::cout << "--------- keys.alternate() address=" << keys.alternate()
+                              << " size=" << keys_size
+                              << " hash=" << rocsparse_array_hash(keys.alternate(), keys_size)
+                              << "\n";
+                }
+
+                // Print hash, size, and address for vals.current()
+                {
+                    size_t vals_size = sizeof(I) * nnz;
+                    std::cout << "--------- vals.current() address=" << vals.current()
+                              << " size=" << vals_size
+                              << " hash=" << rocsparse_array_hash(vals.current(), vals_size)
+                              << "\n";
+                }
+
+                // Print hash, size, and address for vals.alternate()
+                {
+                    size_t vals_size = sizeof(I) * nnz;
+                    std::cout << "--------- vals.alternate() address=" << vals.alternate()
+                              << " size=" << vals_size
+                              << " hash=" << rocsparse_array_hash(vals.alternate(), vals_size)
+                              << "\n";
+                }
+
+                // Print hash, size, and address for rocprim_buffer
+                {
+                    std::cout << "--------- rocprim_buffer address=" << rocprim_buffer
+                              << " size=" << rocprim_size
+                              << " hash=" << rocsparse_array_hash(rocprim_buffer, rocprim_size)
+                              << "\n";
+                }
+            }
+            SYNC_PRINT();
+
             RETURN_IF_ROCSPARSE_ERROR(rocsparse::primitives::radix_sort_pairs(
                 handle, keys, vals, nnz, startbit, endbit, rocprim_size, rocprim_buffer));
             SYNC_PRINT();

@@ -228,9 +228,9 @@ void testing_csrsv(const Arguments& arg)
         CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
     }
 
-#define SYNC_PRINT()        \
-    hipDeviceSynchronize(); \
-    std::cout << __FILE__ << ":" << __LINE__ << " : test\n ";
+#define SYNC_PRINT()                         \
+    CHECK_HIP_ERROR(hipDeviceSynchronize()); \
+    std::cout << "\n--- " << __FILE__ << ":" << __LINE__ << "\n ";
 
     if(arg.unit_check)
     {
