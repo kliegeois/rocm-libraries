@@ -61,6 +61,8 @@ bool validate_array(const T* data, size_t size, T min_val, T max_val)
     {
         if(host_data[i] < min_val || host_data[i] > max_val)
         {
+            std::cout << "Validation failed at index " << i << ": " << host_data[i] << " not in ["
+                      << min_val << ", " << max_val << "]\n";
             is_valid = false;
             break;
         }
@@ -85,9 +87,9 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
     ROCSPARSE_ROUTINE_TRACE;
 
     const bool call_permute = true;
-    const bool call_hash    = true;
+    const bool call_hash    = false;
 
-    const bool debug_log = true;
+    const bool debug_log = false;
 
 #define SYNC_PRINT()                             \
     RETURN_IF_HIP_ERROR(hipDeviceSynchronize()); \
@@ -97,7 +99,7 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
     // stream
     hipStream_t stream = handle->stream;
 
-    //RETURN_IF_HIP_ERROR(hipMemsetAsync(temp_buffer, 254, 85826048, stream));
+    RETURN_IF_HIP_ERROR(hipMemsetAsync(temp_buffer, 0, 85826048, stream));
 
     // If analyzing transposed, allocate some info memory to hold the transposed matrix
     if(trans == rocsparse_operation_transpose || trans == rocsparse_operation_conjugate_transpose)
@@ -146,6 +148,16 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
             // Create identity permutation
             RETURN_IF_ROCSPARSE_ERROR(
                 rocsparse::create_identity_permutation_template(handle, nnz, transposed_perm));
+
+            if(!validate_array(transposed_perm, nnz, static_cast<I>(0), static_cast<I>(nnz - 1)))
+            {
+                if(debug_log)
+                {
+                    SYNC_PRINT();
+                    std::cout << "--------- Validation failed for transposed_perm\n";
+                }
+                RETURN_IF_ROCSPARSE_ERROR(rocsparse_status_internal_error);
+            }
 
             // Stable sort COO by columns
             J* transposed_col_ind = (J*)trm_info->get_transposed_col_ind();
@@ -277,11 +289,69 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
                     }
                 }
             }
+
+            // Validate tmp_work1
+            if(!validate_array(tmp_work1, nnz, static_cast<J>(0), static_cast<J>(m - 1)))
+            {
+                if(debug_log)
+                {
+                    SYNC_PRINT();
+                    std::cout << "--------- Validation failed for tmp_work1\n";
+                }
+                RETURN_IF_ROCSPARSE_ERROR(rocsparse_status_internal_error);
+            }
+
+            // Validating transposed_col_ind is not necessary here
+
+            // Validate transposed_perm
+            if(!validate_array(transposed_perm, nnz, static_cast<I>(0), static_cast<I>(nnz - 1)))
+            {
+                if(debug_log)
+                {
+                    SYNC_PRINT();
+                    std::cout << "--------- Validation failed for transposed_perm\n";
+                }
+                RETURN_IF_ROCSPARSE_ERROR(rocsparse_status_internal_error);
+            }
+
             SYNC_PRINT();
 
             RETURN_IF_ROCSPARSE_ERROR(rocsparse::primitives::radix_sort_pairs(
                 handle, keys, vals, nnz, startbit, endbit, rocprim_size, rocprim_buffer));
             SYNC_PRINT();
+
+            // Validate tmp_work1
+            if(!validate_array(tmp_work1, nnz, static_cast<J>(0), static_cast<J>(m - 1)))
+            {
+                if(debug_log)
+                {
+                    SYNC_PRINT();
+                    std::cout << "--------- Validation failed for tmp_work1\n";
+                }
+                RETURN_IF_ROCSPARSE_ERROR(rocsparse_status_internal_error);
+            }
+
+            // Validate transposed_col_ind
+            if(!validate_array(transposed_col_ind, nnz, static_cast<J>(0), static_cast<J>(m - 1)))
+            {
+                if(debug_log)
+                {
+                    SYNC_PRINT();
+                    std::cout << "--------- Validation failed for transposed_col_ind\n";
+                }
+                RETURN_IF_ROCSPARSE_ERROR(rocsparse_status_internal_error);
+            }
+
+            // Validate transposed_perm
+            if(!validate_array(transposed_perm, nnz, static_cast<I>(0), static_cast<I>(nnz - 1)))
+            {
+                if(debug_log)
+                {
+                    SYNC_PRINT();
+                    std::cout << "--------- Validation failed for transposed_perm\n";
+                }
+                RETURN_IF_ROCSPARSE_ERROR(rocsparse_status_internal_error);
+            }
 
             if(call_hash)
             {
@@ -412,6 +482,7 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
                 {
                     if(debug_log)
                     {
+                        SYNC_PRINT();
                         std::cout << "--------- Validation failed for tmp_work1\n";
                     }
                     RETURN_IF_ROCSPARSE_ERROR(rocsparse_status_internal_error);
@@ -423,6 +494,7 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
                 {
                     if(debug_log)
                     {
+                        SYNC_PRINT();
                         std::cout << "--------- Validation failed for transposed_col_ind\n";
                     }
                     RETURN_IF_ROCSPARSE_ERROR(rocsparse_status_internal_error);
@@ -434,6 +506,7 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
                 {
                     if(debug_log)
                     {
+                        SYNC_PRINT();
                         std::cout << "--------- Validation failed for transposed_perm\n";
                     }
                     RETURN_IF_ROCSPARSE_ERROR(rocsparse_status_internal_error);
