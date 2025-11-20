@@ -65,14 +65,18 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
 {
     ROCSPARSE_ROUTINE_TRACE;
 
+    const bool debug_log    = false;
+    const bool call_permute = false;
+
 #define SYNC_PRINT()                             \
     RETURN_IF_HIP_ERROR(hipDeviceSynchronize()); \
-    std::cout << "------ " << __FILE__ << ":" << __LINE__ << "\n";
+    if(debug_log)                                \
+        std::cout << "------ " << __FILE__ << ":" << __LINE__ << "\n";
 
     // stream
     hipStream_t stream = handle->stream;
 
-    RETURN_IF_HIP_ERROR(hipMemsetAsync(temp_buffer, 254, 85826048, stream));
+    //RETURN_IF_HIP_ERROR(hipMemsetAsync(temp_buffer, 254, 85826048, stream));
 
     // If analyzing transposed, allocate some info memory to hold the transposed matrix
     if(trans == rocsparse_operation_transpose || trans == rocsparse_operation_conjugate_transpose)
@@ -142,84 +146,109 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
                                   "rocprim_size + rocprim_buffer offset verification failed");
 
             SYNC_PRINT();
-            if(1)
+
+            // Print hash, size, and address for tmp_work1
             {
-                // Print hash, size, and address for tmp_work1
+                size_t   keys_size = sizeof(J) * nnz;
+                uint32_t hash      = rocsparse_array_hash(tmp_work1, keys_size);
+
+                if(debug_log)
                 {
-                    size_t keys_size = sizeof(J) * nnz;
                     std::cout << "--------- tmp_work1 address=" << tmp_work1
-                              << " size=" << keys_size
-                              << " hash=" << rocsparse_array_hash(tmp_work1, keys_size) << "\n";
+                              << " size=" << keys_size << " hash=" << hash << "\n";
                 }
+            }
 
-                // Print hash, size, and address for transposed_col_ind
+            // Print hash, size, and address for transposed_col_ind
+            {
+                size_t   transposed_col_ind_size = sizeof(J) * nnz;
+                uint32_t hash = rocsparse_array_hash(transposed_col_ind, transposed_col_ind_size);
+
+                if(debug_log)
                 {
-                    size_t transposed_col_ind_size = sizeof(J) * nnz;
                     std::cout << "--------- transposed_col_ind address=" << transposed_col_ind
-                              << " size=" << transposed_col_ind_size << " hash="
-                              << rocsparse_array_hash(transposed_col_ind, transposed_col_ind_size)
-                              << "\n";
+                              << " size=" << transposed_col_ind_size << " hash=" << hash << "\n";
                 }
-                // Print hash, size, and address for transposed_perm
+            }
+            // Print hash, size, and address for transposed_perm
+            {
+                size_t   transposed_perm_size = sizeof(I) * nnz;
+                uint32_t hash = rocsparse_array_hash(transposed_perm, transposed_perm_size);
+
+                if(debug_log)
                 {
-                    size_t transposed_perm_size = sizeof(I) * nnz;
                     std::cout << "--------- transposed_perm address=" << transposed_perm
-                              << " size=" << transposed_perm_size << " hash="
-                              << rocsparse_array_hash(transposed_perm, transposed_perm_size)
-                              << "\n";
+                              << " size=" << transposed_perm_size << " hash=" << hash << "\n";
                 }
+            }
 
-                // Print hash, size, and address for tmp_work2
+            // Print hash, size, and address for tmp_work2
+            {
+                size_t   tmp_work2_size = sizeof(I) * nnz;
+                uint32_t hash           = rocsparse_array_hash(tmp_work2, tmp_work2_size);
+
+                if(debug_log)
                 {
-                    size_t tmp_work2_size = sizeof(I) * nnz;
                     std::cout << "--------- tmp_work2 address=" << tmp_work2
-                              << " size=" << tmp_work2_size
-                              << " hash=" << rocsparse_array_hash(tmp_work2, tmp_work2_size)
-                              << "\n";
+                              << " size=" << tmp_work2_size << " hash=" << hash << "\n";
                 }
+            }
 
-                // Print hash, size, and address for keys.current()
+            // Print hash, size, and address for keys.current()
+            {
+                size_t   keys_size = sizeof(J) * nnz;
+                uint32_t hash      = rocsparse_array_hash(keys.current(), keys_size);
+
+                if(debug_log)
                 {
-                    size_t keys_size = sizeof(J) * nnz;
                     std::cout << "--------- keys.current() address=" << keys.current()
-                              << " size=" << keys_size
-                              << " hash=" << rocsparse_array_hash(keys.current(), keys_size)
-                              << "\n";
+                              << " size=" << keys_size << " hash=" << hash << "\n";
                 }
+            }
 
-                // Print hash, size, and address for keys.alternate()
+            // Print hash, size, and address for keys.alternate()
+            {
+                size_t   keys_size = sizeof(J) * nnz;
+                uint32_t hash      = rocsparse_array_hash(keys.alternate(), keys_size);
+
+                if(debug_log)
                 {
-                    size_t keys_size = sizeof(J) * nnz;
                     std::cout << "--------- keys.alternate() address=" << keys.alternate()
-                              << " size=" << keys_size
-                              << " hash=" << rocsparse_array_hash(keys.alternate(), keys_size)
-                              << "\n";
+                              << " size=" << keys_size << " hash=" << hash << "\n";
                 }
+            }
 
-                // Print hash, size, and address for vals.current()
+            // Print hash, size, and address for vals.current()
+            {
+                size_t   vals_size = sizeof(I) * nnz;
+                uint32_t hash      = rocsparse_array_hash(vals.current(), vals_size);
+                if(debug_log)
                 {
-                    size_t vals_size = sizeof(I) * nnz;
                     std::cout << "--------- vals.current() address=" << vals.current()
-                              << " size=" << vals_size
-                              << " hash=" << rocsparse_array_hash(vals.current(), vals_size)
-                              << "\n";
+                              << " size=" << vals_size << " hash=" << hash << "\n";
                 }
+            }
 
-                // Print hash, size, and address for vals.alternate()
+            // Print hash, size, and address for vals.alternate()
+            {
+                size_t   vals_size = sizeof(I) * nnz;
+                uint32_t hash      = rocsparse_array_hash(vals.alternate(), vals_size);
+
+                if(debug_log)
                 {
-                    size_t vals_size = sizeof(I) * nnz;
                     std::cout << "--------- vals.alternate() address=" << vals.alternate()
-                              << " size=" << vals_size
-                              << " hash=" << rocsparse_array_hash(vals.alternate(), vals_size)
-                              << "\n";
+                              << " size=" << vals_size << " hash=" << hash << "\n";
                 }
+            }
 
-                // Print hash, size, and address for rocprim_buffer
+            // Print hash, size, and address for rocprim_buffer
+            {
+                uint32_t hash = rocsparse_array_hash(rocprim_buffer, rocprim_size);
+
+                if(debug_log)
                 {
                     std::cout << "--------- rocprim_buffer address=" << rocprim_buffer
-                              << " size=" << rocprim_size
-                              << " hash=" << rocsparse_array_hash(rocprim_buffer, rocprim_size)
-                              << "\n";
+                              << " size=" << rocprim_size << " hash=" << hash << "\n";
                 }
             }
             SYNC_PRINT();
@@ -247,13 +276,17 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
             RETURN_IF_ROCSPARSE_ERROR(
                 rocsparse::csr2coo_template(handle, csr_row_ptr, nnz, m, tmp_work1, descr->base));
 
-            // Permute column indices
-            RETURN_IF_ROCSPARSE_ERROR((rocsparse::gthr_template<I, J>(handle,
-                                                                      nnz,
-                                                                      tmp_work1,
-                                                                      transposed_col_ind,
-                                                                      transposed_perm,
-                                                                      rocsparse_index_base_zero)));
+            if(call_permute)
+            {
+                // Permute column indices
+                RETURN_IF_ROCSPARSE_ERROR(
+                    (rocsparse::gthr_template<I, J>(handle,
+                                                    nnz,
+                                                    tmp_work1,
+                                                    transposed_col_ind,
+                                                    transposed_perm,
+                                                    rocsparse_index_base_zero)));
+            }
         }
         else
         {
