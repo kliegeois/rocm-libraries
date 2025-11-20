@@ -232,6 +232,8 @@ void testing_csrsv(const Arguments& arg)
     CHECK_HIP_ERROR(hipDeviceSynchronize()); \
     std::cout << "\n--- " << __FILE__ << ":" << __LINE__ << "\n ";
 
+    const bool memset_dbuffer = false;
+
     if(arg.unit_check)
     {
         info.reset();
@@ -239,11 +241,22 @@ void testing_csrsv(const Arguments& arg)
         SYNC_PRINT();
 
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-        CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
+        if(memset_dbuffer)
+        {
+            CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
+        }
+        SYNC_PRINT();
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-        CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
+        if(memset_dbuffer)
+        {
+            CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
+        }
+        SYNC_PRINT();
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-        CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
+        if(memset_dbuffer)
+        {
+            CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
+        }
 
         SYNC_PRINT();
 
@@ -252,11 +265,22 @@ void testing_csrsv(const Arguments& arg)
         SYNC_PRINT();
 
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-        CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
+        if(memset_dbuffer)
+        {
+            CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
+        }
+        SYNC_PRINT();
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-        CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
+        if(memset_dbuffer)
+        {
+            CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
+        }
+        SYNC_PRINT();
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-        CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
+        if(memset_dbuffer)
+        {
+            CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
+        }
 
         SYNC_PRINT();
 
