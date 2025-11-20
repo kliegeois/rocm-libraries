@@ -1260,6 +1260,16 @@ struct onesweep_iteration_helper
                 // memory.
                 storage.global_digit_offsets[digit]
                     = global_digit_offsets_in[digit] - exclusive_digit_prefix[i] + exclusive_prefix;
+            
+                //if (flat_id == 0 && storage.global_digit_offsets[digit] > 200000)
+                //{
+                //    printf("Digit %u: global offset %u (global in %u - excl prefix %u + excl prefix sum %u)\n",
+                //           digit,
+                //           storage.global_digit_offsets[digit],
+                //           global_digit_offsets_in[digit],
+                //           exclusive_digit_prefix[i],
+                //           exclusive_prefix);
+                //}
             }
         }
 
@@ -1307,7 +1317,26 @@ struct onesweep_iteration_helper
                         = key_codec::extract_digit(key, bit, current_radix_bits, decomposer);
                     key_codec::decode_inplace(key, decomposer);
                     const Offset global_offset        = storage.global_digit_offsets[digit];
+                    //// issue is here due to global_offset
+                    //if (148770 < rank + global_offset)
+                    //{
+                    //    //if (flat_id == 0 && block_id == 0) {
+                    //    //    printf("Writing key at global offset %u: key %u (rank %u - x %u + n*BlockSize %u + flat_id %u)\n",
+                    //    //        rank + global_offset,
+                    //    //        static_cast<unsigned int>(key),
+                    //    //        rank,
+                    //    //        x,
+                    //    //        n * BlockSize,
+                    //    //        flat_id);
+                    //    //}   
+                    //}
+                    //else
+                    //{
+                    //    keys_output[rank + global_offset] = key;
+                    //}
+
                     keys_output[rank + global_offset] = key;
+
                     if constexpr(with_values)
                     {
                         digits[n + j * NKey] = digit;

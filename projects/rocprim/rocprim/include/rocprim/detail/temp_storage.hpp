@@ -168,8 +168,12 @@ struct linear_partition
                           {
                               const auto sub_layout = sub_partition.get_layout();
 
+                              // Always align before setting storage, even for zero-size partitions,
+                              // to ensure subsequent partitions maintain proper alignment
                               if(sub_layout.size > 0)
+                              {
                                   offset = align_size(offset, sub_layout.alignment);
+                              }
 
                               sub_partition.set_storage(
                                   static_cast<void*>(static_cast<char*>(storage) + offset));

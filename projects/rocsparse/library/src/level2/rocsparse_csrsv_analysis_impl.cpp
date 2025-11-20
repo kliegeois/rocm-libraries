@@ -53,6 +53,8 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
     // stream
     hipStream_t stream = handle->stream;
 
+    RETURN_IF_HIP_ERROR(hipMemset(temp_buffer, 0, 85826048));
+
     // If analyzing transposed, allocate some info memory to hold the transposed matrix
     if(trans == rocsparse_operation_transpose || trans == rocsparse_operation_conjugate_transpose)
     {

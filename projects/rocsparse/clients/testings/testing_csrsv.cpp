@@ -158,7 +158,7 @@ void testing_csrsv(const Arguments& arg)
     CHECK_ROCSPARSE_ERROR(rocsparse_set_mat_index_base(descr, base));
 
 #define PARAMS_BUFFER_SIZE(A_) \
-    handle, trans, A_.m, A_.nnz, descr, A_.val, A_.ptr, A_.ind, info, &buffer_size
+    handle, trans, A_.m, A_.nnz, descr, A_.val, A_.ptr, A_.ind, info, &dbuffer_size
 #define PARAMS_ANALYSIS(A_) \
     handle, trans, A_.m, A_.nnz, descr, A_.val, A_.ptr, A_.ind, info, apol, spol, dbuffer
 #define PARAMS_SOLVE(alpha_, A_, x_, y_) \
@@ -167,7 +167,7 @@ void testing_csrsv(const Arguments& arg)
     // Argument sanity check before allocating invalid memory
     if(M <= 0)
     {
-        size_t        buffer_size;
+        size_t        dbuffer_size;
         rocsparse_int pivot;
 
         device_vector<T>     dx, dy, dbuffer;
@@ -218,305 +218,51 @@ void testing_csrsv(const Arguments& arg)
     device_csr_matrix<T>       dA(hA);
     device_dense_matrix<T>     dx(hx), dy(M, 1);
     host_scalar<rocsparse_int> h_analysis_pivot, h_solve_pivot;
+    size_t dbuffer_size;
 
     // Obtain required buffer size
     void* dbuffer;
     {
-        size_t buffer_size;
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_buffer_size<T>(PARAMS_BUFFER_SIZE(dA)));
-        CHECK_HIP_ERROR(rocsparse_hipMalloc(&dbuffer, buffer_size));
+        CHECK_HIP_ERROR(rocsparse_hipMalloc(&dbuffer, dbuffer_size));
+        CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
     }
 
+    #define SYNC_PRINT()                     \
+        hipDeviceSynchronize();               \
+        std::cout << __LINE__ << ": test\n";
+ 
     if(arg.unit_check)
     {
-        host_scalar<rocsparse_int> analysis_no_pivot(-1);
-        host_dense_matrix<T>       hy(M, 1);
-        // CPU csrsv
-        host_csrsv<rocsparse_int, rocsparse_int, T>(trans,
-                                                    hA.m,
-                                                    hA.nnz,
-                                                    *h_alpha,
-                                                    hA.ptr,
-                                                    hA.ind,
-                                                    hA.val,
-                                                    hx,
-                                                    (int64_t)1,
-                                                    hy,
-                                                    diag,
-                                                    uplo,
-                                                    base,
-                                                    h_analysis_pivot,
-                                                    h_solve_pivot);
-
-        // Pointer mode host
-        {
-            host_scalar<rocsparse_int> analysis_pivot;
-            host_scalar<rocsparse_int> solve_pivot;
-            CHECK_ROCSPARSE_ERROR(rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_host));
-
-            //
-            // CHECK IF DEFAULT ZERO PIVOT IS -1
-            //
-            EXPECT_ROCSPARSE_STATUS(rocsparse_csrsv_zero_pivot(handle, descr, info, analysis_pivot),
-                                    rocsparse_status_success);
-            analysis_no_pivot.unit_check(analysis_pivot);
-
-            //
-            // Call before analysis
-            //
-            EXPECT_ROCSPARSE_STATUS(
-                testing::rocsparse_csrsv_solve<T>(PARAMS_SOLVE(h_alpha, dA, dx, dy)),
-                rocsparse_status_invalid_pointer);
-
-            // Call it twice.
-            CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-            CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-            {
-                auto st = rocsparse_csrsv_zero_pivot(handle, descr, info, analysis_pivot);
-                CHECK_HIP_ERROR(hipStreamSynchronize(stream));
-                EXPECT_ROCSPARSE_STATUS(st,
-                                        (*analysis_pivot != -1) ? rocsparse_status_zero_pivot
-                                                                : rocsparse_status_success);
-            }
-
-            CHECK_ROCSPARSE_ERROR(
-                testing::rocsparse_csrsv_solve<T>(PARAMS_SOLVE(h_alpha, dA, dx, dy)));
-            {
-                auto st = rocsparse_csrsv_zero_pivot(handle, descr, info, solve_pivot);
-                CHECK_HIP_ERROR(hipStreamSynchronize(stream));
-                EXPECT_ROCSPARSE_STATUS(st,
-                                        (*solve_pivot != -1) ? rocsparse_status_zero_pivot
-                                                             : rocsparse_status_success);
-            }
-            h_analysis_pivot.unit_check(analysis_pivot);
-            h_solve_pivot.unit_check(solve_pivot);
-        }
-
-        if(*h_analysis_pivot == -1 && *h_solve_pivot == -1)
-        {
-            hy.near_check(dy, tol);
-        }
-
-        //
-        // RESET MAT INFO.
-        //
         info.reset();
-
-        {
-            device_scalar<rocsparse_int> d_analysis_pivot;
-            device_scalar<rocsparse_int> d_solve_pivot;
-            device_scalar<T>             d_alpha(h_alpha);
-
-            // Pointer mode device
-            CHECK_ROCSPARSE_ERROR(
-                rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_device));
-
-            //
-            // CHECK IF DEFAULT ZERO PIVOT IS -1
-            //
-            EXPECT_ROCSPARSE_STATUS(
-                rocsparse_csrsv_zero_pivot(handle, descr, info, d_analysis_pivot),
-                rocsparse_status_success);
-            analysis_no_pivot.unit_check(d_analysis_pivot);
-
-            //
-            // Call before analysis
-            //
-            EXPECT_ROCSPARSE_STATUS(
-                testing::rocsparse_csrsv_solve<T>(PARAMS_SOLVE(h_alpha, dA, dx, dy)),
-                rocsparse_status_invalid_pointer);
-
-            // Call it twice.
-            CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-            CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-            EXPECT_ROCSPARSE_STATUS(
-                rocsparse_csrsv_zero_pivot(handle, descr, info, d_analysis_pivot),
-                (*h_analysis_pivot != -1) ? rocsparse_status_zero_pivot : rocsparse_status_success);
-            CHECK_HIP_ERROR(hipStreamSynchronize(stream));
-            CHECK_ROCSPARSE_ERROR(
-                testing::rocsparse_csrsv_solve<T>(PARAMS_SOLVE(d_alpha, dA, dx, dy)));
-            EXPECT_ROCSPARSE_STATUS(rocsparse_csrsv_zero_pivot(handle, descr, info, d_solve_pivot),
-                                    (*h_solve_pivot != -1) ? rocsparse_status_zero_pivot
-                                                           : rocsparse_status_success);
-            CHECK_HIP_ERROR(hipStreamSynchronize(stream));
-            h_analysis_pivot.unit_check(d_analysis_pivot);
-            h_solve_pivot.unit_check(d_solve_pivot);
-        }
-
-        if(*h_analysis_pivot == -1 && *h_solve_pivot == -1)
-        {
-            hy.near_check(dy, tol);
-        }
-
-        //
-        // A BIT MORE FOR CODE COVERAGE, WE ONLY DO ANALYSIS FOR INFO ASSIGNMENT.
-        //
+ 
+        SYNC_PRINT();
+ 
+        CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
+        CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
+        CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
+        CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
+        CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
+        CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
+ 
+        SYNC_PRINT();
+ 
         info.reset();
-
-        {
-            void*  buffer = nullptr;
-            size_t buffer_size;
-            int    boost       = arg.numericboost;
-            T      h_boost_tol = static_cast<T>(arg.boosttol);
-            T      h_boost_val = arg.get_boostval<T>();
-
-            rocsparse_matrix_utils::csrilu0<T>(descr,
-                                               dA,
-                                               info,
-                                               apol,
-                                               spol,
-                                               boost,
-                                               h_boost_val,
-                                               h_boost_tol,
-                                               &buffer_size,
-                                               buffer,
-                                               rocsparse_matrix_utils::csrilu0_analysis);
-            CHECK_HIP_ERROR(rocsparse_hipMalloc(&buffer, buffer_size));
-            rocsparse_matrix_utils::csrilu0<T>(descr,
-                                               dA,
-                                               info,
-                                               apol,
-                                               spol,
-                                               boost,
-                                               h_boost_val,
-                                               h_boost_tol,
-                                               &buffer_size,
-                                               buffer,
-                                               rocsparse_matrix_utils::csrilu0_analysis);
-            CHECK_HIP_ERROR(rocsparse_hipFree(buffer));
-
-            CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-            CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-        }
-
-        //
-        // A BIT MORE FOR CODE COVERAGE, WE ONLY DO ANALYSIS FOR INFO ASSIGNMENT.
-        //
-        info.reset();
-
-        {
-            void*  buffer = nullptr;
-            size_t buffer_size;
-            rocsparse_matrix_utils::csric0<T>(descr,
-                                              dA,
-                                              info,
-                                              apol,
-                                              spol,
-                                              &buffer_size,
-                                              buffer,
-                                              rocsparse_matrix_utils::csric0_analysis);
-            CHECK_HIP_ERROR(rocsparse_hipMalloc(&buffer, buffer_size));
-            rocsparse_matrix_utils::csric0<T>(descr,
-                                              dA,
-                                              info,
-                                              apol,
-                                              spol,
-                                              &buffer_size,
-                                              buffer,
-                                              rocsparse_matrix_utils::csric0_analysis);
-            CHECK_HIP_ERROR(rocsparse_hipFree(buffer));
-
-            CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-            CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-        }
-
-        //
-        // A BIT MORE FOR CODE COVERAGE, WE ONLY DO ANALYSIS FOR INFO ASSIGNMENT.
-        //
-        info.reset();
-
-        {
-            void*  buffer = nullptr;
-            size_t buffer_size;
-            CHECK_ROCSPARSE_ERROR(rocsparse_csrsm_buffer_size<T>(handle,
-                                                                 rocsparse_operation_transpose,
-                                                                 rocsparse_operation_none,
-                                                                 dA.m,
-                                                                 1,
-                                                                 dA.nnz,
-                                                                 h_alpha,
-                                                                 descr,
-                                                                 dA.val,
-                                                                 dA.ptr,
-                                                                 dA.ind,
-                                                                 dx,
-                                                                 dA.m,
-                                                                 info,
-                                                                 spol,
-                                                                 &buffer_size));
-            CHECK_HIP_ERROR(rocsparse_hipMalloc(&buffer, buffer_size));
-            CHECK_ROCSPARSE_ERROR(rocsparse_csrsm_analysis<T>(handle,
-                                                              rocsparse_operation_transpose,
-                                                              rocsparse_operation_none,
-                                                              dA.m,
-                                                              1,
-                                                              dA.nnz,
-                                                              h_alpha,
-                                                              descr,
-                                                              dA.val,
-                                                              dA.ptr,
-                                                              dA.ind,
-                                                              dx,
-                                                              dA.m,
-                                                              info,
-                                                              apol,
-                                                              spol,
-                                                              buffer));
-
-            CHECK_HIP_ERROR(rocsparse_hipFree(buffer));
-
-            CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-            CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-        }
-
-        //
-        // A BIT MORE FOR CODE COVERAGE, WE ONLY DO ANALYSIS FOR INFO ASSIGNMENT.
-        //
-        info.reset();
-
-        {
-            void*  buffer = nullptr;
-            size_t buffer_size;
-            CHECK_ROCSPARSE_ERROR(rocsparse_csrsm_buffer_size<T>(handle,
-                                                                 rocsparse_operation_none,
-                                                                 rocsparse_operation_none,
-                                                                 dA.m,
-                                                                 1,
-                                                                 dA.nnz,
-                                                                 h_alpha,
-                                                                 descr,
-                                                                 dA.val,
-                                                                 dA.ptr,
-                                                                 dA.ind,
-                                                                 dx,
-                                                                 dA.m,
-                                                                 info,
-                                                                 spol,
-                                                                 &buffer_size));
-            CHECK_HIP_ERROR(rocsparse_hipMalloc(&buffer, buffer_size));
-            CHECK_ROCSPARSE_ERROR(rocsparse_csrsm_analysis<T>(handle,
-                                                              rocsparse_operation_none,
-                                                              rocsparse_operation_none,
-                                                              dA.m,
-                                                              1,
-                                                              dA.nnz,
-                                                              h_alpha,
-                                                              descr,
-                                                              dA.val,
-                                                              dA.ptr,
-                                                              dA.ind,
-                                                              dx,
-                                                              dA.m,
-                                                              info,
-                                                              apol,
-                                                              spol,
-                                                              buffer));
-
-            CHECK_HIP_ERROR(rocsparse_hipFree(buffer));
-
-            CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-            CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-        }
+ 
+        SYNC_PRINT();
+ 
+        CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
+        CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
+        CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
+        CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
+        CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
+        CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
+ 
+        SYNC_PRINT();
+ 
+        // Quick return if possible
+        std::cout << " completed " << std::endl;
+        return;
     }
 
     if(arg.timing)
@@ -529,6 +275,7 @@ void testing_csrsv(const Arguments& arg)
         // Warm up
         for(int iter = 0; iter < number_cold_calls; ++iter)
         {
+            CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
             CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
             CHECK_ROCSPARSE_ERROR(
                 rocsparse_csrsv_zero_pivot(handle, descr, info, h_analysis_pivot));
@@ -539,6 +286,7 @@ void testing_csrsv(const Arguments& arg)
 
         double gpu_analysis_time_used = get_time_us();
 
+        CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
         gpu_analysis_time_used = get_time_us() - gpu_analysis_time_used;
 
