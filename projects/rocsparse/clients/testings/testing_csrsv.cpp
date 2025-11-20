@@ -228,11 +228,13 @@ void testing_csrsv(const Arguments& arg)
         CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
     }
 
+    const bool memset_dbuffer = false;
+    const bool show_debug_log = true;
+
 #define SYNC_PRINT()                         \
     CHECK_HIP_ERROR(hipDeviceSynchronize()); \
-    std::cout << "\n--- " << __FILE__ << ":" << __LINE__ << "\n ";
-
-    const bool memset_dbuffer = false;
+    if(show_debug_log)                       \
+        std::cout << "\n--- " << __FILE__ << ":" << __LINE__ << "\n ";
 
     if(arg.unit_check)
     {
@@ -240,23 +242,23 @@ void testing_csrsv(const Arguments& arg)
 
         SYNC_PRINT();
 
+        if(memset_dbuffer)
+        {
+            CHECK_HIP_ERROR(hipMemset(dbuffer, 0, dbuffer_size));
+        }
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
         if(memset_dbuffer)
         {
-            CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
+            CHECK_HIP_ERROR(hipMemset(dbuffer, 0, dbuffer_size));
         }
         SYNC_PRINT();
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
         if(memset_dbuffer)
         {
-            CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
+            CHECK_HIP_ERROR(hipMemset(dbuffer, 0, dbuffer_size));
         }
         SYNC_PRINT();
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-        if(memset_dbuffer)
-        {
-            CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
-        }
 
         SYNC_PRINT();
 
@@ -264,23 +266,23 @@ void testing_csrsv(const Arguments& arg)
 
         SYNC_PRINT();
 
+        if(memset_dbuffer)
+        {
+            CHECK_HIP_ERROR(hipMemset(dbuffer, 0, dbuffer_size));
+        }
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
         if(memset_dbuffer)
         {
-            CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
+            CHECK_HIP_ERROR(hipMemset(dbuffer, 0, dbuffer_size));
         }
         SYNC_PRINT();
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
         if(memset_dbuffer)
         {
-            CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
+            CHECK_HIP_ERROR(hipMemset(dbuffer, 0, dbuffer_size));
         }
         SYNC_PRINT();
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
-        if(memset_dbuffer)
-        {
-            CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
-        }
 
         SYNC_PRINT();
 

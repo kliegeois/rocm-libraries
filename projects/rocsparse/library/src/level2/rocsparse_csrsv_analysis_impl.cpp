@@ -51,24 +51,44 @@ inline uint32_t rocsparse_array_hash(const void* data, size_t size)
 }
 
 template <typename T>
-bool validate_array(const T* data, size_t size, T min_val, T max_val)
+rocsparse_status validate_array(const T* data, size_t size, T min_val, T max_val)
 {
-    void* buffer       = malloc(size * sizeof(T));
-    std::ignore        = hipMemcpy(buffer, data, size * sizeof(T), hipMemcpyDefault);
+    void* buffer = malloc(size * sizeof(T));
+    RETURN_IF_HIP_ERROR(hipMemcpy(buffer, data, size * sizeof(T), hipMemcpyDefault));
     const T* host_data = static_cast<const T*>(buffer);
-    bool     is_valid  = true;
     for(size_t i = 0; i < size; ++i)
     {
         if(host_data[i] < min_val || host_data[i] > max_val)
         {
             std::cout << "Validation failed at index " << i << ": " << host_data[i] << " not in ["
                       << min_val << ", " << max_val << "]\n";
-            is_valid = false;
-            break;
+            free(buffer);
+            RETURN_IF_ROCSPARSE_ERROR(rocsparse_status_internal_error);
         }
     }
     free(buffer);
-    return is_valid;
+    return rocsparse_status_success;
+}
+
+template <typename T>
+rocsparse_status validate_array_identity(const T* data, size_t size)
+{
+    void* buffer = malloc(size * sizeof(T));
+
+    RETURN_IF_HIP_ERROR(hipMemcpy(buffer, data, size * sizeof(T), hipMemcpyDefault));
+    const T* host_data = static_cast<const T*>(buffer);
+    for(size_t i = 0; i < size; ++i)
+    {
+        if(host_data[i] != i)
+        {
+            std::cout << "Validation failed at index " << i << ": " << host_data[i] << " != " << i
+                      << "\n";
+            free(buffer);
+            RETURN_IF_ROCSPARSE_ERROR(rocsparse_status_internal_error);
+        }
+    }
+    free(buffer);
+    return rocsparse_status_success;
 }
 
 template <typename I, typename J, typename T>
@@ -149,14 +169,15 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
             RETURN_IF_ROCSPARSE_ERROR(
                 rocsparse::create_identity_permutation_template(handle, nnz, transposed_perm));
 
-            if(!validate_array(transposed_perm, nnz, static_cast<I>(0), static_cast<I>(nnz - 1)))
+            rocsparse_status status = validate_array_identity(transposed_perm, nnz);
+            if(status != rocsparse_status_success)
             {
                 if(debug_log)
                 {
                     SYNC_PRINT();
                     std::cout << "--------- Validation failed for transposed_perm\n";
                 }
-                RETURN_IF_ROCSPARSE_ERROR(rocsparse_status_internal_error);
+                RETURN_IF_ROCSPARSE_ERROR(status);
             }
 
             // Stable sort COO by columns
@@ -291,7 +312,8 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
             }
 
             // Validate tmp_work1
-            if(!validate_array(tmp_work1, nnz, static_cast<J>(0), static_cast<J>(m - 1)))
+            if(rocsparse_status_success
+               != validate_array(tmp_work1, nnz, static_cast<J>(0), static_cast<J>(m - 1)))
             {
                 if(debug_log)
                 {
@@ -304,14 +326,15 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
             // Validating transposed_col_ind is not necessary here
 
             // Validate transposed_perm
-            if(!validate_array(transposed_perm, nnz, static_cast<I>(0), static_cast<I>(nnz - 1)))
+            status = validate_array_identity(transposed_perm, nnz);
+            if(status != rocsparse_status_success)
             {
                 if(debug_log)
                 {
                     SYNC_PRINT();
                     std::cout << "--------- Validation failed for transposed_perm\n";
                 }
-                RETURN_IF_ROCSPARSE_ERROR(rocsparse_status_internal_error);
+                RETURN_IF_ROCSPARSE_ERROR(status);
             }
 
             SYNC_PRINT();
@@ -321,7 +344,8 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
             SYNC_PRINT();
 
             // Validate tmp_work1
-            if(!validate_array(tmp_work1, nnz, static_cast<J>(0), static_cast<J>(m - 1)))
+            if(rocsparse_status_success
+               != validate_array(tmp_work1, nnz, static_cast<J>(0), static_cast<J>(m - 1)))
             {
                 if(debug_log)
                 {
@@ -332,7 +356,8 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
             }
 
             // Validate transposed_col_ind
-            if(!validate_array(transposed_col_ind, nnz, static_cast<J>(0), static_cast<J>(m - 1)))
+            if(rocsparse_status_success
+               != validate_array(transposed_col_ind, nnz, static_cast<J>(0), static_cast<J>(m - 1)))
             {
                 if(debug_log)
                 {
@@ -343,7 +368,8 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
             }
 
             // Validate transposed_perm
-            if(!validate_array(transposed_perm, nnz, static_cast<I>(0), static_cast<I>(nnz - 1)))
+            if(rocsparse_status_success
+               != validate_array(transposed_perm, nnz, static_cast<I>(0), static_cast<I>(nnz - 1)))
             {
                 if(debug_log)
                 {
@@ -478,7 +504,8 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
             if(call_permute)
             {
                 // Validate tmp_work1
-                if(!validate_array(tmp_work1, nnz, static_cast<J>(0), static_cast<J>(m - 1)))
+                if(rocsparse_status_success
+                   != validate_array(tmp_work1, nnz, static_cast<J>(0), static_cast<J>(m - 1)))
                 {
                     if(debug_log)
                     {
@@ -489,7 +516,8 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
                 }
 
                 // Validate transposed_col_ind
-                if(!validate_array(
+                if(rocsparse_status_success
+                   != validate_array(
                        transposed_col_ind, nnz, static_cast<J>(0), static_cast<J>(m - 1)))
                 {
                     if(debug_log)
@@ -501,7 +529,8 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
                 }
 
                 // Validate transposed_perm
-                if(!validate_array(
+                if(rocsparse_status_success
+                   != validate_array(
                        transposed_perm, nnz, static_cast<I>(0), static_cast<I>(nnz - 1)))
                 {
                     if(debug_log)
