@@ -58,42 +58,16 @@ struct DeviceArrays
         HIP_CHECK(hipMalloc(&d_vals_output, sizeof(int) * NNZ));
     }
 
-    void initialize_async(hipStream_t stream)
-    {
-        // Initialize keys with column indices (0 to M-1, repeated)
-        std::vector<int> h_keys(NNZ);
-        for(int i = 0; i < NNZ; i++)
-        {
-            h_keys[i] = i % M;
-        }
-        HIP_CHECK(hipMemcpyAsync(
-            this->d_keys_input, h_keys.data(), sizeof(int) * NNZ, hipMemcpyHostToDevice, stream));
-        HIP_CHECK(hipMemcpyAsync(
-            this->d_keys_output, h_keys.data(), sizeof(int) * NNZ, hipMemcpyHostToDevice, stream));
-    }
-
     void reset_async(hipStream_t stream)
     {
-        if(d_keys_input)
-        {
-            HIP_CHECK(hipFreeAsync(d_keys_input, stream));
-            d_keys_input = nullptr;
-        }
-        if(d_keys_output)
-        {
-            HIP_CHECK(hipFreeAsync(d_keys_output, stream));
-            d_keys_output = nullptr;
-        }
-        if(d_vals_input)
-        {
-            HIP_CHECK(hipFreeAsync(d_vals_input, stream));
-            d_vals_input = nullptr;
-        }
-        if(d_vals_output)
-        {
-            HIP_CHECK(hipFreeAsync(d_vals_output, stream));
-            d_vals_output = nullptr;
-        }
+        HIP_CHECK(hipFreeAsync(d_keys_input, stream));
+        d_keys_input = nullptr;
+        HIP_CHECK(hipFreeAsync(d_keys_output, stream));
+        d_keys_output = nullptr;
+        HIP_CHECK(hipFreeAsync(d_vals_input, stream));
+        d_vals_input = nullptr;
+        HIP_CHECK(hipFreeAsync(d_vals_output, stream));
+        d_vals_output = nullptr;
         HIP_CHECK(hipStreamSynchronize(stream));
     }
 
@@ -101,20 +75,30 @@ struct DeviceArrays
     {
         // Synchronous cleanup in destructor
         HIP_CHECK(hipDeviceSynchronize());
-        if(d_keys_input)
-            HIP_CHECK(hipFree(d_keys_input));
-        if(d_keys_output)
-            HIP_CHECK(hipFree(d_keys_output));
-        if(d_vals_input)
-            HIP_CHECK(hipFree(d_vals_input));
-        if(d_vals_output)
-            HIP_CHECK(hipFree(d_vals_output));
+        HIP_CHECK(hipFree(d_keys_input));
+        HIP_CHECK(hipFree(d_keys_output));
+        HIP_CHECK(hipFree(d_vals_input));
+        HIP_CHECK(hipFree(d_vals_output));
     }
 };
 
 class RadixSortTest : public ::testing::Test
 {
 };
+
+uint32_t getEndbit(int m)
+{
+    uint32_t endbit = 32;
+    for(uint32_t i = 0; i < 32; i++)
+    {
+        if((1u << (31 - i)) >= static_cast<uint32_t>(M))
+        {
+            endbit = 32 - i;
+            break;
+        }
+    }
+    return endbit;
+}
 
 size_t get_buffer_size(DeviceArrays& arrays, hipStream_t stream)
 {
@@ -124,15 +108,7 @@ size_t get_buffer_size(DeviceArrays& arrays, hipStream_t stream)
 
     // Calculate bit range
     uint32_t startbit = 0;
-    uint32_t endbit   = 32;
-    for(uint32_t i = 0; i < 32; i++)
-    {
-        if((1u << (31 - i)) >= static_cast<uint32_t>(M))
-        {
-            endbit = 32 - i;
-            break;
-        }
-    }
+    uint32_t endbit   = getEndbit(M);
 
     size_t temp_storage_bytes = 0;
     HIP_CHECK(rocprim::radix_sort_pairs(
@@ -203,24 +179,13 @@ bool trm_analysis(DeviceArrays& arrays,
 
     HIP_CHECK(hipStreamSynchronize(stream));
 
-    // Load CSR column indices into tmp_work1 buffer
-    arrays.initialize_async(stream);
-
     // Setup double buffers (matching keys(tmp_work1, transposed_col_ind) and vals(transposed_perm, tmp_work2))
     rocprim::double_buffer<int> keys(arrays.d_keys_input, arrays.d_keys_output);
     rocprim::double_buffer<int> vals(arrays.d_vals_input, arrays.d_vals_output);
 
     // Calculate bit range (matching rocsparse::clz(m))
     uint32_t startbit = 0;
-    uint32_t endbit   = 32;
-    for(uint32_t i = 0; i < 32; i++)
-    {
-        if((1u << (31 - i)) >= static_cast<uint32_t>(M))
-        {
-            endbit = 32 - i;
-            break;
-        }
-    }
+    uint32_t endbit   = getEndbit(M);
 
     // Perform radix sort (matching rocsparse::primitives::radix_sort_pairs)
     HIP_CHECK(rocprim::radix_sort_pairs(
@@ -234,65 +199,62 @@ bool trm_analysis(DeviceArrays& arrays,
     return true;
 }
 
-#define SYNC_PRINT()                   \
-    HIP_CHECK(hipDeviceSynchronize()); \
-    std::cout << "--- " << __FILE__ << ":" << __LINE__ << "\n";
+void sync_print(const char* file, int line)
+{
+    HIP_CHECK(hipDeviceSynchronize());
+    std::cout << "--- " << file << ":" << line << "\n";
+}
 
-#define TEST_TRM_ANALYSIS(use_async_allocation)                                                \
-    {                                                                                          \
-        DeviceArrays arrays;                                                                   \
-                                                                                               \
-        hipStream_t stream;                                                                    \
-        HIP_CHECK(hipStreamCreate(&stream));                                                   \
-                                                                                               \
-        arrays.allocate_async(stream);                                                         \
-        arrays.initialize_async(stream);                                                       \
-                                                                                               \
-        size_t rocprim_size = get_buffer_size(arrays, stream);                                 \
-                                                                                               \
-        void* rocprim_buffer = nullptr;                                                        \
-        HIP_CHECK(hipMallocAsync(&rocprim_buffer, rocprim_size, stream));                      \
-        HIP_CHECK(hipStreamSynchronize(stream));                                               \
-                                                                                               \
-        arrays.reset_async(stream);                                                            \
-                                                                                               \
-        SYNC_PRINT();                                                                          \
-        GTEST_ASSERT_TRUE(                                                                     \
-            trm_analysis(arrays, stream, rocprim_buffer, rocprim_size, use_async_allocation)); \
-        SYNC_PRINT();                                                                          \
-        GTEST_ASSERT_TRUE(                                                                     \
-            trm_analysis(arrays, stream, rocprim_buffer, rocprim_size, use_async_allocation)); \
-        SYNC_PRINT();                                                                          \
-        GTEST_ASSERT_TRUE(                                                                     \
-            trm_analysis(arrays, stream, rocprim_buffer, rocprim_size, use_async_allocation)); \
-        SYNC_PRINT();                                                                          \
-                                                                                               \
-        arrays.reset_async(stream);                                                            \
-                                                                                               \
-        SYNC_PRINT();                                                                          \
-        GTEST_ASSERT_TRUE(                                                                     \
-            trm_analysis(arrays, stream, rocprim_buffer, rocprim_size, use_async_allocation)); \
-        SYNC_PRINT();                                                                          \
-        GTEST_ASSERT_TRUE(                                                                     \
-            trm_analysis(arrays, stream, rocprim_buffer, rocprim_size, use_async_allocation)); \
-        SYNC_PRINT();                                                                          \
-        GTEST_ASSERT_TRUE(                                                                     \
-            trm_analysis(arrays, stream, rocprim_buffer, rocprim_size, use_async_allocation)); \
-        SYNC_PRINT();                                                                          \
-                                                                                               \
-        HIP_CHECK(hipFreeAsync(rocprim_buffer, stream));                                       \
-        HIP_CHECK(hipStreamSynchronize(stream));                                               \
-        HIP_CHECK(hipStreamDestroy(stream));                                                   \
-    }
+#define SYNC_PRINT() sync_print(__FILE__, __LINE__)
+
+void test_trm_analysis(bool use_async_allocation)
+{
+    DeviceArrays arrays;
+
+    hipStream_t stream;
+    HIP_CHECK(hipStreamCreate(&stream));
+
+    arrays.allocate_async(stream);
+
+    size_t rocprim_size = get_buffer_size(arrays, stream);
+
+    void* rocprim_buffer = nullptr;
+    HIP_CHECK(hipMallocAsync(&rocprim_buffer, rocprim_size, stream));
+    HIP_CHECK(hipStreamSynchronize(stream));
+
+    arrays.reset_async(stream);
+
+    SYNC_PRINT();
+    GTEST_ASSERT_TRUE(
+        trm_analysis(arrays, stream, rocprim_buffer, rocprim_size, use_async_allocation));
+    SYNC_PRINT();
+    GTEST_ASSERT_TRUE(
+        trm_analysis(arrays, stream, rocprim_buffer, rocprim_size, use_async_allocation));
+    SYNC_PRINT();
+
+    arrays.reset_async(stream);
+
+    SYNC_PRINT();
+    GTEST_ASSERT_TRUE(
+        trm_analysis(arrays, stream, rocprim_buffer, rocprim_size, use_async_allocation));
+    SYNC_PRINT();
+    GTEST_ASSERT_TRUE(
+        trm_analysis(arrays, stream, rocprim_buffer, rocprim_size, use_async_allocation));
+    SYNC_PRINT();
+
+    HIP_CHECK(hipFreeAsync(rocprim_buffer, stream));
+    HIP_CHECK(hipStreamSynchronize(stream));
+    HIP_CHECK(hipStreamDestroy(stream));
+}
 
 TEST_F(RadixSortTest, RadixSortPairsWithIdentityPermutation)
 {
-    TEST_TRM_ANALYSIS(false);
+    test_trm_analysis(false);
 }
 
 TEST_F(RadixSortTest, RadixSortPairsWithIdentityPermutationAsync)
 {
-    TEST_TRM_ANALYSIS(true);
+    test_trm_analysis(true);
 }
 
 int main(int argc, char** argv)
