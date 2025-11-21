@@ -244,18 +244,18 @@ void testing_csrsv(const Arguments& arg)
 
         if(memset_dbuffer)
         {
-            CHECK_HIP_ERROR(hipMemset(dbuffer, 0, dbuffer_size));
+            CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
         }
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
         if(memset_dbuffer)
         {
-            CHECK_HIP_ERROR(hipMemset(dbuffer, 0, dbuffer_size));
+            CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
         }
         SYNC_PRINT();
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
         if(memset_dbuffer)
         {
-            CHECK_HIP_ERROR(hipMemset(dbuffer, 0, dbuffer_size));
+            CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
         }
         SYNC_PRINT();
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
@@ -268,18 +268,18 @@ void testing_csrsv(const Arguments& arg)
 
         if(memset_dbuffer)
         {
-            CHECK_HIP_ERROR(hipMemset(dbuffer, 0, dbuffer_size));
+            CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
         }
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
         if(memset_dbuffer)
         {
-            CHECK_HIP_ERROR(hipMemset(dbuffer, 0, dbuffer_size));
+            CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
         }
         SYNC_PRINT();
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));
         if(memset_dbuffer)
         {
-            CHECK_HIP_ERROR(hipMemset(dbuffer, 0, dbuffer_size));
+            CHECK_HIP_ERROR(hipMemset(dbuffer, 254, dbuffer_size));
         }
         SYNC_PRINT();
         CHECK_ROCSPARSE_ERROR(rocsparse_csrsv_analysis<T>(PARAMS_ANALYSIS(dA)));

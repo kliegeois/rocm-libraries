@@ -119,7 +119,7 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
     // stream
     hipStream_t stream = handle->stream;
 
-    RETURN_IF_HIP_ERROR(hipMemsetAsync(temp_buffer, 0, 85826048, stream));
+    //RETURN_IF_HIP_ERROR(hipMemsetAsync(temp_buffer, 0, 85826048, stream));
 
     // If analyzing transposed, allocate some info memory to hold the transposed matrix
     if(trans == rocsparse_operation_transpose || trans == rocsparse_operation_conjugate_transpose)
@@ -157,10 +157,10 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
 
         if(nnz > 0)
         {
-            RETURN_IF_HIP_ERROR(rocsparse_hipMallocAsync(
-                trm_info->get_ref_transposed_perm(), sizeof(I) * nnz, stream));
-            RETURN_IF_HIP_ERROR(rocsparse_hipMallocAsync(
-                trm_info->get_ref_transposed_col_ind(), sizeof(J) * nnz, stream));
+            RETURN_IF_HIP_ERROR(
+                rocsparse_hipMalloc(trm_info->get_ref_transposed_perm(), sizeof(I) * nnz));
+            RETURN_IF_HIP_ERROR(
+                rocsparse_hipMalloc(trm_info->get_ref_transposed_col_ind(), sizeof(J) * nnz));
 
             RETURN_IF_HIP_ERROR(hipStreamSynchronize(stream));
 
@@ -193,11 +193,11 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
                 handle, nnz, startbit, endbit, &rocprim_size)));
 
             SYNC_PRINT();
-            // Verify that rocprim_size + offset equals 87523
-            size_t rocprim_buffer_offset
-                = reinterpret_cast<char*>(rocprim_buffer) - reinterpret_cast<char*>(temp_buffer);
-            rocsparse_host_assert(rocprim_size + rocprim_buffer_offset * sizeof(char) == 85826048,
-                                  "rocprim_size + rocprim_buffer offset verification failed");
+            //// Verify that rocprim_size + offset equals 87523
+            //size_t rocprim_buffer_offset
+            //    = reinterpret_cast<char*>(rocprim_buffer) - reinterpret_cast<char*>(temp_buffer);
+            //rocsparse_host_assert(rocprim_size + rocprim_buffer_offset * sizeof(char) == 85826048,
+            //                      "rocprim_size + rocprim_buffer offset verification failed");
 
             SYNC_PRINT();
 
