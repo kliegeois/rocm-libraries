@@ -1,4 +1,3 @@
-#include <gtest/gtest.h>
 #include <hip/hip_runtime.h>
 #include <iostream>
 #include <rocprim/rocprim.hpp>
@@ -80,10 +79,6 @@ struct DeviceArrays
         HIP_CHECK(hipFree(d_vals_input));
         HIP_CHECK(hipFree(d_vals_output));
     }
-};
-
-class RadixSortTest : public ::testing::Test
-{
 };
 
 uint32_t getEndbit(int m)
@@ -207,7 +202,7 @@ void sync_print(const char* file, int line)
 
 #define SYNC_PRINT() sync_print(__FILE__, __LINE__)
 
-void test_trm_analysis(bool use_async_allocation)
+bool test_trm_analysis(bool use_async_allocation)
 {
     DeviceArrays arrays;
 
@@ -225,40 +220,51 @@ void test_trm_analysis(bool use_async_allocation)
     arrays.reset_async(stream);
 
     SYNC_PRINT();
-    GTEST_ASSERT_TRUE(
-        trm_analysis(arrays, stream, rocprim_buffer, rocprim_size, use_async_allocation));
+    if(!trm_analysis(arrays, stream, rocprim_buffer, rocprim_size, use_async_allocation))
+    {
+        std::cerr << "trm_analysis failed (iteration 1)" << std::endl;
+        return false;
+    }
     SYNC_PRINT();
-    GTEST_ASSERT_TRUE(
-        trm_analysis(arrays, stream, rocprim_buffer, rocprim_size, use_async_allocation));
+    if(!trm_analysis(arrays, stream, rocprim_buffer, rocprim_size, use_async_allocation))
+    {
+        std::cerr << "trm_analysis failed (iteration 2)" << std::endl;
+        return false;
+    }
     SYNC_PRINT();
 
     arrays.reset_async(stream);
 
     SYNC_PRINT();
-    GTEST_ASSERT_TRUE(
-        trm_analysis(arrays, stream, rocprim_buffer, rocprim_size, use_async_allocation));
+    if(!trm_analysis(arrays, stream, rocprim_buffer, rocprim_size, use_async_allocation))
+    {
+        std::cerr << "trm_analysis failed (iteration 3)" << std::endl;
+        return false;
+    }
     SYNC_PRINT();
-    GTEST_ASSERT_TRUE(
-        trm_analysis(arrays, stream, rocprim_buffer, rocprim_size, use_async_allocation));
+    if(!trm_analysis(arrays, stream, rocprim_buffer, rocprim_size, use_async_allocation))
+    {
+        std::cerr << "trm_analysis failed (iteration 4)" << std::endl;
+        return false;
+    }
     SYNC_PRINT();
 
     HIP_CHECK(hipFreeAsync(rocprim_buffer, stream));
     HIP_CHECK(hipStreamSynchronize(stream));
     HIP_CHECK(hipStreamDestroy(stream));
-}
 
-TEST_F(RadixSortTest, RadixSortPairsWithIdentityPermutation)
-{
-    test_trm_analysis(false);
-}
-
-TEST_F(RadixSortTest, RadixSortPairsWithIdentityPermutationAsync)
-{
-    test_trm_analysis(true);
+    return true;
 }
 
 int main(int argc, char** argv)
 {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+    // If argument is "0", use async allocation; otherwise use sync
+    bool use_async = (argc > 1 && strcmp(argv[1], "0") == 0);
+
+    std::cout << "Running test with " << (use_async ? "ASYNC" : "SYNC") << " allocation\n";
+
+    bool passed = test_trm_analysis(use_async);
+
+    std::cout << "\nTest " << (passed ? "PASSED" : "FAILED") << "\n";
+    return passed ? 0 : 1;
 }
