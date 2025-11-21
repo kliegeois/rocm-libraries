@@ -222,22 +222,6 @@ bool trm_analysis(DeviceArrays& arrays,
         }
     }
 
-    // Get buffer size (matching rocsparse::primitives::radix_sort_pairs_buffer_size)
-    size_t buffer_size_check = 0;
-    HIP_CHECK(rocprim::radix_sort_pairs(
-        nullptr, buffer_size_check, keys, vals, NNZ, startbit, endbit, stream));
-
-    HIP_CHECK(hipStreamSynchronize(stream));
-
-    // Verify buffer size matches
-    if(buffer_size_check > rocprim_size)
-    {
-        std::cout << "--------- buffer_size_check > rocprim_size \n";
-        std::cout << " buffer_size_check = " << buffer_size_check << "\n";
-        std::cout << " rocprim_size      = " << rocprim_size << "\n";
-        return false;
-    }
-
     // Perform radix sort (matching rocsparse::primitives::radix_sort_pairs)
     HIP_CHECK(rocprim::radix_sort_pairs(
         rocprim_buffer, rocprim_size, keys, vals, NNZ, startbit, endbit, stream));
