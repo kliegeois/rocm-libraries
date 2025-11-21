@@ -89,10 +89,10 @@ rocsparse_status rocsparse::trm_analysis(rocsparse_handle          handle,
 
         if(nnz > 0)
         {
-            RETURN_IF_HIP_ERROR(rocsparse_hipMallocAsync(
-                trm_info->get_ref_transposed_perm(), sizeof(I) * nnz, stream));
-            RETURN_IF_HIP_ERROR(rocsparse_hipMallocAsync(
-                trm_info->get_ref_transposed_col_ind(), sizeof(J) * nnz, stream));
+            RETURN_IF_HIP_ERROR(
+                rocsparse_hipMalloc(trm_info->get_ref_transposed_perm(), sizeof(I) * nnz));
+            RETURN_IF_HIP_ERROR(
+                rocsparse_hipMalloc(trm_info->get_ref_transposed_col_ind(), sizeof(J) * nnz));
 
             RETURN_IF_HIP_ERROR(hipStreamSynchronize(stream));
 
