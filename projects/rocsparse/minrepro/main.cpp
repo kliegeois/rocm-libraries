@@ -43,39 +43,25 @@ bool validate_identity(int* data, size_t size)
 
 bool test_trm_analysis(bool use_async)
 {
-    hipStream_t stream;
-    HIP_CHECK(hipStreamCreate(&stream));
-
     int *d_keys_in, *d_keys_out, *d_vals_in, *d_vals_out;
-    HIP_CHECK(hipMallocAsync(&d_keys_in, sizeof(int) * NNZ, stream));
-    HIP_CHECK(hipMallocAsync(&d_keys_out, sizeof(int) * NNZ, stream));
-    HIP_CHECK(hipMallocAsync(&d_vals_in, sizeof(int) * NNZ, stream));
-    HIP_CHECK(hipMallocAsync(&d_vals_out, sizeof(int) * NNZ, stream));
 
     rocprim::double_buffer<int> keys(d_keys_in, d_keys_out);
     rocprim::double_buffer<int> vals(d_vals_in, d_vals_out);
 
     size_t temp_size = 0;
-    HIP_CHECK(rocprim::radix_sort_pairs(nullptr, temp_size, keys, vals, NNZ, 0, 18, stream));
+    HIP_CHECK(rocprim::radix_sort_pairs(nullptr, temp_size, keys, vals, NNZ, 0, 18, 0));
 
     void* temp_buffer = nullptr;
-    HIP_CHECK(hipMallocAsync(&temp_buffer, temp_size, stream));
-    HIP_CHECK(hipStreamSynchronize(stream));
-
-    HIP_CHECK(hipFreeAsync(d_keys_in, stream));
-    HIP_CHECK(hipFreeAsync(d_keys_out, stream));
-    HIP_CHECK(hipFreeAsync(d_vals_in, stream));
-    HIP_CHECK(hipFreeAsync(d_vals_out, stream));
-    HIP_CHECK(hipStreamSynchronize(stream));
+    HIP_CHECK(hipMallocAsync(&temp_buffer, temp_size, 0));
 
     for(int iter = 0; iter < 2; iter++)
     {
         if(use_async)
         {
-            HIP_CHECK(hipMallocAsync(&d_keys_in, sizeof(int) * NNZ, stream));
-            HIP_CHECK(hipMallocAsync(&d_keys_out, sizeof(int) * NNZ, stream));
-            HIP_CHECK(hipMallocAsync(&d_vals_in, sizeof(int) * NNZ, stream));
-            HIP_CHECK(hipMallocAsync(&d_vals_out, sizeof(int) * NNZ, stream));
+            HIP_CHECK(hipMallocAsync(&d_keys_in, sizeof(int) * NNZ, 0));
+            HIP_CHECK(hipMallocAsync(&d_keys_out, sizeof(int) * NNZ, 0));
+            HIP_CHECK(hipMallocAsync(&d_vals_in, sizeof(int) * NNZ, 0));
+            HIP_CHECK(hipMallocAsync(&d_vals_out, sizeof(int) * NNZ, 0));
         }
         else
         {
@@ -85,10 +71,8 @@ bool test_trm_analysis(bool use_async)
             HIP_CHECK(hipMalloc(&d_vals_out, sizeof(int) * NNZ));
         }
 
-        HIP_CHECK(hipStreamSynchronize(stream));
-
         hipLaunchKernelGGL(
-            identity_kernel<256>, dim3((NNZ - 1) / 256 + 1), dim3(256), 0, stream, NNZ, d_vals_in);
+            identity_kernel<256>, dim3((NNZ - 1) / 256 + 1), dim3(256), 0, 0, NNZ, d_vals_in);
 
         if(!validate_identity(d_vals_in, NNZ))
             return false;
@@ -96,19 +80,17 @@ bool test_trm_analysis(bool use_async)
         rocprim::double_buffer<int> keys2(d_keys_in, d_keys_out);
         rocprim::double_buffer<int> vals2(d_vals_in, d_vals_out);
 
-        HIP_CHECK(
-            rocprim::radix_sort_pairs(temp_buffer, temp_size, keys2, vals2, NNZ, 0, 18, stream));
-        HIP_CHECK(hipStreamSynchronize(stream));
+        HIP_CHECK(rocprim::radix_sort_pairs(temp_buffer, temp_size, keys2, vals2, NNZ, 0, 18, 0));
 
-        HIP_CHECK(hipFreeAsync(d_keys_in, stream));
-        HIP_CHECK(hipFreeAsync(d_keys_out, stream));
-        HIP_CHECK(hipFreeAsync(d_vals_in, stream));
-        HIP_CHECK(hipFreeAsync(d_vals_out, stream));
-        HIP_CHECK(hipStreamSynchronize(stream));
+        HIP_CHECK(hipFreeAsync(d_keys_in, 0));
+        HIP_CHECK(hipFreeAsync(d_keys_out, 0));
+        HIP_CHECK(hipFreeAsync(d_vals_in, 0));
+        HIP_CHECK(hipFreeAsync(d_vals_out, 0));
+        HIP_CHECK(hipDeviceSynchronize());
     }
 
-    HIP_CHECK(hipFreeAsync(temp_buffer, stream));
-    HIP_CHECK(hipStreamDestroy(stream));
+    HIP_CHECK(hipFreeAsync(temp_buffer, 0));
+    HIP_CHECK(hipDeviceSynchronize());
     return true;
 }
 
