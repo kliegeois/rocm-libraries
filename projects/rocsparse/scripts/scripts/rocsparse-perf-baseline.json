@@ -1,0 +1,89 @@
+{
+  "architectures": {
+    "gfx1201": {
+      "csrgemm:d:bmwcra_1": {
+        "bandwidth_gb": 256.0,
+        "gflops": 18183.0,
+        "matrix": "bmwcra_1",
+        "precision": "d",
+        "routine": "csrgemm",
+        "time_ms": 1.0
+      },
+      "csrgemm:d:mac_econ_fwd500": {
+        "bandwidth_gb": 256.0,
+        "gflops": 1776.0,
+        "matrix": "mac_econ_fwd500",
+        "precision": "d",
+        "routine": "csrgemm",
+        "time_ms": 1.0
+      },
+      "csrgemm:d:mc2depi": {
+        "bandwidth_gb": 256.0,
+        "gflops": 1278.0,
+        "matrix": "mc2depi",
+        "precision": "d",
+        "routine": "csrgemm",
+        "time_ms": 1.0
+      },
+      "csrgemm:d:rma10": {
+        "bandwidth_gb": 256.0,
+        "gflops": 12508.0,
+        "matrix": "rma10",
+        "precision": "d",
+        "routine": "csrgemm",
+        "time_ms": 1.0
+      },
+      "csrgemm:d:scircuit": {
+        "bandwidth_gb": 256.0,
+        "gflops": 1728.0,
+        "matrix": "scircuit",
+        "precision": "d",
+        "routine": "csrgemm",
+        "time_ms": 1.0
+      },
+      "v2_spmv_csr:d:bmwcra_1": {
+        "bandwidth_gb": 566.91,
+        "gflops": 92.33,
+        "matrix": "bmwcra_1",
+        "precision": "d",
+        "routine": "v2_spmv_csr",
+        "time_ms": 0.23
+      },
+      "v2_spmv_csr:d:mac_econ_fwd500": {
+        "bandwidth_gb": 518.22,
+        "gflops": 67.99,
+        "matrix": "mac_econ_fwd500",
+        "precision": "d",
+        "routine": "v2_spmv_csr",
+        "time_ms": 0.04
+      },
+      "v2_spmv_csr:d:mc2depi": {
+        "bandwidth_gb": 1197.55,
+        "gflops": 140.83,
+        "matrix": "mc2depi",
+        "precision": "d",
+        "routine": "v2_spmv_csr",
+        "time_ms": 0.03
+      },
+      "v2_spmv_csr:d:rma10": {
+        "bandwidth_gb": 683.49,
+        "gflops": 110.29,
+        "matrix": "rma10",
+        "precision": "d",
+        "routine": "v2_spmv_csr",
+        "time_ms": 0.04
+      },
+      "v2_spmv_csr:d:scircuit": {
+        "bandwidth_gb": 595.12,
+        "gflops": 76.46,
+        "matrix": "scircuit",
+        "precision": "d",
+        "routine": "v2_spmv_csr",
+        "time_ms": 0.03
+      }
+    }
+  },
+  "last_updated": "2025-12-05T21:27:53.923976",
+  "last_updated_arch": "gfx1201",
+  "version": "1.0"
+}

@@ -201,13 +201,6 @@ class PerformanceChecker:
         if bench_config.extra_args:
             cmd.extend(bench_config.extra_args)
         
-        # Add JSON output
-        import tempfile
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            output_file = f.name
-        
-        cmd.extend(['--bench-o', output_file])
-        
         if self.verbose:
             print(f"\nRunning: {' '.join(cmd)}")
         
@@ -215,28 +208,67 @@ class PerformanceChecker:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
             
             if result.returncode != 0:
-                print(f"Error running benchmark: {result.stderr}")
+                print(f"Error running benchmark (exit code {result.returncode}):")
+                print(f"  stderr: {result.stderr}")
+                if self.verbose and result.stdout:
+                    print(f"  stdout: {result.stdout}")
                 return None
             
-            # Parse JSON output
-            with open(output_file, 'r') as f:
-                data = json.load(f)
+            # Parse the tabular output from stdout
+            output = result.stdout
+            if self.verbose:
+                print(f"Benchmark output (last 800 chars):\n{output[-800:]}")
             
-            # Extract results (assuming single test case)
-            if not data or len(data) == 0:
-                print(f"Warning: No results in output file")
+            # Look for the data line (contains the actual results)
+            # Format: transA M N nnz_A alpha beta algorithm GFlop/s GB/s msec iter iters_inner verified function import ctype itype jtype
+            lines = output.strip().split('\n')
+            data_line = None
+            for line in lines:
+                # Skip header and separator lines
+                if 'transA' in line or '---' in line or line.strip() == '':
+                    continue
+                # Find line starting with NT (no transpose) or T (transpose)
+                if line.strip().startswith(('NT', 'T ')):
+                    data_line = line
+                    break
+            
+            if not data_line:
+                print(f"Error: Could not find result data in output")
+                if self.verbose:
+                    print(f"Output was:\n{output}")
                 return None
             
-            result_data = data[0]
+            # Split the line by whitespace
+            parts = data_line.split()
+            
+            if len(parts) < 12:
+                print(f"Error: Unexpected output format, got {len(parts)} fields")
+                if self.verbose:
+                    print(f"Data line: {data_line}")
+                return None
+            
+            # Extract the fields we care about
+            # transA[0], M[1], N[2], nnz_A[3], alpha[4], beta[5], algorithm[6], GFlop/s[7], GB/s[8], msec[9], ...
+            try:
+                gflops = float(parts[7])
+                bandwidth_gb = float(parts[8])
+                time_ms = float(parts[9])
+            except (ValueError, IndexError) as e:
+                print(f"Error parsing benchmark results: {e}")
+                if self.verbose:
+                    print(f"Data line: {data_line}")
+                    print(f"Parts: {parts}")
+                return None
+            
             matrix_name = Path(bench_config.matrix_path).stem
             
             return TestResult(
                 routine=bench_config.routine,
                 precision=bench_config.precision,
                 matrix=matrix_name,
-                gflops=float(result_data.get('GFlops/s', 0)),
-                bandwidth_gb=float(result_data.get('GB/s', 0)),
-                time_ms=float(result_data.get('msec', 0)),
+                gflops=gflops,
+                bandwidth_gb=bandwidth_gb,
+                time_ms=time_ms,
                 architecture=self.architecture
             )
             
@@ -245,11 +277,10 @@ class PerformanceChecker:
             return None
         except Exception as e:
             print(f"Error running benchmark: {e}")
+            if self.verbose:
+                import traceback
+                traceback.print_exc()
             return None
-        finally:
-            # Cleanup temp file
-            if os.path.exists(output_file):
-                os.remove(output_file)
     
     def run_all_benchmarks(self) -> List[TestResult]:
         """Run all configured benchmarks"""
