@@ -1,0 +1,28 @@
+# Minimal rocSPARSE Performance Test Configuration
+# For quick testing with a small subset of routines and matrices
+
+baseline_file: "scripts/rocsparse-perf-baseline.json"
+
+# Stricter tolerance for critical routines
+tolerance: 1.5
+
+# Minimal set of routines for quick testing
+routines:
+  # SpMV - most critical operation
+  - name: v2_spmv_csr
+    precisions: [d]
+  
+  - name: csrgemm
+    precisions: [d]
+    extra_args: ["--denseld", "64"]
+  
+  - name: axpyi
+    precisions: [d]
+
+# Small matrices for quick testing (< 1 second total)
+matrices:
+  - "$ROCSPARSE_BENCH_DATA_DIR/rma10.csr"
+  - "$ROCSPARSE_BENCH_DATA_DIR/mc2depi.csr"
+
+# For more comprehensive testing, see perf-test-config.yaml
+

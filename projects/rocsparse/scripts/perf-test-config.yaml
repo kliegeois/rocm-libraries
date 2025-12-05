@@ -1,0 +1,55 @@
+# rocSPARSE Performance Regression Test Configuration
+# This file defines which routines and matrices to test
+
+# Path to the baseline file (single file for all architectures)
+baseline_file: "scripts/rocsparse-perf-baseline.json"
+
+# Path to rocsparse-bench executable (optional, will auto-detect if not specified)
+# rocsparse_bench_path: "./build/release/clients/staging/rocsparse-bench"
+
+# Default architecture if detection fails (optional)
+# default_architecture: "mi300"
+
+# Performance tolerance (percentage)
+# Tests fail if performance drops by more than this percentage
+tolerance: 2.0
+
+# Routines to test
+# Each routine can specify:
+#   - name: routine name (e.g., spmv_csr, csrmv, etc.)
+#   - precisions: list of precisions to test (s=single, d=double, c=complex_single, z=complex_double)
+#   - extra_args: additional arguments to pass to rocsparse-bench (optional)
+routines:
+  - name: v2_spmv_csr
+    precisions: [d]
+  
+  - name: csrgemm
+    precisions: [d]
+    extra_args: ["--denseld", "64"]
+  
+  - name: axpyi
+    precisions: [d]
+
+# Matrix files to test
+# Supports:
+#   - Direct paths: "/path/to/matrix.csr"
+#   - Wildcards: "/path/to/matrices/*.csr"
+#   - Environment variables: "$ROCSPARSE_BENCH_DATA_DIR/matrix.csr"
+matrices:
+  # Small matrices for quick testing
+  - "$ROCSPARSE_BENCH_DATA_DIR/rma10.csr"
+  - "$ROCSPARSE_BENCH_DATA_DIR/mc2depi.csr"
+  - "$ROCSPARSE_BENCH_DATA_DIR/scircuit.csr"
+  
+  # Medium matrices
+  - "$ROCSPARSE_BENCH_DATA_DIR/bmwcra_1.csr"
+  - "$ROCSPARSE_BENCH_DATA_DIR/mac_econ_fwd500.csr"
+  
+  # Or use wildcards to match multiple files
+  # - "$ROCSPARSE_BENCH_DATA_DIR/*.csr"
+
+# Alternative: Specify matrices by category
+# matrices:
+#   - "$ROCSPARSE_BENCH_DATA_DIR/small/*.csr"
+#   - "$ROCSPARSE_BENCH_DATA_DIR/medium/*.csr"
+

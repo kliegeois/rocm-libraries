@@ -1,0 +1,109 @@
+# Example GitHub Actions workflow for performance regression testing
+# Place this in: .github/workflows/performance-test.yml
+
+name: Performance Regression Test
+
+on:
+  pull_request:
+    paths:
+      - 'projects/rocsparse/library/**'
+      - 'projects/rocsparse/clients/**'
+      - '.github/workflows/performance-test.yml'
+
+jobs:
+  # Test on MI300
+  perf-test-mi300:
+    runs-on: [self-hosted, mi300]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup Python
+        run: |
+          pip install pyyaml
+      
+      - name: Build rocSPARSE with benchmarks
+        run: |
+          cd projects/rocsparse
+          ./rmake.py --build_clients -a gfx942
+      
+      - name: Run performance tests
+        env:
+          ROCSPARSE_BENCH_DATA_DIR: /opt/rocsparse-test-matrices
+        run: |
+          cd projects/rocsparse/scripts
+          chmod +x test-performance.sh
+          ./test-performance.sh
+      
+      - name: Upload results on failure
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: performance-results-mi300
+          path: projects/rocsparse/scripts/*.json
+  
+  # Test on MI250
+  perf-test-mi250:
+    runs-on: [self-hosted, mi250]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup Python
+        run: |
+          pip install pyyaml
+      
+      - name: Build rocSPARSE with benchmarks
+        run: |
+          cd projects/rocsparse
+          ./rmake.py --build_clients -a gfx908
+      
+      - name: Run performance tests
+        env:
+          ROCSPARSE_BENCH_DATA_DIR: /opt/rocsparse-test-matrices
+        run: |
+          cd projects/rocsparse/scripts
+          chmod +x test-performance.sh
+          ./test-performance.sh
+      
+      - name: Upload results on failure
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: performance-results-mi250
+          path: projects/rocsparse/scripts/*.json
+
+  # Test on Navi4
+  perf-test-navi4:
+    runs-on: [self-hosted, navi4]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup Python
+        run: |
+          pip install pyyaml
+      
+      - name: Build rocSPARSE with benchmarks
+        run: |
+          cd projects/rocsparse
+          ./rmake.py --build_clients -a gfx1103
+      
+      - name: Run performance tests
+        env:
+          ROCSPARSE_BENCH_DATA_DIR: /opt/rocsparse-test-matrices
+        run: |
+          cd projects/rocsparse/scripts
+          chmod +x test-performance.sh
+          ./test-performance.sh
+      
+      - name: Upload results on failure
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: performance-results-navi4
+          path: projects/rocsparse/scripts/*.json
+

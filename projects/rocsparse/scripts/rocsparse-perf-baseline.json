@@ -1,0 +1,69 @@
+{
+  "version": "1.0",
+  "description": "rocSPARSE performance baseline for multiple architectures",
+  "last_updated": "2025-12-05T00:00:00",
+  "architectures": {
+    "mi300": {
+      "spmv_csr:d:rma10": {
+        "gflops": 0.5,
+        "bandwidth_gb": 1.2,
+        "time_ms": 0.05,
+        "routine": "spmv_csr",
+        "precision": "d",
+        "matrix": "rma10"
+      },
+      "spmv_csr:s:rma10": {
+        "gflops": 0.8,
+        "bandwidth_gb": 1.5,
+        "time_ms": 0.04,
+        "routine": "spmv_csr",
+        "precision": "s",
+        "matrix": "rma10"
+      }
+    },
+    "mi250": {
+      "spmv_csr:d:rma10": {
+        "gflops": 0.45,
+        "bandwidth_gb": 1.1,
+        "time_ms": 0.055,
+        "routine": "spmv_csr",
+        "precision": "d",
+        "matrix": "rma10"
+      },
+      "spmv_csr:s:rma10": {
+        "gflops": 0.75,
+        "bandwidth_gb": 1.4,
+        "time_ms": 0.045,
+        "routine": "spmv_csr",
+        "precision": "s",
+        "matrix": "rma10"
+      }
+    },
+    "navi4": {
+      "spmv_csr:d:rma10": {
+        "gflops": 0.4,
+        "bandwidth_gb": 1.0,
+        "time_ms": 0.06,
+        "routine": "spmv_csr",
+        "precision": "d",
+        "matrix": "rma10"
+      },
+      "spmv_csr:s:rma10": {
+        "gflops": 0.7,
+        "bandwidth_gb": 1.3,
+        "time_ms": 0.05,
+        "routine": "spmv_csr",
+        "precision": "s",
+        "matrix": "rma10"
+      }
+    }
+  },
+  "notes": [
+    "This is an example baseline file with placeholder values.",
+    "Run 'rocsparse-perf-check.py --update-baseline' to populate with real measurements.",
+    "The baseline supports multiple architectures in a single file.",
+    "Each entry is keyed by: routine:precision:matrix",
+    "Update this file when performance improvements are verified and merged."
+  ]
+}
+
