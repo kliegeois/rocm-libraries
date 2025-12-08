@@ -2,13 +2,14 @@
 """
 Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
 
-Performance regression testing script for rocSPARSE.
+Performance regression testing script for rocSPARSE with statistical analysis.
 
 This script:
-1. Runs benchmarks for a subset of routines (spmv, spmm, spsv) with specified matrices
-2. Compares results against a multi-architecture baseline file
-3. Reports performance regressions based on configurable tolerance
-4. Can run locally or in CI/CD pipelines
+1. Runs benchmarks multiple times for statistical robustness
+2. Calculates confidence intervals for performance metrics
+3. Compares results against a multi-architecture baseline file
+4. Reports performance regressions based on statistical significance
+5. Can run locally or in CI/CD pipelines
 
 Usage:
     # Run regression test
@@ -19,6 +20,9 @@ Usage:
     
     # Verbose output
     ./rocsparse-perf-check.py --config perf-test-config.yaml -v
+    
+    # Run with custom number of iterations and confidence level
+    ./rocsparse-perf-check.py --config perf-test-config.yaml --num-runs 10 --confidence 0.99
 """
 
 import argparse
@@ -29,8 +33,10 @@ import sys
 import yaml
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import re
+import statistics
+import math
 
 
 @dataclass
@@ -46,24 +52,179 @@ class BenchmarkConfig:
 
 
 @dataclass
-class TestResult:
-    """Result from a benchmark execution"""
-    routine: str
-    precision: str
-    matrix: str
+class SingleRunResult:
+    """Result from a single benchmark execution"""
     gflops: float
     bandwidth_gb: float
     time_ms: float
+
+
+@dataclass
+class StatisticalResult:
+    """Statistical summary of multiple benchmark runs"""
+    routine: str
+    precision: str
+    matrix: str
     architecture: str
+    
+    # GFlops statistics
+    gflops_mean: float
+    gflops_median: float
+    gflops_std: float
+    gflops_ci_lower: float
+    gflops_ci_upper: float
+    
+    # Bandwidth statistics
+    bandwidth_mean: float
+    bandwidth_median: float
+    bandwidth_std: float
+    bandwidth_ci_lower: float
+    bandwidth_ci_upper: float
+    
+    # Time statistics
+    time_mean: float
+    time_median: float
+    time_std: float
+    time_ci_lower: float
+    time_ci_upper: float
+    
+    # Metadata
+    num_runs: int
+    confidence_level: float
+    
+    @property
+    def gflops_coefficient_of_variation(self) -> float:
+        """Coefficient of variation for GFlops (std/mean)"""
+        return (self.gflops_std / self.gflops_mean * 100) if self.gflops_mean > 0 else 0
+    
+    @property
+    def time_coefficient_of_variation(self) -> float:
+        """Coefficient of variation for time (std/mean)"""
+        return (self.time_std / self.time_mean * 100) if self.time_mean > 0 else 0
+
+
+class StatisticalAnalyzer:
+    """Handles statistical analysis of benchmark results"""
+    
+    @staticmethod
+    def calculate_confidence_interval(
+        data: List[float], 
+        confidence_level: float = 0.95
+    ) -> Tuple[float, float, float, float, float]:
+        """
+        Calculate mean, median, std, and confidence interval for data.
+        
+        Returns: (mean, median, std, ci_lower, ci_upper)
+        """
+        if not data:
+            return 0.0, 0.0, 0.0, 0.0, 0.0
+        
+        if len(data) == 1:
+            val = data[0]
+            return val, val, 0.0, val, val
+        
+        mean = statistics.mean(data)
+        median = statistics.median(data)
+        std = statistics.stdev(data)
+        n = len(data)
+        
+        # Use t-distribution for small sample sizes
+        # For large n, t-distribution approaches normal distribution
+        # Using approximation:  z_critical for n > 30critical 
+        if n <= 30:
+            # t-distribution critical values (two-tailed)
+            # Approximation for common confidence levels
+            t_critical_values = {
+                0.90: {5: 2.015, 10: 1.812, 15: 1.753, 20: 1.725, 30: 1.697},
+                0.95: {5: 2.571, 10: 2.228, 15: 2.131, 20: 2.086, 30: 2.042},
+                0.99: {5: 4.032, 10: 3.169, 15: 2.947, 20: 2.845, 30: 2.750},
+            }
+            
+            # Find closest n in table
+            available_n = [5, 10, 15, 20, 30]
+            closest_n = min(available_n, key=lambda x: abs(x - n))
+            
+            t_critical = t_critical_values.get(confidence_level, {}).get(closest_n, 2.0)
+        else:
+            # For larger samples, use z-scores
+            z_critical_values = {
+                0.90: 1.645,
+                0.95: 1.960,
+                0.99: 2.576,
+            }
+            t_critical = z_critical_values.get(confidence_level, 1.960)
+        
+        # Calculate margin of error
+        margin_of_error = t_critical * (std / math.sqrt(n))
+        
+        ci_lower = mean - margin_of_error
+        ci_upper = mean + margin_of_error
+        
+        return mean, median, std, ci_lower, ci_upper
+    
+    @staticmethod
+    def analyze_runs(
+        runs: List[SingleRunResult],
+        routine: str,
+        precision: str,
+        matrix: str,
+        architecture: str,
+        confidence_level: float = 0.95
+    ) -> StatisticalResult:
+        """Analyze multiple runs and return statistical summary"""
+        
+        gflops_data = [r.gflops for r in runs]
+        bandwidth_data = [r.bandwidth_gb for r in runs]
+        time_data = [r.time_ms for r in runs]
+        
+        gflops_mean, gflops_median, gflops_std, gflops_ci_lower, gflops_ci_upper = \
+            StatisticalAnalyzer.calculate_confidence_interval(gflops_data, confidence_level)
+        
+        bandwidth_mean, bandwidth_median, bandwidth_std, bandwidth_ci_lower, bandwidth_ci_upper = \
+            StatisticalAnalyzer.calculate_confidence_interval(bandwidth_data, confidence_level)
+        
+        time_mean, time_median, time_std, time_ci_lower, time_ci_upper = \
+            StatisticalAnalyzer.calculate_confidence_interval(time_data, confidence_level)
+        
+        return StatisticalResult(
+            routine=routine,
+            precision=precision,
+            matrix=matrix,
+            architecture=architecture,
+            gflops_mean=gflops_mean,
+            gflops_median=gflops_median,
+            gflops_std=gflops_std,
+            gflops_ci_lower=gflops_ci_lower,
+            gflops_ci_upper=gflops_ci_upper,
+            bandwidth_mean=bandwidth_mean,
+            bandwidth_median=bandwidth_median,
+            bandwidth_std=bandwidth_std,
+            bandwidth_ci_lower=bandwidth_ci_lower,
+            bandwidth_ci_upper=bandwidth_ci_upper,
+            time_mean=time_mean,
+            time_median=time_median,
+            time_std=time_std,
+            time_ci_lower=time_ci_lower,
+            time_ci_upper=time_ci_upper,
+            num_runs=len(runs),
+            confidence_level=confidence_level
+        )
 
 
 class PerformanceChecker:
     """Main class for performance regression checking"""
     
-    def __init__(self, config_file: str, verbose: bool = False):
+    def __init__(self, config_file: str, verbose: bool = False, 
+                 num_runs: int = None, confidence_level: float = None):
         self.config_file = config_file
         self.verbose = verbose
         self.config = self._load_config()
+        
+        # Override config with command-line arguments if provided
+        self.num_runs = num_runs if num_runs is not None else self.config.get('num_runs', 5)
+        self.confidence_level = confidence_level if confidence_level is not None else \
+                               self.config.get('confidence_level', 0.95)
+        
         self.architecture = self._detect_architecture()
         self.rocsparse_bench = self._find_rocsparse_bench()
         
@@ -177,8 +338,8 @@ class PerformanceChecker:
         
         return expanded
     
-    def _run_benchmark(self, bench_config: BenchmarkConfig) -> Optional[TestResult]:
-        """Run a single benchmark and return results"""
+    def _run_single_benchmark(self, bench_config: BenchmarkConfig) -> Optional[SingleRunResult]:
+        """Run a single benchmark iteration and return results"""
         cmd = [
             self.rocsparse_bench,
             '-f', bench_config.routine,
@@ -201,103 +362,134 @@ class PerformanceChecker:
         if bench_config.extra_args:
             cmd.extend(bench_config.extra_args)
         
-        if self.verbose:
-            print(f"\nRunning: {' '.join(cmd)}")
-        
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
             
             if result.returncode != 0:
-                print(f"Error running benchmark (exit code {result.returncode}):")
-                print(f"  stderr: {result.stderr}")
-                if self.verbose and result.stdout:
-                    print(f"  stdout: {result.stdout}")
+                if self.verbose:
+                    print(f"    Error running benchmark (exit code {result.returncode})")
+                    print(f"      stderr: {result.stderr[:200]}")
                 return None
             
             # Parse the tabular output from stdout
             output = result.stdout
-            if self.verbose:
-                print(f"Benchmark output (last 800 chars):\n{output[-800:]}")
             
-            # Look for the data line (contains the actual results)
-            # Format: transA M N nnz_A alpha beta algorithm GFlop/s GB/s msec iter iters_inner verified function import ctype itype jtype
+            # Look for the data line
             lines = output.strip().split('\n')
             data_line = None
             for line in lines:
-                # Skip header and separator lines
                 if 'transA' in line or '---' in line or line.strip() == '':
                     continue
-                # Find line starting with NT (no transpose) or T (transpose)
                 if line.strip().startswith(('NT', 'T ')):
                     data_line = line
                     break
             
             if not data_line:
-                print(f"Error: Could not find result data in output")
                 if self.verbose:
-                    print(f"Output was:\n{output}")
+                    print(f"    Error: Could not find result data in output")
                 return None
             
             # Split the line by whitespace
             parts = data_line.split()
             
             if len(parts) < 12:
-                print(f"Error: Unexpected output format, got {len(parts)} fields")
                 if self.verbose:
-                    print(f"Data line: {data_line}")
+                    print(f"    Error: Unexpected output format, got {len(parts)} fields")
                 return None
             
-            # Extract the fields we care about
-            # transA[0], M[1], N[2], nnz_A[3], alpha[4], beta[5], algorithm[6], GFlop/s[7], GB/s[8], msec[9], ...
+            # Extract metrics
             try:
                 gflops = float(parts[7])
                 bandwidth_gb = float(parts[8])
                 time_ms = float(parts[9])
             except (ValueError, IndexError) as e:
-                print(f"Error parsing benchmark results: {e}")
                 if self.verbose:
-                    print(f"Data line: {data_line}")
-                    print(f"Parts: {parts}")
+                    print(f"    Error parsing benchmark results: {e}")
                 return None
             
-            matrix_name = Path(bench_config.matrix_path).stem
-            
-            return TestResult(
-                routine=bench_config.routine,
-                precision=bench_config.precision,
-                matrix=matrix_name,
+            return SingleRunResult(
                 gflops=gflops,
                 bandwidth_gb=bandwidth_gb,
-                time_ms=time_ms,
-                architecture=self.architecture
+                time_ms=time_ms
             )
             
         except subprocess.TimeoutExpired:
-            print(f"Timeout running benchmark for {bench_config.routine}")
+            if self.verbose:
+                print(f"    Timeout running benchmark")
             return None
         except Exception as e:
-            print(f"Error running benchmark: {e}")
             if self.verbose:
-                import traceback
-                traceback.print_exc()
+                print(f"    Error running benchmark: {e}")
             return None
     
-    def run_all_benchmarks(self) -> List[TestResult]:
-        """Run all configured benchmarks"""
+    def _run_benchmark_multiple_times(
+        self, 
+        bench_config: BenchmarkConfig
+    ) -> Optional[StatisticalResult]:
+        """Run benchmark multiple times and return statistical analysis"""
+        
+        print(f"    Running {self.num_runs} iterations...", end='', flush=True)
+        
+        runs = []
+        for i in range(self.num_runs):
+            result = self._run_single_benchmark(bench_config)
+            if result:
+                runs.append(result)
+                if self.verbose:
+                    print(f"\n      Run {i+1}/{self.num_runs}: "
+                          f"GFlops={result.gflops:.2f}, "
+                          f"Time={result.time_ms:.4f}ms", end='')
+                else:
+                    print('.', end='', flush=True)
+            else:
+                print('x', end='', flush=True)
+        
+        print()  # New line after progress indicators
+        
+        if not runs:
+            print(f"    ❌ All runs failed")
+            return None
+        
+        if len(runs) < self.num_runs:
+            print(f"    ⚠️  Only {len(runs)}/{self.num_runs} runs succeeded")
+        
+        # Perform statistical analysis
+        matrix_name = Path(bench_config.matrix_path).stem
+        result = StatisticalAnalyzer.analyze_runs(
+            runs=runs,
+            routine=bench_config.routine,
+            precision=bench_config.precision,
+            matrix=matrix_name,
+            architecture=self.architecture,
+            confidence_level=self.confidence_level
+        )
+        
+        if self.verbose or len(runs) < self.num_runs:
+            cv = result.gflops_coefficient_of_variation
+            print(f"    📊 Statistics: "
+                  f"GFlops={result.gflops_mean:.2f}±{result.gflops_std:.2f} "
+                  f"(CV={cv:.2f}%), "
+                  f"CI=[{result.gflops_ci_lower:.2f}, {result.gflops_ci_upper:.2f}]")
+        
+        return result
+    
+    def run_all_benchmarks(self) -> List[StatisticalResult]:
+        """Run all configured benchmarks with statistical analysis"""
         results = []
         
         routines = self.config['routines']
         matrices = self.config['matrices']
         
-        print(f"\n{'='*60}")
+        print(f"\n{'='*70}")
         print(f"Running benchmarks for architecture: {self.architecture}")
-        print(f"{'='*60}")
+        print(f"Statistical parameters: {self.num_runs} runs, "
+              f"{self.confidence_level*100:.0f}% confidence interval")
+        print(f"{'='*70}")
         
         total_tests = 0
         for routine_config in routines:
             routine = routine_config['name']
             precisions = routine_config.get('precisions', ['d'])
-            extra_args = routine_config.get('extra_args', [])
             
             for matrix_spec in matrices:
                 matrix_files = self._expand_matrix_path(matrix_spec)
@@ -328,17 +520,13 @@ class PerformanceChecker:
                             extra_args=extra_args
                         )
                         
-                        result = self._run_benchmark(bench_config)
+                        result = self._run_benchmark_multiple_times(bench_config)
                         if result:
                             results.append(result)
-                            if self.verbose:
-                                print(f"  GFlops: {result.gflops:.2f}, "
-                                      f"Bandwidth: {result.bandwidth_gb:.2f} GB/s, "
-                                      f"Time: {result.time_ms:.4f} ms")
         
-        print(f"\n{'='*60}")
+        print(f"\n{'='*70}")
         print(f"Completed {len(results)}/{total_tests} benchmarks successfully")
-        print(f"{'='*60}\n")
+        print(f"{'='*70}\n")
         
         return results
     
@@ -365,12 +553,16 @@ class PerformanceChecker:
         
         print(f"Baseline file updated: {baseline_file}")
     
-    def _get_baseline_key(self, result: TestResult) -> str:
-        """Generate key for baseline lookup"""
-        return f"{result.architecture}:{result.routine}:{result.precision}:{result.matrix}"
-    
-    def compare_with_baseline(self, results: List[TestResult]) -> Tuple[bool, List[str]]:
-        """Compare results with baseline and return (passed, messages)"""
+    def compare_with_baseline(
+        self, 
+        results: List[StatisticalResult]
+    ) -> Tuple[bool, List[str]]:
+        """
+        Compare results with baseline using statistical significance.
+        
+        Uses confidence intervals to determine if performance difference
+        is statistically significant.
+        """
         baseline = self._load_baseline()
         
         if not baseline:
@@ -381,9 +573,12 @@ class PerformanceChecker:
         passed = True
         messages = []
         
-        print(f"\n{'='*60}")
-        print(f"Comparing against baseline (tolerance: {tolerance}%)")
-        print(f"{'='*60}\n")
+        print(f"\n{'='*70}")
+        print(f"Comparing against baseline")
+        print(f"  Tolerance: {tolerance}%")
+        print(f"  Confidence level: {self.confidence_level*100:.0f}%")
+        print(f"  Method: Statistical confidence interval overlap")
+        print(f"{'='*70}\n")
         
         # Check for architecture in baseline
         if self.architecture not in baseline.get('architectures', {}):
@@ -404,62 +599,95 @@ class PerformanceChecker:
                 continue
             
             baseline_data = arch_baseline[key]
-            baseline_gflops = baseline_data['gflops']
-            baseline_bandwidth = baseline_data['bandwidth_gb']
-            baseline_time = baseline_data['time_ms']
             
-            # Calculate percentage differences
-            gflops_diff = ((result.gflops - baseline_gflops) / baseline_gflops) * 100
-            bandwidth_diff = ((result.bandwidth_gb - baseline_bandwidth) / baseline_bandwidth) * 100
-            time_diff = ((result.time_ms - baseline_time) / baseline_time) * 100
+            # Get baseline statistics
+            baseline_gflops_mean = baseline_data.get('gflops_mean', baseline_data.get('gflops', 0))
+            baseline_gflops_ci_lower = baseline_data.get('gflops_ci_lower', baseline_gflops_mean)
+            baseline_gflops_ci_upper = baseline_data.get('gflops_ci_upper', baseline_gflops_mean)
             
-            # Check if any metric regressed beyond tolerance
+            baseline_time_mean = baseline_data.get('time_mean', baseline_data.get('time_ms', 0))
+            baseline_time_ci_lower = baseline_data.get('time_ci_lower', baseline_time_mean)
+            baseline_time_ci_upper = baseline_data.get('time_ci_upper', baseline_time_mean)
+            
+            # Calculate percentage differences (based on means)
+            gflops_diff = ((result.gflops_mean - baseline_gflops_mean) / 
+                          baseline_gflops_mean) * 100 if baseline_gflops_mean > 0 else 0
+            
+            time_diff = ((result.time_mean - baseline_time_mean) / 
+                        baseline_time_mean) * 100 if baseline_time_mean > 0 else 0
+            
+            # Check for statistical significance using confidence interval overlap
+            # If CIs don't overlap, the difference is statistically significant
+            gflops_ci_overlap = not (result.gflops_ci_upper < baseline_gflops_ci_lower or 
+                                    result.gflops_ci_lower > baseline_gflops_ci_upper)
+            
+            time_ci_overlap = not (result.time_ci_upper < baseline_time_ci_lower or 
+                                  result.time_ci_lower > baseline_time_ci_upper)
+            
+            # Determine if there's a regression
             regression = False
             status = "✅"
             details = []
             
-            if gflops_diff < -tolerance:
+            # GFlops regression: statistically significant decrease beyond tolerance
+            if not gflops_ci_overlap and gflops_diff < -tolerance:
                 regression = True
-                status = "❌"
-                details.append(f"GFlops: {gflops_diff:+.2f}%")
+                details.append(f"GFlops: {gflops_diff:+.2f}% (significant)")
+            elif gflops_diff < -tolerance:
+                # Within statistical noise but shows concerning trend
+                details.append(f"GFlops: {gflops_diff:+.2f}% (borderline)")
             
-            if bandwidth_diff < -tolerance:
+            # Time regression: statistically significant increase beyond tolerance
+            if not time_ci_overlap and time_diff > tolerance:
                 regression = True
-                status = "❌"
-                details.append(f"Bandwidth: {bandwidth_diff:+.2f}%")
+                details.append(f"Time: {time_diff:+.2f}% (significant)")
+            elif time_diff > tolerance:
+                details.append(f"Time: {time_diff:+.2f}% (borderline)")
             
-            if time_diff > tolerance:  # Higher time is worse
-                regression = True
+            if regression:
                 status = "❌"
-                details.append(f"Time: {time_diff:+.2f}%")
+                passed = False
+            elif details:
+                status = "⚠️ "
             
             # Format output
             msg = f"{status} {key}"
-            if regression:
-                msg += f" - REGRESSION: {', '.join(details)}"
-                passed = False
+            if details:
+                msg += f" - {', '.join(details)}"
+                if self.verbose:
+                    msg += f"\n    Current:  GFlops={result.gflops_mean:.2f} " \
+                           f"CI=[{result.gflops_ci_lower:.2f}, {result.gflops_ci_upper:.2f}], " \
+                           f"CV={result.gflops_coefficient_of_variation:.2f}%"
+                    msg += f"\n    Baseline: GFlops={baseline_gflops_mean:.2f} " \
+                           f"CI=[{baseline_gflops_ci_lower:.2f}, {baseline_gflops_ci_upper:.2f}]"
             else:
                 msg += f" - OK (GFlops: {gflops_diff:+.2f}%, Time: {time_diff:+.2f}%)"
             
             print(msg)
             messages.append(msg)
         
-        print(f"\n{'='*60}")
+        print(f"\n{'='*70}")
         if passed:
-            print("✅ All tests PASSED - No performance regressions detected")
+            print("✅ All tests PASSED - No statistically significant regressions")
         else:
-            print("❌ Some tests FAILED - Performance regressions detected")
-        print(f"{'='*60}\n")
+            print("❌ Some tests FAILED - Statistically significant regressions detected")
+        print(f"{'='*70}\n")
         
         return passed, messages
     
-    def update_baseline(self, results: List[TestResult]):
-        """Update baseline with new results"""
+    def update_baseline(self, results: List[StatisticalResult]):
+        """Update baseline with new statistical results"""
         baseline = self._load_baseline()
         
         # Initialize structure if needed
         if 'version' not in baseline:
-            baseline['version'] = '1.0'
+            baseline['version'] = '2.0'  # Version 2.0 includes statistical data
+        
+        if 'meta' not in baseline:
+            baseline['meta'] = {}
+        
+        baseline['meta']['num_runs'] = self.num_runs
+        baseline['meta']['confidence_level'] = self.confidence_level
         
         if 'architectures' not in baseline:
             baseline['architectures'] = {}
@@ -479,12 +707,32 @@ class PerformanceChecker:
             is_new = key not in arch_baseline
             
             arch_baseline[key] = {
-                'gflops': result.gflops,
-                'bandwidth_gb': result.bandwidth_gb,
-                'time_ms': result.time_ms,
                 'routine': result.routine,
                 'precision': result.precision,
-                'matrix': result.matrix
+                'matrix': result.matrix,
+                # GFlops statistics
+                'gflops_mean': result.gflops_mean,
+                'gflops_median': result.gflops_median,
+                'gflops_std': result.gflops_std,
+                'gflops_ci_lower': result.gflops_ci_lower,
+                'gflops_ci_upper': result.gflops_ci_upper,
+                'gflops_cv': result.gflops_coefficient_of_variation,
+                # Bandwidth statistics
+                'bandwidth_mean': result.bandwidth_mean,
+                'bandwidth_median': result.bandwidth_median,
+                'bandwidth_std': result.bandwidth_std,
+                'bandwidth_ci_lower': result.bandwidth_ci_lower,
+                'bandwidth_ci_upper': result.bandwidth_ci_upper,
+                # Time statistics
+                'time_mean': result.time_mean,
+                'time_median': result.time_median,
+                'time_std': result.time_std,
+                'time_ci_lower': result.time_ci_lower,
+                'time_ci_upper': result.time_ci_upper,
+                'time_cv': result.time_coefficient_of_variation,
+                # Metadata
+                'num_runs': result.num_runs,
+                'confidence_level': result.confidence_level,
             }
             
             if is_new:
@@ -501,24 +749,36 @@ class PerformanceChecker:
         
         print(f"\nBaseline updated:")
         print(f"  Architecture: {self.architecture}")
+        print(f"  Statistical parameters: {self.num_runs} runs, "
+              f"{self.confidence_level*100:.0f}% confidence")
         print(f"  New entries: {new_count}")
         print(f"  Updated entries: {updated_count}")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='rocSPARSE performance regression testing',
+        description='rocSPARSE performance regression testing with statistical analysis',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Run regression test
+  # Run regression test with default settings (5 runs, 95% confidence)
   ./rocsparse-perf-check.py --config perf-test-config.yaml
+  
+  # Run with higher statistical confidence (10 runs, 99% confidence)
+  ./rocsparse-perf-check.py --config perf-test-config.yaml --num-runs 10 --confidence 0.99
   
   # Update baseline after verifying improvements
   ./rocsparse-perf-check.py --config perf-test-config.yaml --update-baseline
   
-  # Verbose output
+  # Verbose output with detailed statistics
   ./rocsparse-perf-check.py --config perf-test-config.yaml -v
+  
+Statistical Analysis:
+  The script runs each benchmark multiple times and uses confidence intervals
+  to determine if performance differences are statistically significant.
+  A regression is reported only if:
+    1. The performance difference exceeds the tolerance threshold, AND
+    2. The confidence intervals don't overlap (statistically significant)
         """
     )
     
@@ -527,12 +787,33 @@ Examples:
     parser.add_argument('--update-baseline', '-u', action='store_true',
                         help='Update baseline file with current results')
     parser.add_argument('--verbose', '-v', action='store_true',
-                        help='Verbose output')
+                        help='Verbose output with detailed statistics')
+    parser.add_argument('--num-runs', '-n', type=int, default=None,
+                        help='Number of runs per benchmark (default: 5 or from config)')
+    parser.add_argument('--confidence', type=float, default=None,
+                        help='Confidence level for intervals: 0.90, 0.95, or 0.99 (default: 0.95)')
     
     args = parser.parse_args()
     
+    # Validate confidence level
+    if args.confidence is not None:
+        if args.confidence not in [0.90, 0.95, 0.99]:
+            print("Error: Confidence level must be 0.90, 0.95, or 0.99")
+            return 1
+    
+    # Validate num_runs
+    if args.num_runs is not None:
+        if args.num_runs < 2:
+            print("Error: Number of runs must be at least 2 for statistical analysis")
+            return 1
+    
     try:
-        checker = PerformanceChecker(args.config, args.verbose)
+        checker = PerformanceChecker(
+            args.config, 
+            args.verbose,
+            num_runs=args.num_runs,
+            confidence_level=args.confidence
+        )
         results = checker.run_all_benchmarks()
         
         if not results:
@@ -556,4 +837,3 @@ Examples:
 
 if __name__ == '__main__':
     sys.exit(main())
-

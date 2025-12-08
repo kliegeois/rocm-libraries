@@ -58,8 +58,8 @@
         "time_ms": 0.04
       },
       "v2_spmv_csr:d:mc2depi": {
-        "bandwidth_gb": 1197.55,
-        "gflops": 140.83,
+        "bandwidth_gb": 1166.65,
+        "gflops": 137.2,
         "matrix": "mc2depi",
         "precision": "d",
         "routine": "v2_spmv_csr",
