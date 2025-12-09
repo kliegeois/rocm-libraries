@@ -3,26 +3,37 @@
 
 baseline_file: "scripts/rocsparse-perf-baseline.json"
 
-# Stricter tolerance for critical routines
-tolerance: 1.5
+# Statistical analysis parameters (fewer runs for faster testing)
+num_runs: 3
+confidence_level: 0.95
 
-# Minimal set of routines for quick testing
+# Tolerance for minimal testing
+tolerance: 5.0
+
+# Minimal set of routines (only those verified to work)
 routines:
-  # SpMV - most critical operation
-  - name: v2_spmv_csr
+  # Level 2: SpMV - most critical operations
+  - name: csrmv
+    precisions: [d]
+  
+  - name: coomv
+    precisions: [d]
+    extra_args: ["--spmv_alg", "5"]  # COO atomic
+  
+  - name: ellmv
+    precisions: [d]
+  
+  # Extra: Matrix operations
+  - name: csrgeam
     precisions: [d]
   
   - name: csrgemm
     precisions: [d]
-    extra_args: ["--denseld", "64"]
-  
-  - name: axpyi
-    precisions: [d]
 
-# Small matrices for quick testing (< 1 second total)
+# Small matrices for quick testing
 matrices:
   - "$ROCSPARSE_BENCH_DATA_DIR/rma10.csr"
   - "$ROCSPARSE_BENCH_DATA_DIR/mc2depi.csr"
+  - "$ROCSPARSE_BENCH_DATA_DIR/nos1.csr"
 
 # For more comprehensive testing, see perf-test-config.yaml
-

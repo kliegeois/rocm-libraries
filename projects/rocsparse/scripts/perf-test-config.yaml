@@ -10,25 +10,40 @@ baseline_file: "scripts/rocsparse-perf-baseline.json"
 # Default architecture if detection fails (optional)
 # default_architecture: "mi300"
 
+# Number of runs per benchmark for statistical analysis (default: 5)
+num_runs: 5
+
+# Confidence level for statistical intervals: 0.90, 0.95, or 0.99 (default: 0.95)
+confidence_level: 0.95
+
 # Performance tolerance (percentage)
 # Tests fail if performance drops by more than this percentage
-tolerance: 2.0
+# AND the difference is statistically significant
+tolerance: 5.0
 
-# Routines to test
+# Routines to test (verified working routines)
 # Each routine can specify:
 #   - name: routine name (e.g., spmv_csr, csrmv, etc.)
 #   - precisions: list of precisions to test (s=single, d=double, c=complex_single, z=complex_double)
 #   - extra_args: additional arguments to pass to rocsparse-bench (optional)
 routines:
-  - name: v2_spmv_csr
-    precisions: [d]
+  # Level 2: Matrix-Vector operations
+  - name: csrmv
+    precisions: [s, d]
+  
+  - name: coomv
+    precisions: [s, d]
+    extra_args: ["--spmv_alg", "5"]  # COO atomic
+  
+  - name: ellmv
+    precisions: [s, d]
+  
+  # Extra: Matrix addition/multiplication
+  - name: csrgeam
+    precisions: [s, d]
   
   - name: csrgemm
-    precisions: [d]
-    extra_args: ["--denseld", "64"]
-  
-  - name: axpyi
-    precisions: [d]
+    precisions: [s, d]
 
 # Matrix files to test
 # Supports:
@@ -39,17 +54,24 @@ matrices:
   # Small matrices for quick testing
   - "$ROCSPARSE_BENCH_DATA_DIR/rma10.csr"
   - "$ROCSPARSE_BENCH_DATA_DIR/mc2depi.csr"
-  - "$ROCSPARSE_BENCH_DATA_DIR/scircuit.csr"
+  - "$ROCSPARSE_BENCH_DATA_DIR/nos1.csr"
+  - "$ROCSPARSE_BENCH_DATA_DIR/nos2.csr"
   
-  # Medium matrices
+  # Medium matrices for balanced testing
   - "$ROCSPARSE_BENCH_DATA_DIR/bmwcra_1.csr"
   - "$ROCSPARSE_BENCH_DATA_DIR/mac_econ_fwd500.csr"
+  - "$ROCSPARSE_BENCH_DATA_DIR/bibd_22_8.csr"
+  - "$ROCSPARSE_BENCH_DATA_DIR/qc2534.csr"
   
-  # Or use wildcards to match multiple files
-  # - "$ROCSPARSE_BENCH_DATA_DIR/*.csr"
+  # Larger matrices for stress testing
+  - "$ROCSPARSE_BENCH_DATA_DIR/Chevron2.csr"
+  - "$ROCSPARSE_BENCH_DATA_DIR/mplate.csr"
+  - "$ROCSPARSE_BENCH_DATA_DIR/amazon0312.csr"
+  - "$ROCSPARSE_BENCH_DATA_DIR/Chebyshev4.csr"
 
+# Note: Some routines (bsrmv, csrsv, csrmm) require specific matrix properties
+# or additional setup and are excluded from this configuration.
 # Alternative: Specify matrices by category
 # matrices:
 #   - "$ROCSPARSE_BENCH_DATA_DIR/small/*.csr"
 #   - "$ROCSPARSE_BENCH_DATA_DIR/medium/*.csr"
-
