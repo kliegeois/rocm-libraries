@@ -1,0 +1,87 @@
+# rocSPARSE Performance Regression Test Configuration - Optimized
+# This configuration reduces wall clock time by ~77% while testing all routines
+# Key optimization: csrgeam uses only fastest 5 matrices (253s -> 33s)
+
+# Path to the baseline file (single file for all architectures)
+baseline_file: "scripts/rocsparse-perf-baseline.json"
+
+# Path to rocsparse-bench executable (optional, will auto-detect if not specified)
+# rocsparse_bench_path: "./build/release/clients/staging/rocsparse-bench"
+
+# Default architecture if detection fails (optional)
+# default_architecture: "mi300"
+
+# Number of runs per benchmark for statistical analysis (default: 5)
+num_runs: 5
+
+# Confidence level for statistical intervals: 0.90, 0.95, or 0.99 (default: 0.95)
+confidence_level: 0.95
+
+# Performance tolerance (percentage)
+# Tests fail if performance drops by more than this percentage
+# AND the difference is statistically significant
+tolerance: 5.0
+
+# Routines to test (verified working routines)
+# Each routine can specify:
+#   - name: routine name (e.g., spmv_csr, csrmv, etc.)
+#   - precisions: list of precisions to test (s=single, d=double, c=complex_single, z=complex_double)
+#   - extra_args: additional arguments to pass to rocsparse-bench (optional)
+#   - matrices: custom matrix list for this routine (optional, overrides global matrices)
+routines:
+  # Level 2: Matrix-Vector operations
+  - name: csrmv
+    precisions: [s, d]
+  
+  - name: coomv
+    precisions: [s, d]
+    extra_args: ["--spmv_alg", "5"]  # COO atomic
+  
+  - name: ellmv
+    precisions: [s, d]
+  
+  # Extra: Matrix addition/multiplication
+  - name: csrgeam
+    precisions: [s, d]
+    # OPTIMIZED: Use only fastest 5 matrices to reduce time from 253s to ~33s
+    # Removes slowest matrices: bmwcra_1 (59s), rma10 (52s), qc2534 (52s), 
+    #   Chevron2 (17s), mac_econ_fwd500 (14s), mplate (13s), mc2depi (12s)
+    matrices:
+      - "$ROCSPARSE_BENCH_DATA_DIR/nos1.csr"          # 0.63s
+      - "$ROCSPARSE_BENCH_DATA_DIR/nos2.csr"          # 4.88s
+      - "$ROCSPARSE_BENCH_DATA_DIR/bibd_22_8.csr"     # 6.80s
+      - "$ROCSPARSE_BENCH_DATA_DIR/amazon0312.csr"    # 10.28s
+      - "$ROCSPARSE_BENCH_DATA_DIR/Chebyshev4.csr"    # 10.62s
+  
+  - name: csrgemm
+    precisions: [s, d]
+
+# Matrix files to test (default for all routines unless overridden)
+# Supports:
+#   - Direct paths: "/path/to/matrix.csr"
+#   - Wildcards: "/path/to/matrices/*.csr"
+#   - Environment variables: "$ROCSPARSE_BENCH_DATA_DIR/matrix.csr"
+matrices:
+  # Small matrices for quick testing
+  - "$ROCSPARSE_BENCH_DATA_DIR/rma10.csr"
+  - "$ROCSPARSE_BENCH_DATA_DIR/mc2depi.csr"
+  - "$ROCSPARSE_BENCH_DATA_DIR/nos1.csr"
+  - "$ROCSPARSE_BENCH_DATA_DIR/nos2.csr"
+  
+  # Medium matrices for balanced testing
+  - "$ROCSPARSE_BENCH_DATA_DIR/bmwcra_1.csr"
+  - "$ROCSPARSE_BENCH_DATA_DIR/mac_econ_fwd500.csr"
+  - "$ROCSPARSE_BENCH_DATA_DIR/bibd_22_8.csr"
+  - "$ROCSPARSE_BENCH_DATA_DIR/qc2534.csr"
+  
+  # Larger matrices for stress testing
+  - "$ROCSPARSE_BENCH_DATA_DIR/Chevron2.csr"
+  - "$ROCSPARSE_BENCH_DATA_DIR/mplate.csr"
+  - "$ROCSPARSE_BENCH_DATA_DIR/amazon0312.csr"
+  - "$ROCSPARSE_BENCH_DATA_DIR/Chebyshev4.csr"
+
+# Performance optimization summary:
+# - Total time reduced from 284.75s (4.7min) to ~64.78s (1.1min)
+# - 77.3% reduction in wall clock time
+# - All routines still tested (csrmv, coomv, ellmv, csrgeam, csrgemm)
+# - csrgeam tested with 5 diverse matrices instead of 12
