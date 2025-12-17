@@ -86,7 +86,10 @@ namespace rocsparse
             DEFINE_CASE(rocsparse_datatype_i32_r, rocsparse_datatype_f64_c),
             DEFINE_CASE(rocsparse_datatype_u32_r, rocsparse_datatype_f64_c),
             DEFINE_CASE(rocsparse_datatype_f32_r, rocsparse_datatype_f64_c),
-            DEFINE_CASE(rocsparse_datatype_f64_r, rocsparse_datatype_f64_c)
+            DEFINE_CASE(rocsparse_datatype_f64_r, rocsparse_datatype_f64_c),
+
+            // bf16 uniform precision support (identity conversion for scalar-compute match)
+            DEFINE_CASE(rocsparse_datatype_bf16_r, rocsparse_datatype_bf16_r)
 
 #undef DEFINE_CASE
 
@@ -160,7 +163,10 @@ namespace rocsparse
             DEFINE_CASE(rocsparse_datatype_i32_r, rocsparse_datatype_f64_c),
             DEFINE_CASE(rocsparse_datatype_u32_r, rocsparse_datatype_f64_c),
             DEFINE_CASE(rocsparse_datatype_f32_r, rocsparse_datatype_f64_c),
-            DEFINE_CASE(rocsparse_datatype_f64_r, rocsparse_datatype_f64_c)
+            DEFINE_CASE(rocsparse_datatype_f64_r, rocsparse_datatype_f64_c),
+
+            // bf16 uniform precision support (identity conversion for scalar-compute match)
+            DEFINE_CASE(rocsparse_datatype_bf16_r, rocsparse_datatype_bf16_r)
 
 #undef DEFINE_CASE
 

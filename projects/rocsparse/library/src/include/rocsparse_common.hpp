@@ -228,6 +228,13 @@ namespace rocsparse
     }
 
     template <>
+    __device__ __forceinline__ rocsparse_bfloat16 fma(rocsparse_bfloat16 p, rocsparse_bfloat16 q, rocsparse_bfloat16 r)
+    {
+        // bf16 FMA: convert to float, compute, convert back
+        return rocsparse_bfloat16(std::fma((float)p, (float)q, (float)r));
+    }
+
+    template <>
     __device__ __forceinline__ int32_t fma(int32_t p, int32_t q, int32_t r)
     {
         return p * q + r;

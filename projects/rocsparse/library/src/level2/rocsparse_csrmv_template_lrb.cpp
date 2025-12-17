@@ -883,17 +883,18 @@ INSTANTIATE(float, int32_t, int32_t, rocsparse_bfloat16, rocsparse_bfloat16, flo
 INSTANTIATE(float, int64_t, int32_t, rocsparse_bfloat16, rocsparse_bfloat16, float);
 INSTANTIATE(float, int64_t, int64_t, rocsparse_bfloat16, rocsparse_bfloat16, float);
 INSTANTIATE(rocsparse_float_complex,
-            int32_t,
-            int32_t,
-            float,
-            rocsparse_float_complex,
-            rocsparse_float_complex);
-INSTANTIATE(rocsparse_float_complex,
             int64_t,
             int32_t,
             float,
             rocsparse_float_complex,
             rocsparse_float_complex);
+
+// NOTE: Uniform bf16 precision cannot be used with lrb algorithm because
+// the kernel uses atomicAdd, which is not supported for bf16 by HIP
+// INSTANTIATE(rocsparse_bfloat16, int32_t, int32_t, rocsparse_bfloat16, rocsparse_bfloat16, rocsparse_bfloat16);
+// INSTANTIATE(rocsparse_bfloat16, int64_t, int32_t, rocsparse_bfloat16, rocsparse_bfloat16, rocsparse_bfloat16);
+// INSTANTIATE(rocsparse_bfloat16, int64_t, int64_t, rocsparse_bfloat16, rocsparse_bfloat16, rocsparse_bfloat16);
+
 INSTANTIATE(rocsparse_float_complex,
             int64_t,
             int64_t,

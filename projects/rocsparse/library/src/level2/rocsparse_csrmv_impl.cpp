@@ -704,6 +704,55 @@ INSTANTIATE(rocsparse_double_complex, int64_t, int32_t);
 INSTANTIATE(rocsparse_double_complex, int64_t, int64_t);
 #undef INSTANTIATE
 
+// Uniform bf16 precision instantiations (without analysis, since bf16 analysis is already done via INSTANTIATE_MIXED_ANALYSIS)
+#define INSTANTIATE_BF16_COMPUTE(T, I, J)                                  \
+    template rocsparse_status rocsparse::csrmv_template<T, I, J, T, T, T>( \
+        rocsparse_handle,                                                  \
+        rocsparse_operation,                                               \
+        rocsparse::csrmv_alg,                                              \
+        int64_t,                                                           \
+        int64_t,                                                           \
+        int64_t,                                                           \
+        const void*,                                                       \
+        const rocsparse_mat_descr,                                         \
+        const void*,                                                       \
+        const void*,                                                       \
+        const void*,                                                       \
+        const void*,                                                       \
+        rocsparse_csrmv_info,                                              \
+        const void*,                                                       \
+        const void*,                                                       \
+        void*,                                                             \
+        bool,                                                              \
+        bool);                                                             \
+    template rocsparse_status rocsparse::csrmv_template<T, I, J, T, T, T>( \
+        rocsparse_handle,                                                  \
+        rocsparse_operation,                                               \
+        rocsparse::csrmv_alg,                                              \
+        int64_t,                                                           \
+        int64_t,                                                           \
+        int64_t,                                                           \
+        const void*,                                                       \
+        const rocsparse_mat_descr,                                         \
+        const void*,                                                       \
+        const void*,                                                       \
+        const void*,                                                       \
+        const void*,                                                       \
+        rocsparse_csrmv_info,                                              \
+        const void*,                                                       \
+        const void*,                                                       \
+        void*,                                                             \
+        rocsparse_int,                                                     \
+        rocsparse_const_dnvec_descr,                                       \
+        rocsparse_const_dnvec_descr*,                                      \
+        bool,                                                              \
+        bool);
+
+INSTANTIATE_BF16_COMPUTE(rocsparse_bfloat16, int32_t, int32_t);
+INSTANTIATE_BF16_COMPUTE(rocsparse_bfloat16, int64_t, int32_t);
+INSTANTIATE_BF16_COMPUTE(rocsparse_bfloat16, int64_t, int64_t);
+#undef INSTANTIATE_BF16_COMPUTE
+
 #define INSTANTIATE_MIXED_ANALYSIS(I, J, A)                                \
     template rocsparse_status rocsparse::csrmv_analysis_template<I, J, A>( \
         rocsparse_handle,                                                  \

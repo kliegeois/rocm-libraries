@@ -368,43 +368,52 @@ rocsparse_status rocsparse::csrmv_rowsplit_template_dispatch(rocsparse_handle   
 
     if(trans != rocsparse_operation_none || descr->type == rocsparse_matrix_type_symmetric)
     {
+        // bf16 uniform precision does not support transpose (uses atomicAdd which doesn't support bf16)
+        if constexpr(!std::is_same_v<T, rocsparse_bfloat16>)
+        {
 #define CSRMVT_DIM 256
-        if(descr->type != rocsparse_matrix_type_symmetric)
-        {
-            // Scale y with beta and add extra vectors
-            RETURN_IF_ROCSPARSE_ERROR(rocsparse::axpby_array_batched(
-                handle, n, num_extra, gamma_device_array, z_array, beta_device_host, y));
-        }
+            if(descr->type != rocsparse_matrix_type_symmetric)
+            {
+                // Scale y with beta and add extra vectors
+                RETURN_IF_ROCSPARSE_ERROR(rocsparse::axpby_array_batched(
+                    handle, n, num_extra, gamma_device_array, z_array, beta_device_host, y));
+            }
 
-        bool skip_diag = (descr->type == rocsparse_matrix_type_symmetric);
+            bool skip_diag = (descr->type == rocsparse_matrix_type_symmetric);
 
-        rocsparse_int max_blocks = 1024;
-        rocsparse_int min_blocks = (m - 1) / CSRMVT_DIM + 1;
+            rocsparse_int max_blocks = 1024;
+            rocsparse_int min_blocks = (m - 1) / CSRMVT_DIM + 1;
 
-        dim3 csrmvt_blocks(rocsparse::min(min_blocks, max_blocks));
-        dim3 csrmvt_threads(CSRMVT_DIM);
+            dim3 csrmvt_blocks(rocsparse::min(min_blocks, max_blocks));
+            dim3 csrmvt_threads(CSRMVT_DIM);
 
-        if(nnz_per_row < 4)
-        {
-            LAUNCH_CSRMVT(4);
-        }
-        else if(nnz_per_row < 8)
-        {
-            LAUNCH_CSRMVT(8);
-        }
-        else if(nnz_per_row < 16)
-        {
-            LAUNCH_CSRMVT(16);
-        }
-        else if(nnz_per_row < 32 || handle->wavefront_size == 32)
-        {
-            LAUNCH_CSRMVT(32);
+            if(nnz_per_row < 4)
+            {
+                LAUNCH_CSRMVT(4);
+            }
+            else if(nnz_per_row < 8)
+            {
+                LAUNCH_CSRMVT(8);
+            }
+            else if(nnz_per_row < 16)
+            {
+                LAUNCH_CSRMVT(16);
+            }
+            else if(nnz_per_row < 32 || handle->wavefront_size == 32)
+            {
+                LAUNCH_CSRMVT(32);
+            }
+            else
+            {
+                LAUNCH_CSRMVT(64);
+            }
+#undef CSRMVT_DIM
         }
         else
         {
-            LAUNCH_CSRMVT(64);
+            // bf16 uniform precision does not support transpose
+            return rocsparse_status_not_implemented;
         }
-#undef CSRMVT_DIM
     }
 
     return rocsparse_status_success;
@@ -491,6 +500,12 @@ INSTANTIATE(rocsparse_float_complex,
             float,
             rocsparse_float_complex,
             rocsparse_float_complex);
+
+// Uniform bf16 precision for rowsplit (non-transpose only, no atomic operations needed)
+INSTANTIATE(rocsparse_bfloat16, int32_t, int32_t, rocsparse_bfloat16, rocsparse_bfloat16, rocsparse_bfloat16);
+INSTANTIATE(rocsparse_bfloat16, int64_t, int32_t, rocsparse_bfloat16, rocsparse_bfloat16, rocsparse_bfloat16);
+INSTANTIATE(rocsparse_bfloat16, int64_t, int64_t, rocsparse_bfloat16, rocsparse_bfloat16, rocsparse_bfloat16);
+
 INSTANTIATE(rocsparse_float_complex,
             int64_t,
             int32_t,

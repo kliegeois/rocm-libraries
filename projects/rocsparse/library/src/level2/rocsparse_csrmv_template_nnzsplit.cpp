@@ -590,6 +590,13 @@ INSTANTIATE(float, int64_t, int64_t, rocsparse_bfloat16, rocsparse_bfloat16, flo
 INSTANTIATE(float, int32_t, int32_t, _Float16, _Float16, float);
 INSTANTIATE(float, int64_t, int32_t, _Float16, _Float16, float);
 INSTANTIATE(float, int64_t, int64_t, _Float16, _Float16, float);
+
+// NOTE: Uniform bf16 precision cannot be used with nnzsplit algorithm because
+// the kernel uses atomicAdd, which is not supported for bf16 by HIP
+// INSTANTIATE(rocsparse_bfloat16, int32_t, int32_t, rocsparse_bfloat16, rocsparse_bfloat16, rocsparse_bfloat16);
+// INSTANTIATE(rocsparse_bfloat16, int64_t, int32_t, rocsparse_bfloat16, rocsparse_bfloat16, rocsparse_bfloat16);
+// INSTANTIATE(rocsparse_bfloat16, int64_t, int64_t, rocsparse_bfloat16, rocsparse_bfloat16, rocsparse_bfloat16);
+
 INSTANTIATE(float, int32_t, int32_t, float, float, float);
 INSTANTIATE(float, int64_t, int32_t, float, float, float);
 INSTANTIATE(float, int64_t, int64_t, float, float, float);

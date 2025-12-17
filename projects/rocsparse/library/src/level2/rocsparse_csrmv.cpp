@@ -244,6 +244,56 @@ namespace rocsparse
                       rocsparse_datatype_bf16_r,
                       rocsparse_datatype_f32_r),
 
+         // Uniform bf16 precision (bf16 → bf16)
+         CSRMV_CONFIG(rocsparse_datatype_f32_r,
+                      rocsparse_indextype_i64,
+                      rocsparse_indextype_i64,
+                      rocsparse_datatype_bf16_r,
+                      rocsparse_datatype_bf16_r,
+                      rocsparse_datatype_f32_r),
+
+         // Uniform bf16 precision for rowsplit (non-transpose only, no atomicAdd needed)
+         CSRMV_CONFIG(rocsparse_datatype_bf16_r,
+                      rocsparse_indextype_i32,
+                      rocsparse_indextype_i32,
+                      rocsparse_datatype_bf16_r,
+                      rocsparse_datatype_bf16_r,
+                      rocsparse_datatype_bf16_r),
+
+         CSRMV_CONFIG(rocsparse_datatype_bf16_r,
+                      rocsparse_indextype_i64,
+                      rocsparse_indextype_i32,
+                      rocsparse_datatype_bf16_r,
+                      rocsparse_datatype_bf16_r,
+                      rocsparse_datatype_bf16_r),
+
+         CSRMV_CONFIG(rocsparse_datatype_bf16_r,
+                      rocsparse_indextype_i64,
+                      rocsparse_indextype_i64,
+                      rocsparse_datatype_bf16_r,
+                      rocsparse_datatype_bf16_r,
+                      rocsparse_datatype_bf16_r),
+         // Uniform bf16 precision for rowsplit (non-transpose only, no atomicAdd needed)
+         CSRMV_CONFIG(rocsparse_datatype_bf16_r,
+                      rocsparse_indextype_i32,
+                      rocsparse_indextype_i32,
+                      rocsparse_datatype_bf16_r,
+                      rocsparse_datatype_bf16_r,
+                      rocsparse_datatype_bf16_r),
+
+         CSRMV_CONFIG(rocsparse_datatype_bf16_r,
+                      rocsparse_indextype_i64,
+                      rocsparse_indextype_i32,
+                      rocsparse_datatype_bf16_r,
+                      rocsparse_datatype_bf16_r,
+                      rocsparse_datatype_bf16_r),
+
+         CSRMV_CONFIG(rocsparse_datatype_bf16_r,
+                      rocsparse_indextype_i64,
+                      rocsparse_indextype_i64,
+                      rocsparse_datatype_bf16_r,
+                      rocsparse_datatype_bf16_r,
+                      rocsparse_datatype_bf16_r),
          CSRMV_CONFIG(rocsparse_datatype_f32_c,
                       rocsparse_indextype_i32,
                       rocsparse_indextype_i32,
@@ -336,18 +386,26 @@ namespace rocsparse
                                        rocsparse_datatype  x_type_,
                                        rocsparse_datatype  y_type_)
     {
+        std::cerr << "[csrmv_find] Searching for config: t=" << rocsparse::enum_utils::to_string(t_type_)
+                  << ", i=" << rocsparse::enum_utils::to_string(i_type_)
+                  << ", j=" << rocsparse::enum_utils::to_string(j_type_)
+                  << ", a=" << rocsparse::enum_utils::to_string(a_type_)
+                  << ", x=" << rocsparse::enum_utils::to_string(x_type_)
+                  << ", y=" << rocsparse::enum_utils::to_string(y_type_) << std::endl;
+
         const auto& it = rocsparse::s_csrmv_dispatch.find(
             rocsparse::csrmv_tuple(t_type_, i_type_, j_type_, a_type_, x_type_, y_type_));
 
         if(it != rocsparse::s_csrmv_dispatch.end())
         {
             function_[0] = it->second;
+            std::cerr << "[csrmv_find] FOUND!" << std::endl;
         }
         // LCOV_EXCL_START
         else
         {
 
-#ifndef NDEBUG
+            // Temporarily enabled for bf16 debugging (Phase 5)
             std::cout << "invalid precision configuration: "
                       << "t_type: " << rocsparse::enum_utils::to_string(t_type_) << std::endl
                       << ", i_type: " << rocsparse::enum_utils::to_string(i_type_) << std::endl
@@ -375,7 +433,6 @@ namespace rocsparse
                           << ", x_type: " << rocsparse::enum_utils::to_string(x_type) << std::endl
                           << ", y_type: " << rocsparse::enum_utils::to_string(y_type) << std::endl;
             }
-#endif
 
             std::stringstream sstr;
             sstr << "invalid precision configuration: "

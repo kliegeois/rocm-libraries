@@ -155,6 +155,11 @@ set(rocsparse_source
   src/level2/rocsparse_hybmv.cpp
   src/level2/rocsparse_v2_spmv.cpp
   src/level2/rocsparse_spmv.cpp
+  src/level2/rocsparse_spmv_dispatch.cpp
+  src/level2/rocsparse_spmv_rowsplit.cpp
+  src/level2/rocsparse_spmv_nnzsplit.cpp
+  src/level2/rocsparse_spmv_adaptive.cpp
+  src/level2/rocsparse_spmv_lrb.cpp
   src/level2/rocsparse_spsv.cpp
   src/level2/rocsparse_sptrsv.cpp
   src/level2/rocsparse_sptrsv_descr.cpp
