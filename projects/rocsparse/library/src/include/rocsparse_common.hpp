@@ -29,6 +29,7 @@
 #include <intrin.h>
 #endif
 #include <hip/hip_runtime.h>
+#include <hip/hip_fp16.h>
 
 #include "rocsparse_assert.hpp"
 
@@ -717,6 +718,121 @@ namespace rocsparse
     {
         return rocsparse_double_complex(atomicAdd((double*)ptr, std::real(val)),
                                         atomicAdd((double*)ptr + 1, std::imag(val)));
+    }
+
+    template <typename T>
+    __device__ __forceinline__ T atomic_add(T* base_ptr, int idx, int size, T val)
+    {
+        return atomic_add(base_ptr + idx, val);
+    }
+
+    template <typename T>
+    __device__ __forceinline__ T atomic_add_check(T* base_ptr, int idx, int size, T val)
+    {
+        return atomic_add_check(base_ptr + idx, val);
+    }
+
+    // Global spinlock for odd-sized array edge cases
+    __device__ unsigned int g_fp16_lock = 0;
+
+
+    template <typename T>
+    __device__ __forceinline__ T wfreduce_sum_mask(T sum, unsigned long long int active_mask)
+    {
+        int first_active_lane = __ffsll(active_mask) - 1;
+
+        T tmp = sum;
+        for (int lane = 0; lane < 64; lane++) {
+            if (lane != first_active_lane && (active_mask & (1ULL << lane))) {
+                tmp += __shfl(sum, lane);
+            }
+        }
+        tmp = __shfl(tmp, first_active_lane);
+
+        return tmp;
+    }
+
+    __device__ half atomic_add_by_CAS(half *base_ptr, int idx, half val, int size) {
+        // Check bounds
+        if (idx >=0 && idx < size) {
+
+            half *addr = &base_ptr[idx];
+            int is_second = (idx & 1);
+
+            // If this is the "high" half of an odd-sized array's last element, use spinlock
+            if ((size & 1) && idx == size - 1) {
+                // Find the first active thread in the wavefront for this branch
+                unsigned long long int active_mask = __ballot(1);
+
+                int first_active_lane = __ffsll(active_mask) - 1;
+
+                float tmp = wfreduce_sum_mask(static_cast<float>(val), active_mask);            
+
+                if (__lane_id() == first_active_lane) {
+                    // Acquire spinlock
+                    while (atomicCAS(&g_fp16_lock, 0U, 1U) != 0U);
+
+                    // Handle unpaired last element
+                    half old_val = *addr;
+                    *addr = __hadd(old_val, __float2half(tmp));
+
+                    // Release spinlock
+                    atomicExch(&g_fp16_lock, 0U);
+
+                    tmp = static_cast<float>(old_val);
+                }
+                // Broadcast the old value from first_lane to all active threads
+                tmp = __shfl(tmp, first_active_lane);
+
+                return __float2half(tmp);
+            }
+
+            // Safe to do paired atomic CAS
+            unsigned int *float_addr = (unsigned int *)((uintptr_t)addr & ~3);
+            unsigned int old = *float_addr;
+            unsigned int assumed;
+            unsigned int new_val;
+
+            do {
+                assumed = old;
+
+                // Extract both halves
+                half h_low = __ushort_as_half((unsigned short)assumed);
+                half h_high = __ushort_as_half((unsigned short)(assumed >> 16));
+
+                // Add to the appropriate half
+                if (is_second) {
+                    h_high = __hadd(h_high, val);
+                } else {
+                    h_low = __hadd(h_low, val);
+                }
+
+                // Pack back
+                new_val = ((unsigned int)__half_as_ushort(h_high) << 16) |
+                        (unsigned int)__half_as_ushort(h_low);
+
+                old = atomicCAS(float_addr, assumed, new_val);
+            } while (assumed != old);
+
+            return __ushort_as_half((unsigned short)(is_second ? (old >> 16) : old));
+        }
+        else {
+            return __float2half(0.0f);
+        }
+    }
+
+    template <>
+    __device__ __forceinline__ half atomic_add(half* base_ptr, int idx, int size, half val)
+    {
+        return atomic_add_by_CAS(base_ptr, idx, val, size);
+    }
+
+    template <>
+    __device__ __forceinline__ half atomic_add_check(half* base_ptr, int idx, int size, half val)
+    {
+        if(val != static_cast<half>(0))
+            return atomic_add_by_CAS(base_ptr, idx, val, size);
+        return base_ptr[idx];
     }
 
     template <>
