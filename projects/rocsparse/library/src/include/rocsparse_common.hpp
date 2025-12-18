@@ -603,6 +603,10 @@ namespace rocsparse
     {
         __builtin_nontemporal_store(val, ptr);
     }
+    __device__ __forceinline__ void nontemporal_store(_Float16 val, _Float16* ptr)
+    {
+        ptr[0] = val;
+    }
 
     __device__ __forceinline__ int32_t shfl(int32_t var, int src_lane, int width = warpSize)
     {
@@ -822,16 +826,16 @@ namespace rocsparse
     }
 
     template <>
-    __device__ __forceinline__ half atomic_add(half* base_ptr, int idx, int size, half val)
+    __device__ __forceinline__ _Float16 atomic_add(_Float16* base_ptr, int idx, int size, _Float16 val)
     {
-        return atomic_add_by_CAS(base_ptr, idx, val, size);
+        return val;//return atomic_add_by_CAS(static_cast<half*>(base_ptr), idx, static_cast<half>(val), size);
     }
 
     template <>
-    __device__ __forceinline__ half atomic_add_check(half* base_ptr, int idx, int size, half val)
+    __device__ __forceinline__ _Float16 atomic_add_check(_Float16* base_ptr, int idx, int size, _Float16 val)
     {
-        if(val != static_cast<half>(0))
-            return atomic_add_by_CAS(base_ptr, idx, val, size);
+        if(val != static_cast<_Float16>(0))
+            return val;//return atomic_add_by_CAS(static_cast<half*>(base_ptr), idx, static_cast<half>(val), size);
         return base_ptr[idx];
     }
 
