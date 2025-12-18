@@ -368,8 +368,8 @@ rocsparse_status rocsparse::csrmv_rowsplit_template_dispatch(rocsparse_handle   
 
     if(trans != rocsparse_operation_none || descr->type == rocsparse_matrix_type_symmetric)
     {
-        // bf16 uniform precision does not support transpose (uses atomicAdd which doesn't support bf16)
-        if constexpr(!std::is_same_v<T, rocsparse_bfloat16>)
+        // bf16/float16 uniform precision does not support transpose (uses atomicAdd which doesn't support these types)
+        if constexpr(!std::is_same_v<T, rocsparse_bfloat16> && !std::is_same_v<T, _Float16>)
         {
 #define CSRMVT_DIM 256
             if(descr->type != rocsparse_matrix_type_symmetric)
@@ -501,10 +501,14 @@ INSTANTIATE(rocsparse_float_complex,
             rocsparse_float_complex,
             rocsparse_float_complex);
 
-// Uniform bf16 precision for rowsplit (non-transpose only, no atomic operations needed)
+// Uniform bf16/float16 precision for rowsplit (non-transpose only, no atomic operations needed)
 INSTANTIATE(rocsparse_bfloat16, int32_t, int32_t, rocsparse_bfloat16, rocsparse_bfloat16, rocsparse_bfloat16);
 INSTANTIATE(rocsparse_bfloat16, int64_t, int32_t, rocsparse_bfloat16, rocsparse_bfloat16, rocsparse_bfloat16);
 INSTANTIATE(rocsparse_bfloat16, int64_t, int64_t, rocsparse_bfloat16, rocsparse_bfloat16, rocsparse_bfloat16);
+
+INSTANTIATE(_Float16, int32_t, int32_t, _Float16, _Float16, _Float16);
+INSTANTIATE(_Float16, int64_t, int32_t, _Float16, _Float16, _Float16);
+INSTANTIATE(_Float16, int64_t, int64_t, _Float16, _Float16, _Float16);
 
 INSTANTIATE(rocsparse_float_complex,
             int64_t,
