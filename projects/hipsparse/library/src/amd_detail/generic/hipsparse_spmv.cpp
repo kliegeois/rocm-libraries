@@ -317,17 +317,53 @@ hipsparseStatus_t hipsparseSpMV(hipsparseHandle_t           handle,
                                 hipsparseSpMVAlg_t          alg,
                                 void*                       externalBuffer)
 {
-    printf("call hipsparseSpMV\n");
 
-    printf("opA: %d\n", opA);
-    printf("alpha: %p\n", alpha);
-    printf("matA: %p\n", matA);
-    printf("vecX: %p\n", vecX);
-    printf("beta: %p\n", beta);
-    printf("vecY: %p\n", vecY);
+    // Print debugging info
+    printf("=== hipsparseSpMV Debug Info ===\n");
     printf("computeType: %d\n", computeType);
-    printf("alg: %d\n", alg);
-    printf("externalBuffer: %p\n", externalBuffer);
+    printf("opA (operation): %d\n", opA);
+    
+    // Get matrix dimensions
+    if(matA != nullptr)
+    {
+        int64_t rows, cols, nnz;
+        rocsparse_status status = rocsparse_spmat_get_size(
+            to_rocsparse_const_spmat_descr(matA), &rows, &cols, &nnz);
+        if(status == rocsparse_status_success)
+        {
+            printf("Matrix: rows=%lld, cols=%lld, nnz=%lld\n", 
+                   (long long)rows, (long long)cols, (long long)nnz);
+        }
+    }
+    
+    // Get vector X dimensions
+    if(vecX != nullptr)
+    {
+        int64_t size;
+        void* values;
+        rocsparse_datatype data_type;
+        rocsparse_status status = rocsparse_dnvec_get(
+            (rocsparse_dnvec_descr)vecX, &size, &values, &data_type);
+        if(status == rocsparse_status_success)
+        {
+            printf("Vector X: size=%lld, data_type=%d\n", (long long)size, data_type);
+        }
+    }
+    
+    // Get vector Y dimensions
+    if(vecY != nullptr)
+    {
+        int64_t size;
+        void* values;
+        rocsparse_datatype data_type;
+        rocsparse_status status = rocsparse_dnvec_get(
+            (rocsparse_dnvec_descr)vecY, &size, &values, &data_type);
+        if(status == rocsparse_status_success)
+        {
+            printf("Vector Y: size=%lld, data_type=%d\n", (long long)size, data_type);
+        }
+    }
+    printf("================================\n");
 
     if(handle == nullptr)
     {
