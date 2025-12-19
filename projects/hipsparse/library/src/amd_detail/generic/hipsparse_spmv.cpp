@@ -317,6 +317,18 @@ hipsparseStatus_t hipsparseSpMV(hipsparseHandle_t           handle,
                                 hipsparseSpMVAlg_t          alg,
                                 void*                       externalBuffer)
 {
+    printf("call hipsparseSpMV\n");
+
+    printf("opA: %d\n", opA);
+    printf("alpha: %p\n", alpha);
+    printf("matA: %p\n", matA);
+    printf("vecX: %p\n", vecX);
+    printf("beta: %p\n", beta);
+    printf("vecY: %p\n", vecY);
+    printf("computeType: %d\n", computeType);
+    printf("alg: %d\n", alg);
+    printf("externalBuffer: %p\n", externalBuffer);
+
     if(handle == nullptr)
     {
         return HIPSPARSE_STATUS_INVALID_VALUE;
