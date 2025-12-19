@@ -28,8 +28,8 @@
 #ifdef WIN32
 #include <intrin.h>
 #endif
-#include <hip/hip_runtime.h>
 #include <hip/hip_fp16.h>
+#include <hip/hip_runtime.h>
 
 #include "rocsparse_assert.hpp"
 
@@ -739,15 +739,16 @@ namespace rocsparse
     // Global spinlock for odd-sized array edge cases
     __device__ unsigned int g_fp16_lock = 0;
 
-
     template <typename T>
     __device__ __forceinline__ T wfreduce_sum_mask(T sum, unsigned long long int active_mask)
     {
         int first_active_lane = __ffsll(active_mask) - 1;
 
         T tmp = sum;
-        for (int lane = 0; lane < 64; lane++) {
-            if (lane != first_active_lane && (active_mask & (1ULL << lane))) {
+        for(int lane = 0; lane < 64; lane++)
+        {
+            if(lane != first_active_lane && (active_mask & (1ULL << lane)))
+            {
                 tmp += __shfl(sum, lane);
             }
         }
@@ -756,29 +757,34 @@ namespace rocsparse
         return tmp;
     }
 
-    __device__ half atomic_add_by_CAS(half *base_ptr, int idx, half val, int size) {
+    __device__ half atomic_add_by_CAS(half* base_ptr, int idx, half val, int size)
+    {
         // Check bounds
-        if (idx >=0 && idx < size) {
+        if(idx >= 0 && idx < size)
+        {
 
-            half *addr = &base_ptr[idx];
-            int is_second = (idx & 1);
+            half* addr      = &base_ptr[idx];
+            int   is_second = (idx & 1);
 
             // If this is the "high" half of an odd-sized array's last element, use spinlock
-            if ((size & 1) && idx == size - 1) {
+            if((size & 1) && idx == size - 1)
+            {
                 // Find the first active thread in the wavefront for this branch
                 unsigned long long int active_mask = __ballot(1);
 
                 int first_active_lane = __ffsll(active_mask) - 1;
 
-                float tmp = wfreduce_sum_mask(static_cast<float>(val), active_mask);            
+                float tmp = wfreduce_sum_mask(static_cast<float>(val), active_mask);
 
-                if (__lane_id() == first_active_lane) {
+                if(__lane_id() == first_active_lane)
+                {
                     // Acquire spinlock
-                    while (atomicCAS(&g_fp16_lock, 0U, 1U) != 0U);
+                    while(atomicCAS(&g_fp16_lock, 0U, 1U) != 0U)
+                        ;
 
                     // Handle unpaired last element
                     half old_val = *addr;
-                    *addr = __hadd(old_val, __float2half(tmp));
+                    *addr        = __hadd(old_val, __float2half(tmp));
 
                     // Release spinlock
                     atomicExch(&g_fp16_lock, 0U);
@@ -792,50 +798,59 @@ namespace rocsparse
             }
 
             // Safe to do paired atomic CAS
-            unsigned int *float_addr = (unsigned int *)((uintptr_t)addr & ~3);
-            unsigned int old = *float_addr;
-            unsigned int assumed;
-            unsigned int new_val;
+            unsigned int* float_addr = (unsigned int*)((uintptr_t)addr & ~3);
+            unsigned int  old        = *float_addr;
+            unsigned int  assumed;
+            unsigned int  new_val;
 
-            do {
+            do
+            {
                 assumed = old;
 
                 // Extract both halves
-                half h_low = __ushort_as_half((unsigned short)assumed);
+                half h_low  = __ushort_as_half((unsigned short)assumed);
                 half h_high = __ushort_as_half((unsigned short)(assumed >> 16));
 
                 // Add to the appropriate half
-                if (is_second) {
+                if(is_second)
+                {
                     h_high = __hadd(h_high, val);
-                } else {
+                }
+                else
+                {
                     h_low = __hadd(h_low, val);
                 }
 
                 // Pack back
-                new_val = ((unsigned int)__half_as_ushort(h_high) << 16) |
-                        (unsigned int)__half_as_ushort(h_low);
+                new_val = ((unsigned int)__half_as_ushort(h_high) << 16)
+                          | (unsigned int)__half_as_ushort(h_low);
 
                 old = atomicCAS(float_addr, assumed, new_val);
-            } while (assumed != old);
+            } while(assumed != old);
 
             return __ushort_as_half((unsigned short)(is_second ? (old >> 16) : old));
         }
-        else {
+        else
+        {
             return __float2half(0.0f);
         }
     }
 
     template <>
-    __device__ __forceinline__ _Float16 atomic_add(_Float16* base_ptr, int idx, int size, _Float16 val)
+    __device__ __forceinline__ _Float16
+        atomic_add(_Float16* base_ptr, int idx, int size, _Float16 val)
     {
-        return atomic_add_by_CAS(reinterpret_cast<half*>(base_ptr), idx, static_cast<half>(val), size);
+        return atomic_add_by_CAS(
+            reinterpret_cast<half*>(base_ptr), idx, static_cast<half>(val), size);
     }
 
     template <>
-    __device__ __forceinline__ _Float16 atomic_add_check(_Float16* base_ptr, int idx, int size, _Float16 val)
+    __device__ __forceinline__ _Float16
+        atomic_add_check(_Float16* base_ptr, int idx, int size, _Float16 val)
     {
         if(val != static_cast<_Float16>(0))
-            return atomic_add_by_CAS(reinterpret_cast<half*>(base_ptr), idx, static_cast<half>(val), size);
+            return atomic_add_by_CAS(
+                reinterpret_cast<half*>(base_ptr), idx, static_cast<half>(val), size);
         return base_ptr[idx];
     }
 
@@ -2345,9 +2360,9 @@ namespace rocsparse
 
         for(uint32_t j = 1; j < WFSIZE; j <<= 1)
         {
-            const int32_t left_row = __shfl_up(row, j);
-            const float left_val_f = __shfl_up(static_cast<float>(val), j);
-            const _Float16 left_val = static_cast<_Float16>(left_val_f);
+            const int32_t  left_row   = __shfl_up(row, j);
+            const float    left_val_f = __shfl_up(static_cast<float>(val), j);
+            const _Float16 left_val   = static_cast<_Float16>(left_val_f);
 
             if(row == left_row)
             {
@@ -2368,9 +2383,9 @@ namespace rocsparse
 
         for(uint32_t j = 1; j < WFSIZE; j <<= 1)
         {
-            const int64_t left_row = __shfl_up(row, j);
-            const float left_val_f = __shfl_up(static_cast<float>(val), j);
-            const _Float16 left_val = static_cast<_Float16>(left_val_f);
+            const int64_t  left_row   = __shfl_up(row, j);
+            const float    left_val_f = __shfl_up(static_cast<float>(val), j);
+            const _Float16 left_val   = static_cast<_Float16>(left_val_f);
 
             if(row == left_row)
             {

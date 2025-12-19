@@ -558,10 +558,8 @@ namespace rocsparse
             const J myCol  = csr_col_ind[j] - idx_base;
             if(myCol != myRow2)
             {
-                rocsparse::atomic_add(y,
-                                      myCol,
-                                      m,
-                                      (alpha * rocsparse::conj_val(csr_val[j], conj) * x[myRow2]));
+                rocsparse::atomic_add(
+                    y, myCol, m, (alpha * rocsparse::conj_val(csr_val[j], conj) * x[myRow2]));
             }
         }
     }

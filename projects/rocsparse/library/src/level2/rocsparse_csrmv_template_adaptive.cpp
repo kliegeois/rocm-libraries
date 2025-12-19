@@ -587,8 +587,18 @@ void csrmvn_symm_large_adaptive_kernel(bool conj,
     ROCSPARSE_DEVICE_HOST_SCALAR_GET(beta);
     if(alpha != 0 || beta != 1)
     {
-        rocsparse::csrmvn_symm_large_adaptive_device<BLOCK_SIZE, WG_SIZE>(
-            conj, nnz, m, row_blocks, alpha, csr_row_ptr, csr_col_ind, csr_val, x, beta, y, idx_base);
+        rocsparse::csrmvn_symm_large_adaptive_device<BLOCK_SIZE, WG_SIZE>(conj,
+                                                                          nnz,
+                                                                          m,
+                                                                          row_blocks,
+                                                                          alpha,
+                                                                          csr_row_ptr,
+                                                                          csr_col_ind,
+                                                                          csr_val,
+                                                                          x,
+                                                                          beta,
+                                                                          y,
+                                                                          idx_base);
     }
 }
 
