@@ -215,7 +215,9 @@ namespace rocsparse
                     if((myCol != myRow) && (col + i) < (csr_row_ptr[stop_row] - idx_base))
                     {
                         if(myCol >= (stop_cols_idx) && myCol < stop_row)
-                            rocsparse::atomic_add(&scols_in_rows[myCol - (stop_cols_idx)],
+                            rocsparse::atomic_add(scols_in_rows,
+                                                  myCol - (stop_cols_idx),
+                                                  max_rows,
                                                   (partial_sums[lid + i] * x[myRow]));
                         else
                             rocsparse::atomic_add(y, myCol, m, (partial_sums[lid + i] * x[myRow]));
@@ -242,7 +244,9 @@ namespace rocsparse
                     if((myCol != myRow) && (col + i) < (csr_row_ptr[stop_row] - idx_base))
                     {
                         if(myCol >= (stop_cols_idx) && myCol < stop_row)
-                            rocsparse::atomic_add(&scols_in_rows[myCol - (stop_cols_idx)],
+                            rocsparse::atomic_add(scols_in_rows,
+                                                  myCol - (stop_cols_idx),
+                                                  max_rows,
                                                   (partial_sums[lid + i] * x[myRow]));
                         else
                             rocsparse::atomic_add(y, myCol, m, (partial_sums[lid + i] * x[myRow]));
@@ -432,7 +436,7 @@ namespace rocsparse
                 {
 
                     rocsparse::atomic_add(
-                        &y[myCol], (alpha * rocsparse::conj_val(csr_val[j], conj) * x[myRow]));
+                        y, myCol, m, (alpha * rocsparse::conj_val(csr_val[j], conj) * x[myRow]));
                 }
             }
         }

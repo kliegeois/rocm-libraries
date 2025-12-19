@@ -828,14 +828,14 @@ namespace rocsparse
     template <>
     __device__ __forceinline__ _Float16 atomic_add(_Float16* base_ptr, int idx, int size, _Float16 val)
     {
-        return val;//return atomic_add_by_CAS(static_cast<half*>(base_ptr), idx, static_cast<half>(val), size);
+        return atomic_add_by_CAS(reinterpret_cast<half*>(base_ptr), idx, static_cast<half>(val), size);
     }
 
     template <>
     __device__ __forceinline__ _Float16 atomic_add_check(_Float16* base_ptr, int idx, int size, _Float16 val)
     {
         if(val != static_cast<_Float16>(0))
-            return val;//return atomic_add_by_CAS(static_cast<half*>(base_ptr), idx, static_cast<half>(val), size);
+            return atomic_add_by_CAS(reinterpret_cast<half*>(base_ptr), idx, static_cast<half>(val), size);
         return base_ptr[idx];
     }
 
@@ -2325,6 +2325,52 @@ namespace rocsparse
         {
             const int64_t left_row = __shfl_up(row, j);
             const double  left_val = __shfl_up(val, j);
+
+            if(row == left_row)
+            {
+                if(lid >= j)
+                {
+                    val += left_val;
+                }
+            }
+        }
+
+        return val;
+    }
+
+    template <uint32_t WFSIZE>
+    __device__ __forceinline__ _Float16 wfsegmented_reduce(const int32_t row, _Float16 val)
+    {
+        const uint32_t lid = hipThreadIdx_x & (WFSIZE - 1);
+
+        for(uint32_t j = 1; j < WFSIZE; j <<= 1)
+        {
+            const int32_t left_row = __shfl_up(row, j);
+            const float left_val_f = __shfl_up(static_cast<float>(val), j);
+            const _Float16 left_val = static_cast<_Float16>(left_val_f);
+
+            if(row == left_row)
+            {
+                if(lid >= j)
+                {
+                    val += left_val;
+                }
+            }
+        }
+
+        return val;
+    }
+
+    template <uint32_t WFSIZE>
+    __device__ __forceinline__ _Float16 wfsegmented_reduce(const int64_t row, _Float16 val)
+    {
+        const uint32_t lid = hipThreadIdx_x & (WFSIZE - 1);
+
+        for(uint32_t j = 1; j < WFSIZE; j <<= 1)
+        {
+            const int64_t left_row = __shfl_up(row, j);
+            const float left_val_f = __shfl_up(static_cast<float>(val), j);
+            const _Float16 left_val = static_cast<_Float16>(left_val_f);
 
             if(row == left_row)
             {
