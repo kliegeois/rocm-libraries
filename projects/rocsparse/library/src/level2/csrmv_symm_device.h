@@ -93,7 +93,8 @@ namespace rocsparse
                                                           const X*             x,
                                                           T                    beta,
                                                           Y*                   y,
-                                                          rocsparse_index_base idx_base)
+                                                          rocsparse_index_base idx_base,
+                                                          unsigned int*        half_lock = nullptr)
     {
         __shared__ T           partial_sums[BLOCKSIZE];
         extern __shared__ char cols_in_rows[];
@@ -220,7 +221,8 @@ namespace rocsparse
                                                   max_rows,
                                                   (partial_sums[lid + i] * x[myRow]));
                         else
-                            rocsparse::atomic_add(y, myCol, m, (partial_sums[lid + i] * x[myRow]));
+                            rocsparse::atomic_add(
+                                y, myCol, m, (partial_sums[lid + i] * x[myRow]), half_lock);
                     }
 
                     // For the lower triangular, the matrix value is already in partial_sums.
@@ -249,7 +251,8 @@ namespace rocsparse
                                                   max_rows,
                                                   (partial_sums[lid + i] * x[myRow]));
                         else
-                            rocsparse::atomic_add(y, myCol, m, (partial_sums[lid + i] * x[myRow]));
+                            rocsparse::atomic_add(
+                                y, myCol, m, (partial_sums[lid + i] * x[myRow]), half_lock);
                     }
 
                     // For the lower triangular, the matrix value is already in partial_sums.
@@ -265,7 +268,7 @@ namespace rocsparse
 
             for(I l = lid; l < (end_cols_idx - (stop_row - row)); l += WG_SIZE)
             {
-                rocsparse::atomic_add(y, stop_cols_idx + l, m, scols_in_rows[l]);
+                rocsparse::atomic_add(y, stop_cols_idx + l, m, scols_in_rows[l], half_lock);
             }
 
             __syncthreads();
@@ -323,7 +326,7 @@ namespace rocsparse
                     temp += scols_in_rows
                         [lid
                          + (end_cols_idx - (stop_row - row))]; // sum from upper triangular matrix
-                    rocsparse::atomic_add(y, row + lid, m, temp);
+                    rocsparse::atomic_add(y, row + lid, m, temp, half_lock);
                 }
             }
             else
@@ -348,7 +351,7 @@ namespace rocsparse
                     // put that into the output for each row.
                     temp += scols_in_rows[end_cols_idx - stop_row
                                           + local_row]; // sum from upper triangular matrix
-                    rocsparse::atomic_add(y, local_row, m, temp);
+                    rocsparse::atomic_add(y, local_row, m, temp, half_lock);
                     local_row += hipBlockDim_x;
                 }
             }
@@ -421,7 +424,7 @@ namespace rocsparse
                 // Write result
                 if(lid == 0)
                 {
-                    rocsparse::atomic_add(y, myRow, m, alpha * partial_sums[0]);
+                    rocsparse::atomic_add(y, myRow, m, alpha * partial_sums[0], half_lock);
                 }
             }
 
@@ -436,7 +439,11 @@ namespace rocsparse
                 {
 
                     rocsparse::atomic_add(
-                        y, myCol, m, (alpha * rocsparse::conj_val(csr_val[j], conj) * x[myRow]));
+                        y,
+                        myCol,
+                        m,
+                        (alpha * rocsparse::conj_val(csr_val[j], conj) * x[myRow]),
+                        half_lock);
                 }
             }
         }
@@ -461,7 +468,8 @@ namespace rocsparse
                                                                 const X*             x,
                                                                 T                    beta,
                                                                 Y*                   y,
-                                                                rocsparse_index_base idx_base)
+                                                                rocsparse_index_base idx_base,
+                                                                unsigned int* half_lock = nullptr)
     {
         __shared__ T partial_sums[BLOCKSIZE];
 
@@ -545,7 +553,7 @@ namespace rocsparse
             // Write result
             if(lid == 0)
             {
-                rocsparse::atomic_add(y, myRow, m, alpha * partial_sums[0]);
+                rocsparse::atomic_add(y, myRow, m, alpha * partial_sums[0], half_lock);
             }
         }
 
@@ -558,8 +566,11 @@ namespace rocsparse
             const J myCol  = csr_col_ind[j] - idx_base;
             if(myCol != myRow2)
             {
-                rocsparse::atomic_add(
-                    y, myCol, m, (alpha * rocsparse::conj_val(csr_val[j], conj) * x[myRow2]));
+                rocsparse::atomic_add(y,
+                                      myCol,
+                                      m,
+                                      (alpha * rocsparse::conj_val(csr_val[j], conj) * x[myRow2]),
+                                      half_lock);
             }
         }
     }

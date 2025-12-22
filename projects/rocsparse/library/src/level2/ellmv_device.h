@@ -87,7 +87,8 @@ namespace rocsparse
                                             const A*             ell_val,
                                             const X*             x,
                                             Y*                   y,
-                                            rocsparse_index_base idx_base)
+                                            rocsparse_index_base idx_base,
+                                            unsigned int*        half_lock = nullptr)
     {
         const I ai = BLOCKSIZE * hipBlockIdx_x + hipThreadIdx_x;
 
@@ -112,7 +113,7 @@ namespace rocsparse
                     val = rocsparse::conj(val);
                 }
 
-                rocsparse::atomic_add(y, col, n, row_val * val);
+                rocsparse::atomic_add(y, col, n, row_val * val, half_lock);
             }
             else
             {

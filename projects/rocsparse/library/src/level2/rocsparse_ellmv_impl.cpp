@@ -67,13 +67,14 @@ namespace rocsparse
                        const X* __restrict__ x,
                        Y* __restrict__ y,
                        rocsparse_index_base idx_base,
-                       bool                 is_host_mode)
+                       bool                 is_host_mode,
+                       unsigned int*        half_lock = nullptr)
     {
         ROCSPARSE_DEVICE_HOST_SCALAR_GET(alpha);
         if(alpha != 0)
         {
             rocsparse::ellmvt_device<BLOCKSIZE>(
-                trans, m, n, ell_width, alpha, ell_col_ind, ell_val, x, y, idx_base);
+                trans, m, n, ell_width, alpha, ell_col_ind, ell_val, x, y, idx_base, half_lock);
         }
     }
 
@@ -143,7 +144,8 @@ namespace rocsparse
                 x,
                 y,
                 descr->base,
-                handle->pointer_mode == rocsparse_pointer_mode_host);
+                handle->pointer_mode == rocsparse_pointer_mode_host,
+                rocsparse::get_half_lock<Y>(handle));
 #undef ELLMVT_DIM
         }
 

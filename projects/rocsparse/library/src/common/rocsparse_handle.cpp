@@ -86,6 +86,10 @@ _rocsparse_handle::_rocsparse_handle()
     THROW_IF_HIP_ERROR(rocsparse_hipMalloc(&sone, sizeof(float) * 2));
     THROW_IF_HIP_ERROR(rocsparse_hipMalloc(&done, sizeof(double) * 2));
 
+    // Allocate and initialize spinlock for half-precision atomic operations
+    THROW_IF_HIP_ERROR(rocsparse_hipMalloc(&half_lock, sizeof(unsigned int)));
+    THROW_IF_HIP_ERROR(hipMemset(half_lock, 0, sizeof(unsigned int)));
+
     // Execute empty kernel for initialization
 
     THROW_WITH_MESSAGE_IF_HIP_ERROR(hipGetLastError(), "prior to hipLaunchKernelGGL");
@@ -164,6 +168,7 @@ _rocsparse_handle::~_rocsparse_handle()
     PRINT_IF_HIP_ERROR(rocsparse_hipFree(done));
     PRINT_IF_HIP_ERROR(rocsparse_hipFree(alpha));
     PRINT_IF_HIP_ERROR(rocsparse_hipFree(beta));
+    PRINT_IF_HIP_ERROR(rocsparse_hipFree(half_lock));
 
     // destroy blas handle
     rocsparse_status status = rocsparse::blas_destroy_handle(this->blas_handle);

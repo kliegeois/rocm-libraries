@@ -272,7 +272,8 @@ namespace rocsparse
                                                     const X* __restrict__ x,
                                                     Y* __restrict__ y,
                                                     const J* __restrict__ starting_block_ids,
-                                                    rocsparse_index_base idx_base)
+                                                    rocsparse_index_base idx_base,
+                                                    unsigned int*        half_lock = nullptr)
     {
         static constexpr uint32_t NNZ_PER_BLOCK = NNZ_PER_THREAD * BLOCKSIZE;
 
@@ -355,7 +356,7 @@ namespace rocsparse
 
             if(tid == 0)
             {
-                rocsparse::atomic_add_check(y, bStart, m, alpha * shared_val[0]);
+                rocsparse::atomic_add_check(y, bStart, m, alpha * shared_val[0], half_lock);
             }
 
             return;
@@ -394,7 +395,7 @@ namespace rocsparse
                 {
                     if(prevrow >= 0)
                     {
-                        rocsparse::atomic_add_check(y, prevrow, m, alpha * sum);
+                        rocsparse::atomic_add_check(y, prevrow, m, alpha * sum, half_lock);
                     }
                 }
 
@@ -407,14 +408,14 @@ namespace rocsparse
                 {
                     if(current_row != right_row && current_row >= 0)
                     {
-                        rocsparse::atomic_add_check(y, current_row, m, alpha * sum);
+                        rocsparse::atomic_add_check(y, current_row, m, alpha * sum, half_lock);
                     }
                 }
                 else
                 {
                     if(current_row >= 0)
                     {
-                        rocsparse::atomic_add_check(y, current_row, m, alpha * sum);
+                        rocsparse::atomic_add_check(y, current_row, m, alpha * sum, half_lock);
                     }
                 }
 
@@ -439,7 +440,7 @@ namespace rocsparse
         {
             if(prevrow >= 0)
             {
-                rocsparse::atomic_add_check(y, prevrow, m, alpha * sum);
+                rocsparse::atomic_add_check(y, prevrow, m, alpha * sum, half_lock);
             }
         }
 
@@ -452,14 +453,16 @@ namespace rocsparse
         {
             if(row_indices[NNZ_PER_THREAD - 1] != right_row && row_indices[NNZ_PER_THREAD - 1] >= 0)
             {
-                rocsparse::atomic_add_check(y, row_indices[NNZ_PER_THREAD - 1], m, alpha * sum);
+                rocsparse::atomic_add_check(
+                    y, row_indices[NNZ_PER_THREAD - 1], m, alpha * sum, half_lock);
             }
         }
         else
         {
             if(row_indices[NNZ_PER_THREAD - 1] >= 0)
             {
-                rocsparse::atomic_add_check(y, row_indices[NNZ_PER_THREAD - 1], m, alpha * sum);
+                rocsparse::atomic_add_check(
+                    y, row_indices[NNZ_PER_THREAD - 1], m, alpha * sum, half_lock);
             }
         }
     }
@@ -484,7 +487,8 @@ namespace rocsparse
                                                      const A* __restrict__ csr_val,
                                                      const X* __restrict__ x,
                                                      Y* __restrict__ y,
-                                                     rocsparse_index_base idx_base)
+                                                     rocsparse_index_base idx_base,
+                                                     unsigned int*        half_lock = nullptr)
     {
         static constexpr uint32_t NNZ_PER_BLOCK = NNZ_PER_THREAD * BLOCKSIZE;
 
@@ -513,7 +517,7 @@ namespace rocsparse
                         if(col_index != bStart)
                         {
                             const T val = rocsparse::conj_val(csr_val[toffset], conj);
-                            rocsparse::atomic_add_check(y, col_index, n, val * mul);
+                            rocsparse::atomic_add_check(y, col_index, n, val * mul, half_lock);
                         }
                     }
                 }
@@ -527,7 +531,7 @@ namespace rocsparse
                     {
                         const J col_index = csr_col_ind[toffset] - idx_base;
                         const T val       = rocsparse::conj_val(csr_val[toffset], conj);
-                        rocsparse::atomic_add_check(y, col_index, n, val * mul);
+                        rocsparse::atomic_add_check(y, col_index, n, val * mul, half_lock);
                     }
                 }
             }
@@ -565,7 +569,7 @@ namespace rocsparse
             {
                 if(col_indices[i] != row_indices[i])
                 {
-                    rocsparse::atomic_add_check(y, col_indices[i], n, values[i]);
+                    rocsparse::atomic_add_check(y, col_indices[i], n, values[i], half_lock);
                 }
             }
         }
@@ -573,7 +577,7 @@ namespace rocsparse
         {
             for(uint32_t i = 0; i < NNZ_PER_THREAD; ++i)
             {
-                rocsparse::atomic_add_check(y, col_indices[i], n, values[i]);
+                rocsparse::atomic_add_check(y, col_indices[i], n, values[i], half_lock);
             }
         }
         return;

@@ -117,7 +117,8 @@ namespace rocsparse
                                                     const A*             csr_val,
                                                     const X*             x,
                                                     Y*                   y,
-                                                    rocsparse_index_base idx_base)
+                                                    rocsparse_index_base idx_base,
+                                                    unsigned int*        half_lock = nullptr)
     {
         const int lid = hipThreadIdx_x & (WF_SIZE - 1);
 
@@ -139,7 +140,7 @@ namespace rocsparse
                     if(col != row)
                     {
                         const A val = rocsparse::conj_val(csr_val[j], conj);
-                        rocsparse::atomic_add(y, col, m, row_val * val);
+                        rocsparse::atomic_add(y, col, m, row_val * val, half_lock);
                     }
                 }
             }
@@ -157,7 +158,7 @@ namespace rocsparse
                     const J col = csr_col_ind[j] - idx_base;
 
                     const A val = rocsparse::conj_val(csr_val[j], conj);
-                    rocsparse::atomic_add(y, col, m, row_val * val);
+                    rocsparse::atomic_add(y, col, m, row_val * val, half_lock);
                 }
             }
         }
@@ -238,7 +239,8 @@ namespace rocsparse
                                                      rocsparse_int        num_extra,
                                                      const T*             gamma_device_array,
                                                      const Z* const*      z_arrays,
-                                                     rocsparse_index_base idx_base)
+                                                     rocsparse_index_base idx_base,
+                                                     unsigned int*        half_lock = nullptr)
     {
         __shared__ T partialSums[BLOCKSIZE];
 
@@ -607,7 +609,7 @@ namespace rocsparse
                     wg_flags[gid] ^= 1U;
                 }
 
-                rocsparse::atomic_add(y, row, m, partialSums[0]);
+                rocsparse::atomic_add(y, row, m, partialSums[0], half_lock);
             }
         }
     }
@@ -1110,7 +1112,8 @@ namespace rocsparse
                                                           rocsparse_int        num_extra,
                                                           const T*             gamma_device_array,
                                                           const Z* const*      z_arrays,
-                                                          rocsparse_index_base idx_base)
+                                                          rocsparse_index_base idx_base,
+                                                          unsigned int*        half_lock = nullptr)
     {
         __shared__ T partialSums[BLOCKSIZE];
 
@@ -1233,7 +1236,7 @@ namespace rocsparse
                 }
             }
 
-            rocsparse::atomic_add(y, row, m, extra_sum);
+            rocsparse::atomic_add(y, row, m, extra_sum, half_lock);
         }
     }
 }

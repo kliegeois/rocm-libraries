@@ -398,7 +398,8 @@ namespace rocsparse
                                                          const A* __restrict__ coo_val,
                                                          const X* __restrict__ x,
                                                          Y* __restrict__ y,
-                                                         rocsparse_index_base idx_base)
+                                                         rocsparse_index_base idx_base,
+                                                         unsigned int*        half_lock = nullptr)
     {
         const int tid = hipThreadIdx_x;
 
@@ -449,7 +450,7 @@ namespace rocsparse
         {
             if(row != shared_row[tid + 1] && row >= 0)
             {
-                rocsparse::atomic_add(y, row, m, alpha * val);
+                rocsparse::atomic_add(y, row, m, alpha * val, half_lock);
             }
         }
 
@@ -486,7 +487,8 @@ namespace rocsparse
                     }
                     else if(prevrow >= 0)
                     {
-                        rocsparse::atomic_add(y, prevrow, m, alpha * shared_val[BLOCKSIZE - 1]);
+                        rocsparse::atomic_add(
+                            y, prevrow, m, alpha * shared_val[BLOCKSIZE - 1], half_lock);
                     }
                 }
 
@@ -514,7 +516,7 @@ namespace rocsparse
                 {
                     if(row != shared_row[tid + 1] && row >= 0)
                     {
-                        rocsparse::atomic_add(y, row, m, alpha * val);
+                        rocsparse::atomic_add(y, row, m, alpha * val, half_lock);
                     }
                 }
             }
@@ -524,7 +526,7 @@ namespace rocsparse
         {
             if(row >= 0)
             {
-                rocsparse::atomic_add(y, row, m, alpha * val);
+                rocsparse::atomic_add(y, row, m, alpha * val, half_lock);
             }
         }
     }
@@ -543,7 +545,8 @@ namespace rocsparse
                                                              const A* __restrict__ coo_val,
                                                              const X* __restrict__ x,
                                                              Y* __restrict__ y,
-                                                             rocsparse_index_base idx_base)
+                                                             rocsparse_index_base idx_base,
+                                                             unsigned int* half_lock = nullptr)
     {
         const int tid = hipThreadIdx_x;
 
@@ -594,7 +597,7 @@ namespace rocsparse
         {
             if(row != shared_row[tid + 1] && row >= 0)
             {
-                rocsparse::atomic_add(y, row, m, alpha * val);
+                rocsparse::atomic_add(y, row, m, alpha * val, half_lock);
             }
         }
 
@@ -629,7 +632,8 @@ namespace rocsparse
                 }
                 else if(prevrow >= 0)
                 {
-                    rocsparse::atomic_add(y, prevrow, m, alpha * shared_val[BLOCKSIZE - 1]);
+                    rocsparse::atomic_add(
+                        y, prevrow, m, alpha * shared_val[BLOCKSIZE - 1], half_lock);
                 }
             }
 
@@ -657,7 +661,7 @@ namespace rocsparse
             {
                 if(row != shared_row[tid + 1] && row >= 0)
                 {
-                    rocsparse::atomic_add(y, row, m, alpha * val);
+                    rocsparse::atomic_add(y, row, m, alpha * val, half_lock);
                 }
             }
         }
@@ -666,7 +670,7 @@ namespace rocsparse
         {
             if(row >= 0)
             {
-                rocsparse::atomic_add(y, row, m, alpha * val);
+                rocsparse::atomic_add(y, row, m, alpha * val, half_lock);
             }
         }
     }
@@ -681,7 +685,8 @@ namespace rocsparse
                                             const A*             coo_val,
                                             const X*             x,
                                             Y*                   y,
-                                            rocsparse_index_base idx_base)
+                                            rocsparse_index_base idx_base,
+                                            unsigned int*        half_lock = nullptr)
     {
         const int64_t gid = hipBlockIdx_x * hipBlockDim_x + hipThreadIdx_x;
 
@@ -696,7 +701,7 @@ namespace rocsparse
                           ? rocsparse::conj(coo_val[gid])
                           : coo_val[gid];
 
-        rocsparse::atomic_add(y, col, n, alpha * val * x[row]);
+        rocsparse::atomic_add(y, col, n, alpha * val * x[row], half_lock);
     }
 
     template <typename I, typename A, typename X, typename Y, typename T>
@@ -708,7 +713,8 @@ namespace rocsparse
                                                 const A*             coo_val,
                                                 const X*             x,
                                                 Y*                   y,
-                                                rocsparse_index_base idx_base)
+                                                rocsparse_index_base idx_base,
+                                                unsigned int*        half_lock = nullptr)
     {
         const int64_t gid = hipBlockIdx_x * hipBlockDim_x + hipThreadIdx_x;
 
@@ -723,6 +729,6 @@ namespace rocsparse
                           ? rocsparse::conj(coo_val[gid])
                           : coo_val[gid];
 
-        rocsparse::atomic_add(y, col, n, alpha * val * x[row]);
+        rocsparse::atomic_add(y, col, n, alpha * val * x[row], half_lock);
     }
 }

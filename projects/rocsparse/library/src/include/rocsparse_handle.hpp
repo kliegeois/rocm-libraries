@@ -105,6 +105,9 @@ struct _rocsparse_handle
     // This allows template functions to access pre-extracted arrays
     void* temp_spmv_descr = nullptr;
 
+    // Spinlock for half-precision atomic operations (shared by fp16 and bf16)
+    unsigned int* half_lock{};
+
     // logging streams
     std::ofstream log_trace_ofs;
     std::ofstream log_bench_ofs;
@@ -130,4 +133,24 @@ namespace rocsparse
     // Get xnack mode.
     //
     std::string handle_get_xnack_mode(rocsparse_handle handle);
+
+    // Helper to get the lock pointer for half-precision atomics from handle
+    // Returns nullptr for non-half types, shared lock for fp16/bf16
+    template <typename Y>
+    inline unsigned int* get_half_lock(rocsparse_handle handle)
+    {
+        return nullptr;
+    }
+
+    template <>
+    inline unsigned int* get_half_lock<_Float16>(rocsparse_handle handle)
+    {
+        return handle->half_lock;
+    }
+
+    template <>
+    inline unsigned int* get_half_lock<rocsparse_bfloat16>(rocsparse_handle handle)
+    {
+        return handle->half_lock;
+    }
 }

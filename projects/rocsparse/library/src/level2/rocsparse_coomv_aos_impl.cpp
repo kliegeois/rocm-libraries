@@ -101,13 +101,14 @@ namespace rocsparse
                                  const X* __restrict__ x,
                                  Y* __restrict__ y,
                                  rocsparse_index_base idx_base,
-                                 bool                 is_host_mode)
+                                 bool                 is_host_mode,
+                                 unsigned int*        half_lock = nullptr)
     {
         ROCSPARSE_DEVICE_HOST_SCALAR_GET(alpha);
         if(alpha != 0)
         {
             rocsparse::coomvn_aos_atomic_loops_device<BLOCKSIZE, LOOPS>(
-                nnz, m, alpha, coo_ind, coo_val, x, y, idx_base);
+                nnz, m, alpha, coo_ind, coo_val, x, y, idx_base, half_lock);
         }
     }
 
@@ -122,12 +123,14 @@ namespace rocsparse
                            const X* __restrict__ x,
                            Y* __restrict__ y,
                            rocsparse_index_base idx_base,
-                           bool                 is_host_mode)
+                           bool                 is_host_mode,
+                           unsigned int*        half_lock = nullptr)
     {
         ROCSPARSE_DEVICE_HOST_SCALAR_GET(alpha);
         if(alpha != 0)
         {
-            rocsparse::coomvt_aos_device(trans, nnz, n, alpha, coo_ind, coo_val, x, y, idx_base);
+            rocsparse::coomvt_aos_device(
+                trans, nnz, n, alpha, coo_ind, coo_val, x, y, idx_base, half_lock);
         }
     }
 
@@ -149,6 +152,9 @@ namespace rocsparse
 
         // Stream
         hipStream_t stream = handle->stream;
+
+        // Get lock for half-precision atomics from handle
+        unsigned int* half_lock = rocsparse::get_half_lock<Y>(handle);
 
         const I ysize = (trans == rocsparse_operation_none) ? m : n;
 
@@ -173,7 +179,8 @@ namespace rocsparse
                 x,
                 y,
                 descr->base,
-                handle->pointer_mode == rocsparse_pointer_mode_host);
+                handle->pointer_mode == rocsparse_pointer_mode_host,
+                half_lock);
             break;
         }
         case rocsparse_operation_transpose:
@@ -194,7 +201,8 @@ namespace rocsparse
                 x,
                 y,
                 descr->base,
-                handle->pointer_mode == rocsparse_pointer_mode_host);
+                handle->pointer_mode == rocsparse_pointer_mode_host,
+                half_lock);
             break;
         }
         }
@@ -220,6 +228,9 @@ namespace rocsparse
 
         // Stream
         hipStream_t stream = handle->stream;
+
+        // Get lock for half-precision atomics from handle
+        unsigned int* half_lock = rocsparse::get_half_lock<Y>(handle);
 
         const I ysize = (trans == rocsparse_operation_none) ? m : n;
 
@@ -302,7 +313,8 @@ namespace rocsparse
                 x,
                 y,
                 descr->base,
-                handle->pointer_mode == rocsparse_pointer_mode_host);
+                handle->pointer_mode == rocsparse_pointer_mode_host,
+                half_lock);
             break;
         }
         }

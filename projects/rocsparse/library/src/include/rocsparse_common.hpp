@@ -57,8 +57,25 @@
 #define GEBSR_IND_C(j, bi, bj) (row_block_dim * col_block_dim * (j) + (bi) + (bj) * row_block_dim)
 // clang-format on
 
+#include <type_traits>
+
 namespace rocsparse
 {
+    // Type trait to determine if a type needs the half-precision lock for atomic operations
+    template <typename Y>
+    struct needs_half_lock : std::false_type
+    {
+    };
+
+    template <>
+    struct needs_half_lock<_Float16> : std::true_type
+    {
+    };
+
+    template <>
+    struct needs_half_lock<rocsparse_bfloat16> : std::true_type
+    {
+    };
 
     template <typename T>
     __device__ inline T* batched_pointer(uint32_t index, T* p, int64_t dist)
@@ -767,14 +784,27 @@ namespace rocsparse
         return atomic_add(base_ptr + idx, static_cast<T1>(val));
     }
 
+    // Overload with lock parameter for uniform interface - ignores lock for non-half types
+    template <typename T1, typename T2>
+    __device__ __forceinline__ T1
+        atomic_add(T1* base_ptr, int idx, int size, T2 val, unsigned int* /* lock */)
+    {
+        return atomic_add(base_ptr + idx, static_cast<T1>(val));
+    }
+
     template <typename T1, typename T2>
     __device__ __forceinline__ T1 atomic_add_check(T1* base_ptr, int idx, int size, T2 val)
     {
         return atomic_add_check(base_ptr + idx, static_cast<T1>(val));
     }
 
-    // Global spinlock for odd-sized array edge cases
-    __device__ unsigned int g_fp16_lock = 0;
+    // Overload with lock parameter for uniform interface - ignores lock for non-half types
+    template <typename T1, typename T2>
+    __device__ __forceinline__ T1
+        atomic_add_check(T1* base_ptr, int idx, int size, T2 val, unsigned int* /* lock */)
+    {
+        return atomic_add_check(base_ptr + idx, static_cast<T1>(val));
+    }
 
     template <typename T>
     __device__ __forceinline__ T wfreduce_sum_mask(T sum, unsigned long long int active_mask)
@@ -794,44 +824,41 @@ namespace rocsparse
         return tmp;
     }
 
-    __device__ half atomic_add_by_CAS(half* base_ptr, int idx, half val, int size)
+    __device__ half
+        atomic_add_by_CAS(half* base_ptr, int idx, half val, int size, unsigned int* fp16_lock)
     {
         // Check bounds
         if(idx >= 0 && idx < size)
         {
-
             half* addr      = &base_ptr[idx];
             int   is_second = (idx & 1);
 
-            // If this is the "high" half of an odd-sized array's last element, use spinlock
+            // If this is the last element of an odd-sized array
             if((size & 1) && idx == size - 1)
             {
-                // Find the first active thread in the wavefront for this branch
-                unsigned long long int active_mask = __ballot(1);
-
-                int first_active_lane = __ffsll(active_mask) - 1;
-
-                float tmp = wfreduce_sum_mask(static_cast<float>(val), active_mask);
-
-                if(__lane_id() == first_active_lane)
+                if(fp16_lock != nullptr)
                 {
-                    // Acquire spinlock
-                    while(atomicCAS(&g_fp16_lock, 0U, 1U) != 0U)
-                        ;
+                    // Use spinlock approach with provided lock
+                    unsigned long long int active_mask       = __ballot(1);
+                    int                    first_active_lane = __ffsll(active_mask) - 1;
+                    float tmp = wfreduce_sum_mask(static_cast<float>(val), active_mask);
 
-                    // Handle unpaired last element
-                    half old_val = *addr;
-                    *addr        = __hadd(old_val, __float2half(tmp));
+                    if(__lane_id() == first_active_lane)
+                    {
+                        while(atomicCAS(fp16_lock, 0U, 1U) != 0U)
+                            ;
 
-                    // Release spinlock
-                    atomicExch(&g_fp16_lock, 0U);
+                        half old_val = *addr;
+                        *addr        = __hadd(old_val, __float2half(tmp));
 
-                    tmp = static_cast<float>(old_val);
+                        __threadfence();
+                        atomicExch(fp16_lock, 0U);
+
+                        tmp = static_cast<float>(old_val);
+                    }
+                    tmp = __shfl(tmp, first_active_lane);
+                    return __float2half(tmp);
                 }
-                // Broadcast the old value from first_lane to all active threads
-                tmp = __shfl(tmp, first_active_lane);
-
-                return __float2half(tmp);
             }
 
             // Safe to do paired atomic CAS
@@ -844,11 +871,9 @@ namespace rocsparse
             {
                 assumed = old;
 
-                // Extract both halves
                 half h_low  = __ushort_as_half((unsigned short)assumed);
                 half h_high = __ushort_as_half((unsigned short)(assumed >> 16));
 
-                // Add to the appropriate half
                 if(is_second)
                 {
                     h_high = __hadd(h_high, val);
@@ -858,7 +883,6 @@ namespace rocsparse
                     h_low = __hadd(h_low, val);
                 }
 
-                // Pack back
                 new_val = ((unsigned int)__half_as_ushort(h_high) << 16)
                           | (unsigned int)__half_as_ushort(h_low);
 
@@ -873,67 +897,87 @@ namespace rocsparse
         }
     }
 
+    // Overload without lock parameter - uses CAS-only fallback for edge cases
+    __device__ __forceinline__ half atomic_add_by_CAS(half* base_ptr, int idx, half val, int size)
+    {
+        return atomic_add_by_CAS(base_ptr, idx, val, size, nullptr);
+    }
+
+    template <typename T>
+    __device__ __forceinline__ _Float16
+        atomic_add(_Float16* base_ptr, int idx, int size, T val, unsigned int* fp16_lock)
+    {
+        return atomic_add_by_CAS(
+            reinterpret_cast<half*>(base_ptr), idx, static_cast<half>(val), size, fp16_lock);
+    }
+
+    // Overload without lock parameter for backward compatibility
     template <typename T>
     __device__ __forceinline__ _Float16 atomic_add(_Float16* base_ptr, int idx, int size, T val)
     {
         return atomic_add_by_CAS(
-            reinterpret_cast<half*>(base_ptr), idx, static_cast<half>(val), size);
+            reinterpret_cast<half*>(base_ptr), idx, static_cast<half>(val), size, nullptr);
     }
 
+    template <typename T>
+    __device__ __forceinline__ _Float16
+        atomic_add_check(_Float16* base_ptr, int idx, int size, T val, unsigned int* fp16_lock)
+    {
+        if(val != static_cast<_Float16>(0))
+            return atomic_add_by_CAS(
+                reinterpret_cast<half*>(base_ptr), idx, static_cast<half>(val), size, fp16_lock);
+        return base_ptr[idx];
+    }
+
+    // Overload without lock parameter for backward compatibility
     template <typename T>
     __device__ __forceinline__ _Float16
         atomic_add_check(_Float16* base_ptr, int idx, int size, T val)
     {
         if(val != static_cast<_Float16>(0))
             return atomic_add_by_CAS(
-                reinterpret_cast<half*>(base_ptr), idx, static_cast<half>(val), size);
+                reinterpret_cast<half*>(base_ptr), idx, static_cast<half>(val), size, nullptr);
         return base_ptr[idx];
     }
-
-    // Global spinlock for odd-sized bfloat16 array edge cases
-    __device__ unsigned int g_bf16_lock = 0;
 
     __device__ rocsparse_bfloat16 atomic_add_by_CAS(rocsparse_bfloat16* base_ptr,
                                                     int                 idx,
                                                     rocsparse_bfloat16  val,
-                                                    int                 size)
+                                                    int                 size,
+                                                    unsigned int*       bf16_lock)
     {
         // Check bounds
         if(idx >= 0 && idx < size)
         {
-
             rocsparse_bfloat16* addr      = &base_ptr[idx];
             int                 is_second = (idx & 1);
 
-            // If this is the "high" half of an odd-sized array's last element, use spinlock
+            // If this is the last element of an odd-sized array
             if((size & 1) && idx == size - 1)
             {
-                // Find the first active thread in the wavefront for this branch
-                unsigned long long int active_mask = __ballot(1);
-
-                int first_active_lane = __ffsll(active_mask) - 1;
-
-                float tmp = wfreduce_sum_mask(static_cast<float>(val), active_mask);
-
-                if(__lane_id() == first_active_lane)
+                if(bf16_lock != nullptr)
                 {
-                    // Acquire spinlock
-                    while(atomicCAS(&g_bf16_lock, 0U, 1U) != 0U)
-                        ;
+                    // Use spinlock approach with provided lock
+                    unsigned long long int active_mask       = __ballot(1);
+                    int                    first_active_lane = __ffsll(active_mask) - 1;
+                    float tmp = wfreduce_sum_mask(static_cast<float>(val), active_mask);
 
-                    // Handle unpaired last element
-                    rocsparse_bfloat16 old_val = *addr;
-                    *addr = static_cast<rocsparse_bfloat16>(static_cast<float>(old_val) + tmp);
+                    if(__lane_id() == first_active_lane)
+                    {
+                        while(atomicCAS(bf16_lock, 0U, 1U) != 0U)
+                            ;
 
-                    // Release spinlock
-                    atomicExch(&g_bf16_lock, 0U);
+                        rocsparse_bfloat16 old_val = *addr;
+                        *addr = static_cast<rocsparse_bfloat16>(static_cast<float>(old_val) + tmp);
 
-                    tmp = static_cast<float>(old_val);
+                        __threadfence();
+                        atomicExch(bf16_lock, 0U);
+
+                        tmp = static_cast<float>(old_val);
+                    }
+                    tmp = __shfl(tmp, first_active_lane);
+                    return static_cast<rocsparse_bfloat16>(tmp);
                 }
-                // Broadcast the old value from first_lane to all active threads
-                tmp = __shfl(tmp, first_active_lane);
-
-                return static_cast<rocsparse_bfloat16>(tmp);
             }
 
             // Safe to do paired atomic CAS
@@ -946,13 +990,11 @@ namespace rocsparse
             {
                 assumed = old;
 
-                // Extract both halves (bfloat16 is stored as upper 16 bits of float representation)
                 rocsparse_bfloat16 bf_low;
                 rocsparse_bfloat16 bf_high;
                 bf_low.data  = (unsigned short)assumed;
                 bf_high.data = (unsigned short)(assumed >> 16);
 
-                // Add to the appropriate half
                 if(is_second)
                 {
                     bf_high = static_cast<rocsparse_bfloat16>(static_cast<float>(bf_high)
@@ -964,7 +1006,6 @@ namespace rocsparse
                                                              + static_cast<float>(val));
                 }
 
-                // Pack back
                 new_val = ((unsigned int)bf_high.data << 16) | (unsigned int)bf_low.data;
 
                 old = atomicCAS(float_addr, assumed, new_val);
@@ -980,6 +1021,31 @@ namespace rocsparse
         }
     }
 
+    // Overload without lock parameter - uses CAS-only fallback for edge cases
+    __device__ __forceinline__ rocsparse_bfloat16 atomic_add_by_CAS(rocsparse_bfloat16* base_ptr,
+                                                                    int                 idx,
+                                                                    rocsparse_bfloat16  val,
+                                                                    int                 size)
+    {
+        return atomic_add_by_CAS(base_ptr, idx, val, size, nullptr);
+    }
+
+    template <typename T>
+    __device__ __forceinline__ rocsparse_bfloat16
+        atomic_add(rocsparse_bfloat16* base_ptr, int idx, int size, T val, unsigned int* bf16_lock)
+    {
+        rocsparse_bfloat16 result
+            = atomic_add_by_CAS(reinterpret_cast<rocsparse_bfloat16*>(base_ptr),
+                                idx,
+                                static_cast<rocsparse_bfloat16>(static_cast<float>(val)),
+                                size,
+                                bf16_lock);
+        rocsparse_bfloat16 ret;
+        ret.data = result.data;
+        return ret;
+    }
+
+    // Overload without lock parameter for backward compatibility
     template <typename T>
     __device__ __forceinline__ rocsparse_bfloat16
         atomic_add(rocsparse_bfloat16* base_ptr, int idx, int size, T val)
@@ -988,12 +1054,33 @@ namespace rocsparse
             = atomic_add_by_CAS(reinterpret_cast<rocsparse_bfloat16*>(base_ptr),
                                 idx,
                                 static_cast<rocsparse_bfloat16>(static_cast<float>(val)),
-                                size);
+                                size,
+                                nullptr);
         rocsparse_bfloat16 ret;
         ret.data = result.data;
         return ret;
     }
 
+    template <typename T>
+    __device__ __forceinline__ rocsparse_bfloat16 atomic_add_check(
+        rocsparse_bfloat16* base_ptr, int idx, int size, T val, unsigned int* bf16_lock)
+    {
+        if(val != static_cast<T>(0))
+        {
+            rocsparse_bfloat16 result
+                = atomic_add_by_CAS(reinterpret_cast<rocsparse_bfloat16*>(base_ptr),
+                                    idx,
+                                    static_cast<rocsparse_bfloat16>(static_cast<float>(val)),
+                                    size,
+                                    bf16_lock);
+            rocsparse_bfloat16 ret;
+            ret.data = result.data;
+            return ret;
+        }
+        return base_ptr[idx];
+    }
+
+    // Overload without lock parameter for backward compatibility
     template <typename T>
     __device__ __forceinline__ rocsparse_bfloat16
         atomic_add_check(rocsparse_bfloat16* base_ptr, int idx, int size, T val)
@@ -1004,7 +1091,8 @@ namespace rocsparse
                 = atomic_add_by_CAS(reinterpret_cast<rocsparse_bfloat16*>(base_ptr),
                                     idx,
                                     static_cast<rocsparse_bfloat16>(static_cast<float>(val)),
-                                    size);
+                                    size,
+                                    nullptr);
             rocsparse_bfloat16 ret;
             ret.data = result.data;
             return ret;
