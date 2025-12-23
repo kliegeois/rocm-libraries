@@ -46,6 +46,18 @@ struct floating_traits<rocsparse_double_complex>
     using data_t = double;
 };
 
+template <>
+struct floating_traits<rocsparse_bfloat16>
+{
+    using data_t = float;
+};
+
+template <>
+struct floating_traits<_Float16>
+{
+    using data_t = _Float16;
+};
+
 template <typename T>
 using floating_data_t = typename floating_traits<T>::data_t;
 

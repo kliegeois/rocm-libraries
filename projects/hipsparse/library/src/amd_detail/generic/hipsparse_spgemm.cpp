@@ -118,6 +118,16 @@ namespace hipsparse
             size = sizeof(hipDoubleComplex);
             return HIPSPARSE_STATUS_SUCCESS;
         }
+        case HIP_R_16F:
+        {
+            size = sizeof(_Float16);
+            return HIPSPARSE_STATUS_SUCCESS;
+        }
+        case HIP_R_16BF:
+        {
+            size = sizeof(rocsparse_bfloat16);
+            return HIPSPARSE_STATUS_SUCCESS;
+        }
         default:
         {
             size = 0;
@@ -410,10 +420,13 @@ hipsparseStatus_t hipsparseSpGEMM_copy(hipsparseHandle_t          handle,
     hipStream_t stream;
     RETURN_IF_HIPSPARSE_ERROR(hipsparseGetStream(handle, &stream));
 
-    float            host_sone = 1.0f;
-    double           host_done = 1.0f;
-    hipComplex       host_cone = make_hipComplex(1.0f, 0.0f);
-    hipDoubleComplex host_zone = make_hipDoubleComplex(1.0, 0.0);
+    float              host_sone = 1.0f;
+    double             host_done = 1.0f;
+    hipComplex         host_cone = make_hipComplex(1.0f, 0.0f);
+    hipDoubleComplex   host_zone = make_hipDoubleComplex(1.0, 0.0);
+    _Float16           host_hone = 1.0f;
+    rocsparse_bfloat16 host_bhone;
+    host_bhone.data = 0x3f00; // bfloat16 representation of 1.0
 
     void* one = nullptr;
     if(pointer_mode == HIPSPARSE_POINTER_MODE_HOST)
@@ -426,6 +439,10 @@ hipsparseStatus_t hipsparseSpGEMM_copy(hipsparseHandle_t          handle,
             one = &host_cone;
         if(computeType == HIP_C_64F)
             one = &host_zone;
+        if(computeType == HIP_R_16F)
+            one = &host_hone;
+        if(computeType == HIP_R_16BF)
+            one = &host_bhone;
     }
     else
     {
@@ -451,6 +468,21 @@ hipsparseStatus_t hipsparseSpGEMM_copy(hipsparseHandle_t          handle,
         {
             RETURN_IF_HIP_ERROR(hipMemcpyAsync(
                 device_one, &host_zone, sizeof(hipDoubleComplex), hipMemcpyHostToDevice, stream));
+            one = device_one;
+        }
+        if(computeType == HIP_R_16F)
+        {
+            RETURN_IF_HIP_ERROR(hipMemcpyAsync(
+                device_one, &host_hone, sizeof(_Float16), hipMemcpyHostToDevice, stream));
+            one = device_one;
+        }
+        if(computeType == HIP_R_16BF)
+        {
+            RETURN_IF_HIP_ERROR(hipMemcpyAsync(device_one,
+                                               &host_bhone,
+                                               sizeof(rocsparse_bfloat16),
+                                               hipMemcpyHostToDevice,
+                                               stream));
             one = device_one;
         }
     }

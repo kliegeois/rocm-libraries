@@ -148,6 +148,14 @@ inline bool rocsparse_isinf(_Float16 arg)
 }
 
 template <>
+inline bool rocsparse_isinf(rocsparse_bfloat16 arg)
+{
+    // bfloat16: exponent bits = 0x7f80, mantissa bits = 0x007f
+    // inf when exponent is all 1s (0x7f80) and mantissa is 0
+    return (arg.data & 0x7f80) == 0x7f80 && (arg.data & 0x007f) == 0;
+}
+
+template <>
 inline bool rocsparse_isinf(float arg)
 {
     return std::isinf(arg);
@@ -203,6 +211,13 @@ template <>
 inline _Float16 rocsparse_abs(_Float16 arg)
 {
     return (arg < 0.0) ? -arg : arg;
+}
+
+template <>
+inline float rocsparse_abs(rocsparse_bfloat16 arg)
+{
+    float f = static_cast<float>(arg);
+    return (f < 0.0f) ? -f : f;
 }
 
 #endif // ROCSPARSE_MATH_HPP

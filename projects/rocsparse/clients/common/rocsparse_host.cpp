@@ -10351,6 +10351,10 @@ INSTANTIATE_IABCT(int32_t, _Float16, _Float16, float, float);
 INSTANTIATE_IABCT(int64_t, _Float16, _Float16, float, float);
 INSTANTIATE_IABCT(int32_t, rocsparse_bfloat16, rocsparse_bfloat16, float, float);
 INSTANTIATE_IABCT(int64_t, rocsparse_bfloat16, rocsparse_bfloat16, float, float);
+INSTANTIATE_IABCT(int32_t, _Float16, _Float16, _Float16, float);
+INSTANTIATE_IABCT(int64_t, _Float16, _Float16, _Float16, float);
+INSTANTIATE_IABCT(int32_t, rocsparse_bfloat16, rocsparse_bfloat16, rocsparse_bfloat16, float);
+INSTANTIATE_IABCT(int64_t, rocsparse_bfloat16, rocsparse_bfloat16, rocsparse_bfloat16, float);
 INSTANTIATE_IABCT(int32_t, float, float, float, float);
 INSTANTIATE_IABCT(int64_t, float, float, float, float);
 INSTANTIATE_IABCT(int32_t, double, double, double, double);
@@ -10388,6 +10392,15 @@ INSTANTIATE_IJABCT(int64_t, int64_t, _Float16, _Float16, float, float);
 INSTANTIATE_IJABCT(int32_t, int32_t, rocsparse_bfloat16, rocsparse_bfloat16, float, float);
 INSTANTIATE_IJABCT(int64_t, int32_t, rocsparse_bfloat16, rocsparse_bfloat16, float, float);
 INSTANTIATE_IJABCT(int64_t, int64_t, rocsparse_bfloat16, rocsparse_bfloat16, float, float);
+INSTANTIATE_IJABCT(int32_t, int32_t, _Float16, _Float16, _Float16, float);
+INSTANTIATE_IJABCT(int64_t, int32_t, _Float16, _Float16, _Float16, float);
+INSTANTIATE_IJABCT(int64_t, int64_t, _Float16, _Float16, _Float16, float);
+INSTANTIATE_IJABCT(
+    int32_t, int32_t, rocsparse_bfloat16, rocsparse_bfloat16, rocsparse_bfloat16, float);
+INSTANTIATE_IJABCT(
+    int64_t, int32_t, rocsparse_bfloat16, rocsparse_bfloat16, rocsparse_bfloat16, float);
+INSTANTIATE_IJABCT(
+    int64_t, int64_t, rocsparse_bfloat16, rocsparse_bfloat16, rocsparse_bfloat16, float);
 INSTANTIATE_IJABCT(int32_t, int32_t, float, float, float, float);
 INSTANTIATE_IJABCT(int64_t, int32_t, float, float, float, float);
 INSTANTIATE_IJABCT(int64_t, int64_t, float, float, float, float);

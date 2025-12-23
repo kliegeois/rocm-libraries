@@ -34,6 +34,67 @@
 
 namespace rocsparse
 {
+    // Type trait to detect if C is a half-precision type requiring workaround
+    template <typename C>
+    struct is_half_precision : std::false_type
+    {
+    };
+
+    template <>
+    struct is_half_precision<_Float16> : std::true_type
+    {
+    };
+
+    template <>
+    struct is_half_precision<rocsparse_bfloat16> : std::true_type
+    {
+    };
+
+    // Device kernel to copy with type conversion and scale: dst = scale * src
+    template <uint32_t BLOCKSIZE, typename J, typename SRC, typename DST, typename T>
+    ROCSPARSE_KERNEL(BLOCKSIZE)
+    void copy_scale_2d_kernel(J               m,
+                              J               n,
+                              int64_t         src_ld,
+                              int64_t         dst_ld,
+                              const SRC*      src,
+                              DST*            dst,
+                              T               scale,
+                              rocsparse_order order)
+    {
+        int64_t gid = hipBlockIdx_x * BLOCKSIZE + hipThreadIdx_x;
+        if(gid >= int64_t(m) * n)
+        {
+            return;
+        }
+
+        J wid = (order == rocsparse_order_column) ? gid / m : gid / n;
+        J lid = (order == rocsparse_order_column) ? gid % m : gid % n;
+
+        int64_t src_idx = lid + src_ld * wid;
+        int64_t dst_idx = lid + dst_ld * wid;
+        dst[dst_idx]    = static_cast<DST>(scale * static_cast<T>(src[src_idx]));
+    }
+
+    // Device kernel to copy with type conversion (no scale): dst = src
+    template <uint32_t BLOCKSIZE, typename J, typename SRC, typename DST>
+    ROCSPARSE_KERNEL(BLOCKSIZE)
+    void copy_2d_kernel(
+        J m, J n, int64_t src_ld, int64_t dst_ld, const SRC* src, DST* dst, rocsparse_order order)
+    {
+        int64_t gid = hipBlockIdx_x * BLOCKSIZE + hipThreadIdx_x;
+        if(gid >= int64_t(m) * n)
+        {
+            return;
+        }
+
+        J wid = (order == rocsparse_order_column) ? gid / m : gid / n;
+        J lid = (order == rocsparse_order_column) ? gid % m : gid % n;
+
+        int64_t src_idx = lid + src_ld * wid;
+        int64_t dst_idx = lid + dst_ld * wid;
+        dst[dst_idx]    = static_cast<DST>(src[src_idx]);
+    }
     template <typename T, typename I, typename J, typename A>
     rocsparse_status csrmm_buffer_size_template_nnz_split(rocsparse_handle          handle,
                                                           rocsparse_operation       trans_A,
@@ -353,43 +414,34 @@ namespace rocsparse
 
 namespace rocsparse
 {
+    // Internal dispatch that works on T* output (compute type)
+    // This is called after any necessary buffer setup
     template <unsigned int BLOCKSIZE,
               unsigned int WF_SIZE,
               typename T,
               typename I,
               typename J,
               typename A,
-              typename B,
-              typename C>
-    rocsparse_status csrmmnt_nnz_split_dispatch(rocsparse_handle          handle,
-                                                bool                      conj_A,
-                                                bool                      conj_B,
-                                                J                         m,
-                                                J                         n,
-                                                J                         k,
-                                                I                         nnz,
-                                                const T*                  alpha_device_host,
-                                                const rocsparse_mat_descr descr,
-                                                const A*                  csr_val,
-                                                const I*                  csr_row_ptr,
-                                                const J*                  csr_col_ind,
-                                                const B*                  dense_B,
-                                                int64_t                   ldb,
-                                                const T*                  beta_device_host,
-                                                C*                        dense_C,
-                                                int64_t                   ldc,
-                                                rocsparse_order           order_C,
-                                                void*                     temp_buffer)
+              typename B>
+    rocsparse_status csrmmnt_nnz_split_dispatch_impl(rocsparse_handle          handle,
+                                                     bool                      conj_A,
+                                                     bool                      conj_B,
+                                                     J                         m,
+                                                     J                         n,
+                                                     J                         k,
+                                                     I                         nnz,
+                                                     const T*                  alpha_device_host,
+                                                     const rocsparse_mat_descr descr,
+                                                     const A*                  csr_val,
+                                                     const I*                  csr_row_ptr,
+                                                     const J*                  csr_col_ind,
+                                                     const B*                  dense_B,
+                                                     int64_t                   ldb,
+                                                     T*                        dense_C,
+                                                     int64_t                   ldc,
+                                                     rocsparse_order           order_C,
+                                                     J*                        row_limits)
     {
-        ROCSPARSE_ROUTINE_TRACE;
-
-        // Scale C with beta
-        RETURN_IF_ROCSPARSE_ERROR(
-            rocsparse::scale_2d_array(handle, m, n, ldc, 1, 0, beta_device_host, dense_C, order_C));
-
-        char* ptr        = reinterpret_cast<char*>(temp_buffer);
-        J*    row_limits = reinterpret_cast<J*>(ptr);
-
         J main      = 0;
         J remainder = n;
 
@@ -448,6 +500,194 @@ namespace rocsparse
             {
                 LAUNCH_CSRMMNT_NNZ_SPLIT_REMAINDER_KERNEL(BLOCKSIZE, 64);
             }
+        }
+
+        return rocsparse_status_success;
+    }
+
+    // Dispatch for non-half-precision C types (C == T, standard path)
+    template <unsigned int BLOCKSIZE,
+              unsigned int WF_SIZE,
+              typename T,
+              typename I,
+              typename J,
+              typename A,
+              typename B,
+              typename C,
+              std::enable_if_t<!is_half_precision<C>::value, int> = 0>
+    rocsparse_status csrmmnt_nnz_split_dispatch(rocsparse_handle          handle,
+                                                bool                      conj_A,
+                                                bool                      conj_B,
+                                                J                         m,
+                                                J                         n,
+                                                J                         k,
+                                                I                         nnz,
+                                                const T*                  alpha_device_host,
+                                                const rocsparse_mat_descr descr,
+                                                const A*                  csr_val,
+                                                const I*                  csr_row_ptr,
+                                                const J*                  csr_col_ind,
+                                                const B*                  dense_B,
+                                                int64_t                   ldb,
+                                                const T*                  beta_device_host,
+                                                C*                        dense_C,
+                                                int64_t                   ldc,
+                                                rocsparse_order           order_C,
+                                                void*                     temp_buffer)
+    {
+        ROCSPARSE_ROUTINE_TRACE;
+
+        // Scale C with beta
+        RETURN_IF_ROCSPARSE_ERROR(
+            rocsparse::scale_2d_array(handle, m, n, ldc, 1, 0, beta_device_host, dense_C, order_C));
+
+        char* ptr        = reinterpret_cast<char*>(temp_buffer);
+        J*    row_limits = reinterpret_cast<J*>(ptr);
+
+        return csrmmnt_nnz_split_dispatch_impl<BLOCKSIZE, WF_SIZE, T, I, J, A, B>(handle,
+                                                                                  conj_A,
+                                                                                  conj_B,
+                                                                                  m,
+                                                                                  n,
+                                                                                  k,
+                                                                                  nnz,
+                                                                                  alpha_device_host,
+                                                                                  descr,
+                                                                                  csr_val,
+                                                                                  csr_row_ptr,
+                                                                                  csr_col_ind,
+                                                                                  dense_B,
+                                                                                  ldb,
+                                                                                  dense_C,
+                                                                                  ldc,
+                                                                                  order_C,
+                                                                                  row_limits);
+    }
+
+    // Dispatch for half-precision C types (_Float16 or rocsparse_bfloat16)
+    // Uses temporary T buffer to avoid atomic CAS issues
+    template <unsigned int BLOCKSIZE,
+              unsigned int WF_SIZE,
+              typename T,
+              typename I,
+              typename J,
+              typename A,
+              typename B,
+              typename C,
+              std::enable_if_t<is_half_precision<C>::value, int> = 0>
+    rocsparse_status csrmmnt_nnz_split_dispatch(rocsparse_handle          handle,
+                                                bool                      conj_A,
+                                                bool                      conj_B,
+                                                J                         m,
+                                                J                         n,
+                                                J                         k,
+                                                I                         nnz,
+                                                const T*                  alpha_device_host,
+                                                const rocsparse_mat_descr descr,
+                                                const A*                  csr_val,
+                                                const I*                  csr_row_ptr,
+                                                const J*                  csr_col_ind,
+                                                const B*                  dense_B,
+                                                int64_t                   ldb,
+                                                const T*                  beta_device_host,
+                                                C*                        dense_C,
+                                                int64_t                   ldc,
+                                                rocsparse_order           order_C,
+                                                void*                     temp_buffer)
+    {
+        ROCSPARSE_ROUTINE_TRACE;
+
+        char* ptr        = reinterpret_cast<char*>(temp_buffer);
+        J*    row_limits = reinterpret_cast<J*>(ptr);
+
+        // Allocate temporary T buffer (compute type) for the computation
+        // Size: m * n elements of type T
+        T*            temp_C    = nullptr;
+        bool          free_temp = false;
+        const int64_t temp_size = int64_t(m) * n;
+
+        RETURN_IF_HIP_ERROR(
+            rocsparse_hipMallocAsync(&temp_C, sizeof(T) * temp_size, handle->stream));
+        free_temp = true;
+
+        // Get beta value for host mode
+        T beta_val = static_cast<T>(0);
+        if(handle->pointer_mode == rocsparse_pointer_mode_host)
+        {
+            beta_val = *beta_device_host;
+        }
+        else
+        {
+            RETURN_IF_HIP_ERROR(hipMemcpyAsync(
+                &beta_val, beta_device_host, sizeof(T), hipMemcpyDeviceToHost, handle->stream));
+            RETURN_IF_HIP_ERROR(hipStreamSynchronize(handle->stream));
+        }
+
+        // Copy dense_C (type C) to temp_C (type T) with scaling by beta
+        // temp_C[i,j] = beta * dense_C[i,j]
+        RETURN_IF_HIPLAUNCHKERNELGGL_ERROR((rocsparse::copy_scale_2d_kernel<256, J, C, T, T>),
+                                           dim3((temp_size - 1) / 256 + 1),
+                                           dim3(256),
+                                           0,
+                                           handle->stream,
+                                           m,
+                                           n,
+                                           ldc,
+                                           m, // temp_C uses ldc = m (packed)
+                                           dense_C,
+                                           temp_C,
+                                           beta_val,
+                                           order_C);
+
+        // Run the kernels with temp_C (type T)
+        rocsparse_status status
+            = csrmmnt_nnz_split_dispatch_impl<BLOCKSIZE, WF_SIZE, T, I, J, A, B>(
+                handle,
+                conj_A,
+                conj_B,
+                m,
+                n,
+                k,
+                nnz,
+                alpha_device_host,
+                descr,
+                csr_val,
+                csr_row_ptr,
+                csr_col_ind,
+                dense_B,
+                ldb,
+                temp_C,
+                m, // temp_C uses ldc = m (packed)
+                order_C,
+                row_limits);
+
+        if(status != rocsparse_status_success)
+        {
+            if(free_temp)
+            {
+                (void)rocsparse_hipFreeAsync(temp_C, handle->stream);
+            }
+            return status;
+        }
+
+        // Copy temp_C (type T) back to dense_C (type C)
+        // dense_C[i,j] = temp_C[i,j]
+        RETURN_IF_HIPLAUNCHKERNELGGL_ERROR((rocsparse::copy_2d_kernel<256, J, T, C>),
+                                           dim3((temp_size - 1) / 256 + 1),
+                                           dim3(256),
+                                           0,
+                                           handle->stream,
+                                           m,
+                                           n,
+                                           m, // temp_C uses ldc = m (packed)
+                                           ldc,
+                                           temp_C,
+                                           dense_C,
+                                           order_C);
+
+        if(free_temp)
+        {
+            RETURN_IF_HIP_ERROR(rocsparse_hipFreeAsync(temp_C, handle->stream));
         }
 
         return rocsparse_status_success;
@@ -696,9 +936,15 @@ INSTANTIATE(rocsparse_double_complex,
 INSTANTIATE(float, int32_t, int32_t, _Float16, _Float16, float);
 INSTANTIATE(float, int64_t, int32_t, _Float16, _Float16, float);
 INSTANTIATE(float, int64_t, int64_t, _Float16, _Float16, float);
+INSTANTIATE(float, int32_t, int32_t, _Float16, _Float16, _Float16);
+INSTANTIATE(float, int64_t, int32_t, _Float16, _Float16, _Float16);
+INSTANTIATE(float, int64_t, int64_t, _Float16, _Float16, _Float16);
 INSTANTIATE(float, int32_t, int32_t, rocsparse_bfloat16, rocsparse_bfloat16, float);
 INSTANTIATE(float, int64_t, int32_t, rocsparse_bfloat16, rocsparse_bfloat16, float);
 INSTANTIATE(float, int64_t, int64_t, rocsparse_bfloat16, rocsparse_bfloat16, float);
+INSTANTIATE(float, int32_t, int32_t, rocsparse_bfloat16, rocsparse_bfloat16, rocsparse_bfloat16);
+INSTANTIATE(float, int64_t, int32_t, rocsparse_bfloat16, rocsparse_bfloat16, rocsparse_bfloat16);
+INSTANTIATE(float, int64_t, int64_t, rocsparse_bfloat16, rocsparse_bfloat16, rocsparse_bfloat16);
 INSTANTIATE(int32_t, int32_t, int32_t, int8_t, int8_t, int32_t);
 INSTANTIATE(int32_t, int64_t, int32_t, int8_t, int8_t, int32_t);
 INSTANTIATE(int32_t, int64_t, int64_t, int8_t, int8_t, int32_t);
