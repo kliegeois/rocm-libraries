@@ -59,108 +59,6 @@
 using namespace hipsparse_test;
 
 // ============================================================================
-// Half precision type wrappers for host code
-// ============================================================================
-
-// BFloat16 wrapper (uses hipsparseBfloat16 from hipsparse)
-struct hipsparse_bf16_t
-{
-    uint16_t data;
-
-    hipsparse_bf16_t() = default;
-
-    explicit hipsparse_bf16_t(float f)
-    {
-        union
-        {
-            float    fp32;
-            uint32_t int32;
-        } u = {f};
-        if(~u.int32 & 0x7f800000)
-        {
-            u.int32 += 0x7fff + ((u.int32 >> 16) & 1);
-        }
-        else if(u.int32 & 0xffff)
-        {
-            u.int32 |= 0x10000;
-        }
-        data = uint16_t(u.int32 >> 16);
-    }
-
-    operator float() const
-    {
-        union
-        {
-            uint32_t int32;
-            float    fp32;
-        } u = {uint32_t(data) << 16};
-        return u.fp32;
-    }
-};
-
-// Float16 wrapper (IEEE 754 half precision)
-struct hipsparse_f16_t
-{
-    uint16_t data;
-
-    hipsparse_f16_t() = default;
-
-    explicit hipsparse_f16_t(float f)
-    {
-        // Convert float to half (simplified, no denorm handling)
-        union
-        {
-            float    fp32;
-            uint32_t int32;
-        } u = {f};
-
-        uint32_t sign     = (u.int32 >> 16) & 0x8000;
-        int32_t  exponent = ((u.int32 >> 23) & 0xFF) - 127 + 15;
-        uint32_t mantissa = (u.int32 >> 13) & 0x3FF;
-
-        if(exponent <= 0)
-        {
-            data = uint16_t(sign); // Underflow to zero
-        }
-        else if(exponent >= 31)
-        {
-            data = uint16_t(sign | 0x7C00); // Overflow to infinity
-        }
-        else
-        {
-            data = uint16_t(sign | (exponent << 10) | mantissa);
-        }
-    }
-
-    operator float() const
-    {
-        uint32_t sign     = (data >> 15) & 0x1;
-        uint32_t exponent = (data >> 10) & 0x1F;
-        uint32_t mantissa = data & 0x3FF;
-
-        union
-        {
-            uint32_t int32;
-            float    fp32;
-        } u;
-
-        if(exponent == 0)
-        {
-            u.int32 = sign << 31; // Zero
-        }
-        else if(exponent == 31)
-        {
-            u.int32 = (sign << 31) | 0x7F800000 | (mantissa << 13); // Inf/NaN
-        }
-        else
-        {
-            u.int32 = (sign << 31) | ((exponent - 15 + 127) << 23) | (mantissa << 13);
-        }
-        return u.fp32;
-    }
-};
-
-// ============================================================================
 // Generate random sparse CSR matrix (PyTorch style)
 // ============================================================================
 
@@ -332,21 +230,21 @@ inline void testing_spmv_csr_bfloat16_pytorch_compat(int m, int n, int target_nn
         m, n, target_nnz, h_crow_indices, h_col_indices, h_values_f32);
 
     // Convert values to bfloat16
-    std::vector<hipsparse_bf16_t> h_values_bf16(actual_nnz);
+    std::vector<hipsparseBfloat16> h_values_bf16(actual_nnz);
     for(int i = 0; i < actual_nnz; i++)
     {
-        h_values_bf16[i] = hipsparse_bf16_t(h_values_f32[i]);
+        h_values_bf16[i] = hipsparseBfloat16(h_values_f32[i]);
     }
 
     // Generate random input vector x (in bf16)
     std::vector<float>                    h_x_f32(n);
-    std::vector<hipsparse_bf16_t>         h_x_bf16(n);
+    std::vector<hipsparseBfloat16>        h_x_bf16(n);
     std::mt19937                          gen(54321);
     std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
     for(int i = 0; i < n; i++)
     {
         h_x_f32[i]  = dist(gen);
-        h_x_bf16[i] = hipsparse_bf16_t(h_x_f32[i]);
+        h_x_bf16[i] = hipsparseBfloat16(h_x_f32[i]);
     }
 
     // Compute reference result using dense matmul
@@ -362,17 +260,17 @@ inline void testing_spmv_csr_bfloat16_pytorch_compat(int m, int n, int target_nn
     auto d_col_indices_managed
         = hipsparse_unique_ptr{device_malloc(sizeof(int) * actual_nnz), device_free};
     auto d_values_managed
-        = hipsparse_unique_ptr{device_malloc(sizeof(hipsparse_bf16_t) * actual_nnz), device_free};
+        = hipsparse_unique_ptr{device_malloc(sizeof(hipsparseBfloat16) * actual_nnz), device_free};
     auto d_x_managed
-        = hipsparse_unique_ptr{device_malloc(sizeof(hipsparse_bf16_t) * n), device_free};
+        = hipsparse_unique_ptr{device_malloc(sizeof(hipsparseBfloat16) * n), device_free};
     auto d_y_managed
-        = hipsparse_unique_ptr{device_malloc(sizeof(hipsparse_bf16_t) * m), device_free};
+        = hipsparse_unique_ptr{device_malloc(sizeof(hipsparseBfloat16) * m), device_free};
 
-    int*              d_crow_indices = (int*)d_crow_indices_managed.get();
-    int*              d_col_indices  = (int*)d_col_indices_managed.get();
-    hipsparse_bf16_t* d_values       = (hipsparse_bf16_t*)d_values_managed.get();
-    hipsparse_bf16_t* d_x            = (hipsparse_bf16_t*)d_x_managed.get();
-    hipsparse_bf16_t* d_y            = (hipsparse_bf16_t*)d_y_managed.get();
+    int*               d_crow_indices = (int*)d_crow_indices_managed.get();
+    int*               d_col_indices  = (int*)d_col_indices_managed.get();
+    hipsparseBfloat16* d_values       = (hipsparseBfloat16*)d_values_managed.get();
+    hipsparseBfloat16* d_x            = (hipsparseBfloat16*)d_x_managed.get();
+    hipsparseBfloat16* d_y            = (hipsparseBfloat16*)d_y_managed.get();
 
     // Copy data to device
     CHECK_HIP_ERROR(hipMemcpy(
@@ -381,11 +279,11 @@ inline void testing_spmv_csr_bfloat16_pytorch_compat(int m, int n, int target_nn
         d_col_indices, h_col_indices.data(), sizeof(int) * actual_nnz, hipMemcpyHostToDevice));
     CHECK_HIP_ERROR(hipMemcpy(d_values,
                               h_values_bf16.data(),
-                              sizeof(hipsparse_bf16_t) * actual_nnz,
+                              sizeof(hipsparseBfloat16) * actual_nnz,
                               hipMemcpyHostToDevice));
     CHECK_HIP_ERROR(
-        hipMemcpy(d_x, h_x_bf16.data(), sizeof(hipsparse_bf16_t) * n, hipMemcpyHostToDevice));
-    CHECK_HIP_ERROR(hipMemset(d_y, 0, sizeof(hipsparse_bf16_t) * m));
+        hipMemcpy(d_x, h_x_bf16.data(), sizeof(hipsparseBfloat16) * n, hipMemcpyHostToDevice));
+    CHECK_HIP_ERROR(hipMemset(d_y, 0, sizeof(hipsparseBfloat16) * m));
 
     // Setup hipSPARSE
     std::unique_ptr<handle_struct> unique_ptr_handle(new handle_struct);
@@ -459,9 +357,9 @@ inline void testing_spmv_csr_bfloat16_pytorch_compat(int m, int n, int target_nn
     CHECK_HIP_ERROR(hipDeviceSynchronize());
 
     // Copy result back to host
-    std::vector<hipsparse_bf16_t> h_y_bf16(m);
+    std::vector<hipsparseBfloat16> h_y_bf16(m);
     CHECK_HIP_ERROR(
-        hipMemcpy(h_y_bf16.data(), d_y, sizeof(hipsparse_bf16_t) * m, hipMemcpyDeviceToHost));
+        hipMemcpy(h_y_bf16.data(), d_y, sizeof(hipsparseBfloat16) * m, hipMemcpyDeviceToHost));
 
     // Convert result to float for comparison
     std::vector<float> h_y_actual(m);
@@ -502,21 +400,21 @@ inline void testing_spmv_csr_float16_pytorch_compat(int m, int n, int target_nnz
         m, n, target_nnz, h_crow_indices, h_col_indices, h_values_f32);
 
     // Convert values to float16
-    std::vector<hipsparse_f16_t> h_values_f16(actual_nnz);
+    std::vector<_Float16> h_values_f16(actual_nnz);
     for(int i = 0; i < actual_nnz; i++)
     {
-        h_values_f16[i] = hipsparse_f16_t(h_values_f32[i]);
+        h_values_f16[i] = _Float16(h_values_f32[i]);
     }
 
     // Generate random input vector x (in fp16)
     std::vector<float>                    h_x_f32(n);
-    std::vector<hipsparse_f16_t>          h_x_f16(n);
+    std::vector<_Float16>                 h_x_f16(n);
     std::mt19937                          gen(54321);
     std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
     for(int i = 0; i < n; i++)
     {
         h_x_f32[i] = dist(gen);
-        h_x_f16[i] = hipsparse_f16_t(h_x_f32[i]);
+        h_x_f16[i] = _Float16(h_x_f32[i]);
     }
 
     // Compute reference result using dense matmul
@@ -532,30 +430,25 @@ inline void testing_spmv_csr_float16_pytorch_compat(int m, int n, int target_nnz
     auto d_col_indices_managed
         = hipsparse_unique_ptr{device_malloc(sizeof(int) * actual_nnz), device_free};
     auto d_values_managed
-        = hipsparse_unique_ptr{device_malloc(sizeof(hipsparse_f16_t) * actual_nnz), device_free};
-    auto d_x_managed
-        = hipsparse_unique_ptr{device_malloc(sizeof(hipsparse_f16_t) * n), device_free};
-    auto d_y_managed
-        = hipsparse_unique_ptr{device_malloc(sizeof(hipsparse_f16_t) * m), device_free};
+        = hipsparse_unique_ptr{device_malloc(sizeof(_Float16) * actual_nnz), device_free};
+    auto d_x_managed = hipsparse_unique_ptr{device_malloc(sizeof(_Float16) * n), device_free};
+    auto d_y_managed = hipsparse_unique_ptr{device_malloc(sizeof(_Float16) * m), device_free};
 
-    int*             d_crow_indices = (int*)d_crow_indices_managed.get();
-    int*             d_col_indices  = (int*)d_col_indices_managed.get();
-    hipsparse_f16_t* d_values       = (hipsparse_f16_t*)d_values_managed.get();
-    hipsparse_f16_t* d_x            = (hipsparse_f16_t*)d_x_managed.get();
-    hipsparse_f16_t* d_y            = (hipsparse_f16_t*)d_y_managed.get();
+    int*      d_crow_indices = (int*)d_crow_indices_managed.get();
+    int*      d_col_indices  = (int*)d_col_indices_managed.get();
+    _Float16* d_values       = (_Float16*)d_values_managed.get();
+    _Float16* d_x            = (_Float16*)d_x_managed.get();
+    _Float16* d_y            = (_Float16*)d_y_managed.get();
 
     // Copy data to device
     CHECK_HIP_ERROR(hipMemcpy(
         d_crow_indices, h_crow_indices.data(), sizeof(int) * (m + 1), hipMemcpyHostToDevice));
     CHECK_HIP_ERROR(hipMemcpy(
         d_col_indices, h_col_indices.data(), sizeof(int) * actual_nnz, hipMemcpyHostToDevice));
-    CHECK_HIP_ERROR(hipMemcpy(d_values,
-                              h_values_f16.data(),
-                              sizeof(hipsparse_f16_t) * actual_nnz,
-                              hipMemcpyHostToDevice));
-    CHECK_HIP_ERROR(
-        hipMemcpy(d_x, h_x_f16.data(), sizeof(hipsparse_f16_t) * n, hipMemcpyHostToDevice));
-    CHECK_HIP_ERROR(hipMemset(d_y, 0, sizeof(hipsparse_f16_t) * m));
+    CHECK_HIP_ERROR(hipMemcpy(
+        d_values, h_values_f16.data(), sizeof(_Float16) * actual_nnz, hipMemcpyHostToDevice));
+    CHECK_HIP_ERROR(hipMemcpy(d_x, h_x_f16.data(), sizeof(_Float16) * n, hipMemcpyHostToDevice));
+    CHECK_HIP_ERROR(hipMemset(d_y, 0, sizeof(_Float16) * m));
 
     // Setup hipSPARSE
     std::unique_ptr<handle_struct> unique_ptr_handle(new handle_struct);
@@ -629,9 +522,8 @@ inline void testing_spmv_csr_float16_pytorch_compat(int m, int n, int target_nnz
     CHECK_HIP_ERROR(hipDeviceSynchronize());
 
     // Copy result back to host
-    std::vector<hipsparse_f16_t> h_y_f16(m);
-    CHECK_HIP_ERROR(
-        hipMemcpy(h_y_f16.data(), d_y, sizeof(hipsparse_f16_t) * m, hipMemcpyDeviceToHost));
+    std::vector<_Float16> h_y_f16(m);
+    CHECK_HIP_ERROR(hipMemcpy(h_y_f16.data(), d_y, sizeof(_Float16) * m, hipMemcpyDeviceToHost));
 
     // Convert result to float for comparison
     std::vector<float> h_y_actual(m);
