@@ -150,9 +150,12 @@ inline bool rocsparse_isinf(_Float16 arg)
 template <>
 inline bool rocsparse_isinf(rocsparse_bfloat16 arg)
 {
-    // bfloat16: exponent bits = 0x7f80, mantissa bits = 0x007f
-    // inf when exponent is all 1s (0x7f80) and mantissa is 0
-    return (arg.data & 0x7f80) == 0x7f80 && (arg.data & 0x007f) == 0;
+    union
+    {
+        rocsparse_bfloat16 fp;
+        uint16_t           data;
+    } x = {arg};
+    return (~x.data & 0x7f80) == 0 && (x.data & 0x7f) == 0;
 }
 
 template <>
