@@ -124,6 +124,13 @@ rocsparse_matrix_factory<T, I, J>::rocsparse_matrix_factory(const Arguments&    
         break;
     }
 
+    case rocsparse_matrix_fixed_nnz:
+    {
+        // Use arg.l as the nnz_per_row parameter for fixed_nnz matrix initialization
+        this->m_instance = new rocsparse_matrix_factory_fixed_nnz<T, I, J>(arg.l);
+        break;
+    }
+
     case rocsparse_matrix_file_rocalution:
     {
         std::string full_filename;

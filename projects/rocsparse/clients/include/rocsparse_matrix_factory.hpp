@@ -32,6 +32,7 @@
 std::string rocsparse_exepath();
 
 #include "rocsparse_matrix_factory_file.hpp"
+#include "rocsparse_matrix_factory_fixed_nnz.hpp"
 #include "rocsparse_matrix_factory_laplace2d.hpp"
 #include "rocsparse_matrix_factory_laplace3d.hpp"
 #include "rocsparse_matrix_factory_pentadiagonal.hpp"

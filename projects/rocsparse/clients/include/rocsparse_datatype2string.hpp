@@ -61,7 +61,8 @@ typedef enum rocsparse_matrix_init_
     rocsparse_matrix_zero             = 7, /**< Generates zero matrix */
     rocsparse_matrix_file_rocsparseio = 8, /**< Read from rocsparseio file */
     rocsparse_matrix_tridiagonal      = 9, /**< Initialize tridiagonal matrix */
-    rocsparse_matrix_pentadiagonal    = 10 /**< Initialize pentadiagonal matrix */
+    rocsparse_matrix_pentadiagonal    = 10, /**< Initialize pentadiagonal matrix */
+    rocsparse_matrix_fixed_nnz        = 11 /**< Initialize matrix with fixed nnz per row */
 } rocsparse_matrix_init;
 
 constexpr auto rocsparse_matrix2string(rocsparse_matrix_init matrix)
@@ -90,6 +91,8 @@ constexpr auto rocsparse_matrix2string(rocsparse_matrix_init matrix)
         return "tri";
     case rocsparse_matrix_pentadiagonal:
         return "penta";
+    case rocsparse_matrix_fixed_nnz:
+        return "fixed_nnz";
     }
     return "invalid";
 }

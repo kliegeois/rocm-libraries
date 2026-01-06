@@ -1739,6 +1739,114 @@ void rocsparse_init_gebsr_pentadiagonal(std::vector<I>&      row_ptr,
     }
 }
 
+/* ==================================================================================== */
+/*! \brief  Generate a sparse matrix with fixed nnz per row in COO format */
+template <typename I, typename T>
+void rocsparse_init_coo_fixed_nnz(std::vector<I>&      row_ind,
+                                  std::vector<I>&      col_ind,
+                                  std::vector<T>&      val,
+                                  I                    M,
+                                  I                    N,
+                                  int64_t&             nnz,
+                                  rocsparse_index_base base,
+                                  I                    nnz_per_row)
+{
+    ROCSPARSE_CLIENTS_ROUTINE_TRACE;
+
+    if(nnz_per_row <= 0)
+    {
+        std::cerr << "ERROR: nnz_per_row must be > 0" << std::endl;
+        return;
+    }
+
+    if(nnz_per_row > N)
+    {
+        std::cerr << "ERROR: nnz_per_row must be <= N" << std::endl;
+        return;
+    }
+
+    nnz = static_cast<int64_t>(M) * nnz_per_row;
+
+    row_ind.resize(nnz);
+    col_ind.resize(nnz);
+    val.resize(nnz);
+
+    int64_t index = 0;
+    for(I i = 0; i < M; i++)
+    {
+        // Generate nnz_per_row evenly spaced column indices
+        // This ensures the column indices are sorted and unique
+        for(I k = 0; k < nnz_per_row; k++)
+        {
+            row_ind[index] = i + base;
+            // Distribute columns evenly across the row
+            I col          = (N * k) / nnz_per_row;
+            col_ind[index] = col + base;
+            val[index]     = random_cached_generator<T>(static_cast<T>(-1.0), static_cast<T>(1.0));
+            index++;
+        }
+    }
+}
+
+/* ==================================================================================== */
+/*! \brief  Generate a sparse matrix with fixed nnz per row in CSR format */
+template <typename I, typename J, typename T>
+void rocsparse_init_csr_fixed_nnz(std::vector<I>&      row_ptr,
+                                  std::vector<J>&      col_ind,
+                                  std::vector<T>&      val,
+                                  J                    M,
+                                  J                    N,
+                                  I&                   nnz,
+                                  rocsparse_index_base base,
+                                  J                    nnz_per_row)
+{
+    ROCSPARSE_CLIENTS_ROUTINE_TRACE;
+
+    int64_t        coo_nnz;
+    std::vector<J> row_ind;
+    // Sample COO matrix
+    rocsparse_init_coo_fixed_nnz<J>(row_ind, col_ind, val, M, N, coo_nnz, base, nnz_per_row);
+
+    if(std::is_same<I, int32_t>() && coo_nnz > std::numeric_limits<int32_t>::max())
+    {
+        std::cerr << "Error: Attempting to create CSR fixed_nnz matrix with more than "
+                  << std::numeric_limits<int32_t>::max()
+                  << " non-zeros while using int32_t row indexing." << std::endl;
+        exit(1);
+    }
+
+    nnz = (I)coo_nnz;
+
+    // Convert to CSR
+    row_ptr.resize(M + 1);
+    host_coo_to_csr(M, nnz, row_ind.data(), row_ptr.data(), base);
+}
+
+/* ==================================================================================== */
+/*! \brief  Generate a sparse matrix with fixed nnz per row in GEBSR format */
+template <typename I, typename J, typename T>
+void rocsparse_init_gebsr_fixed_nnz(std::vector<I>&      row_ptr,
+                                    std::vector<J>&      col_ind,
+                                    std::vector<T>&      val,
+                                    J                    Mb,
+                                    J                    Nb,
+                                    I&                   nnzb,
+                                    J                    row_block_dim,
+                                    J                    col_block_dim,
+                                    rocsparse_index_base base,
+                                    J                    nnz_per_row)
+{
+    ROCSPARSE_CLIENTS_ROUTINE_TRACE;
+
+    rocsparse_init_csr_fixed_nnz(row_ptr, col_ind, val, Mb, Nb, nnzb, base, nnz_per_row);
+    const size_t nvalues = size_t(nnzb) * row_block_dim * col_block_dim;
+    val.resize(nvalues);
+    for(size_t i = 0; i < nvalues; ++i)
+    {
+        val[i] = random_cached_generator<T>();
+    }
+}
+
 #define INSTANTIATEI(TYPE)                    \
     template void rocsparse_init_index<TYPE>( \
         std::vector<TYPE> & x, size_t nnz, size_t start, size_t end);
@@ -1838,6 +1946,14 @@ void rocsparse_init_gebsr_pentadiagonal(std::vector<I>&      row_ptr,
                                                                  ITYPE                l,        \
                                                                  ITYPE                u,        \
                                                                  ITYPE                uu);                     \
+    template void rocsparse_init_coo_fixed_nnz<ITYPE, TTYPE>(std::vector<ITYPE> & row_ind,      \
+                                                             std::vector<ITYPE> & col_ind,      \
+                                                             std::vector<TTYPE> & val,          \
+                                                             ITYPE M,                           \
+                                                             ITYPE N,                           \
+                                                             int64_t & nnz,                     \
+                                                             rocsparse_index_base base,         \
+                                                             ITYPE nnz_per_row);                               \
     template void rocsparse_init_coo_laplace2d<ITYPE, TTYPE>(std::vector<ITYPE> & row_ind,      \
                                                              std::vector<ITYPE> & col_ind,      \
                                                              std::vector<TTYPE> & val,          \
@@ -1948,6 +2064,15 @@ void rocsparse_init_gebsr_pentadiagonal(std::vector<I>&      row_ptr,
         JTYPE                l,                                                                      \
         JTYPE                u,                                                                      \
         JTYPE                uu);                                                                                   \
+    template void rocsparse_init_csr_fixed_nnz<ITYPE, JTYPE, TTYPE>(                                 \
+        std::vector<ITYPE> & row_ptr,                                                                \
+        std::vector<JTYPE> & col_ind,                                                                \
+        std::vector<TTYPE> & val,                                                                    \
+        JTYPE M,                                                                                     \
+        JTYPE N,                                                                                     \
+        ITYPE & nnz,                                                                                 \
+        rocsparse_index_base base,                                                                   \
+        JTYPE                nnz_per_row);                                                                          \
     template void rocsparse_init_csr_laplace2d<ITYPE, JTYPE, TTYPE>(std::vector<ITYPE> & row_ptr,    \
                                                                     std::vector<JTYPE> & col_ind,    \
                                                                     std::vector<TTYPE> & val,        \
@@ -2044,6 +2169,17 @@ void rocsparse_init_gebsr_pentadiagonal(std::vector<I>&      row_ptr,
         JTYPE                l,                                                                      \
         JTYPE                u,                                                                      \
         JTYPE                uu);                                                                                   \
+    template void rocsparse_init_gebsr_fixed_nnz<ITYPE, JTYPE, TTYPE>(                               \
+        std::vector<ITYPE> & row_ptr,                                                                \
+        std::vector<JTYPE> & col_ind,                                                                \
+        std::vector<TTYPE> & val,                                                                    \
+        JTYPE Mb,                                                                                    \
+        JTYPE Nb,                                                                                    \
+        ITYPE & nnzb,                                                                                \
+        JTYPE                row_block_dim,                                                          \
+        JTYPE                col_block_dim,                                                          \
+        rocsparse_index_base base,                                                                   \
+        JTYPE                nnz_per_row);                                                                          \
     template void rocsparse_init_gebsr_laplace2d<ITYPE, JTYPE, TTYPE>(                               \
         std::vector<ITYPE> & row_ptr,                                                                \
         std::vector<JTYPE> & col_ind,                                                                \

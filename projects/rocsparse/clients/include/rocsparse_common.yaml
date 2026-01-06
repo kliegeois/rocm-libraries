@@ -60,6 +60,7 @@ Datatypes:
         rocsparse_matrix_file_rocsparseio: 8
         rocsparse_matrix_tridiagonal: 9
         rocsparse_matrix_pentadiagonal: 10
+        rocsparse_matrix_fixed_nnz: 11
   - rocsparse_matrix_init_kind:
       bases: [ c_int ]
       attr:

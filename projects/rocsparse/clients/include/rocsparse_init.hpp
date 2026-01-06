@@ -577,4 +577,42 @@ void rocsparse_init_gebsr_pentadiagonal(std::vector<I>&      row_ptr,
                                         J                    u,
                                         J                    uu);
 
+/* ==================================================================================== */
+/*! \brief  Generate a sparse matrix with fixed nnz per row in COO format */
+template <typename I, typename T>
+void rocsparse_init_coo_fixed_nnz(std::vector<I>&      row_ind,
+                                  std::vector<I>&      col_ind,
+                                  std::vector<T>&      val,
+                                  I                    M,
+                                  I                    N,
+                                  int64_t&             nnz,
+                                  rocsparse_index_base base,
+                                  I                    nnz_per_row);
+
+/* ==================================================================================== */
+/*! \brief  Generate a sparse matrix with fixed nnz per row in CSR format */
+template <typename I, typename J, typename T>
+void rocsparse_init_csr_fixed_nnz(std::vector<I>&      row_ptr,
+                                  std::vector<J>&      col_ind,
+                                  std::vector<T>&      val,
+                                  J                    M,
+                                  J                    N,
+                                  I&                   nnz,
+                                  rocsparse_index_base base,
+                                  J                    nnz_per_row);
+
+/* ==================================================================================== */
+/*! \brief  Generate a sparse matrix with fixed nnz per row in GEBSR format */
+template <typename I, typename J, typename T>
+void rocsparse_init_gebsr_fixed_nnz(std::vector<I>&      row_ptr,
+                                    std::vector<J>&      col_ind,
+                                    std::vector<T>&      val,
+                                    J                    Mb,
+                                    J                    Nb,
+                                    I&                   nnzb,
+                                    J                    row_block_dim,
+                                    J                    col_block_dim,
+                                    rocsparse_index_base base,
+                                    J                    nnz_per_row);
+
 #endif // ROCSPARSE_INIT_HPP
