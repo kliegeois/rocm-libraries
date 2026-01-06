@@ -1953,7 +1953,7 @@ void rocsparse_init_gebsr_fixed_nnz(std::vector<I>&      row_ptr,
                                                              ITYPE N,                           \
                                                              int64_t & nnz,                     \
                                                              rocsparse_index_base base,         \
-                                                             ITYPE nnz_per_row);                               \
+                                                             ITYPE                nnz_per_row);                \
     template void rocsparse_init_coo_laplace2d<ITYPE, TTYPE>(std::vector<ITYPE> & row_ind,      \
                                                              std::vector<ITYPE> & col_ind,      \
                                                              std::vector<TTYPE> & val,          \
@@ -2064,15 +2064,14 @@ void rocsparse_init_gebsr_fixed_nnz(std::vector<I>&      row_ptr,
         JTYPE                l,                                                                      \
         JTYPE                u,                                                                      \
         JTYPE                uu);                                                                                   \
-    template void rocsparse_init_csr_fixed_nnz<ITYPE, JTYPE, TTYPE>(                                 \
-        std::vector<ITYPE> & row_ptr,                                                                \
-        std::vector<JTYPE> & col_ind,                                                                \
-        std::vector<TTYPE> & val,                                                                    \
-        JTYPE M,                                                                                     \
-        JTYPE N,                                                                                     \
-        ITYPE & nnz,                                                                                 \
-        rocsparse_index_base base,                                                                   \
-        JTYPE                nnz_per_row);                                                                          \
+    template void rocsparse_init_csr_fixed_nnz<ITYPE, JTYPE, TTYPE>(std::vector<ITYPE> & row_ptr,    \
+                                                                    std::vector<JTYPE> & col_ind,    \
+                                                                    std::vector<TTYPE> & val,        \
+                                                                    JTYPE M,                         \
+                                                                    JTYPE N,                         \
+                                                                    ITYPE & nnz,                     \
+                                                                    rocsparse_index_base base,       \
+                                                                    JTYPE nnz_per_row);              \
     template void rocsparse_init_csr_laplace2d<ITYPE, JTYPE, TTYPE>(std::vector<ITYPE> & row_ptr,    \
                                                                     std::vector<JTYPE> & col_ind,    \
                                                                     std::vector<TTYPE> & val,        \

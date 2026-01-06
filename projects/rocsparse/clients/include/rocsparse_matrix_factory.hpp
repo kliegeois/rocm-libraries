@@ -57,7 +57,7 @@ public:
                              bool                  full_rank = false,
                              bool                  noseed    = false);
 
-    rocsparse_matrix_factory(const rocsparse_matrix_factory& that) = delete;
+    rocsparse_matrix_factory(const rocsparse_matrix_factory& that)            = delete;
     rocsparse_matrix_factory& operator=(const rocsparse_matrix_factory& that) = delete;
     explicit rocsparse_matrix_factory(const Arguments& arg,
                                       bool             to_int    = false,
