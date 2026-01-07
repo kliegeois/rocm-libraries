@@ -122,6 +122,7 @@ set(HIPSPARSE_TEST_SOURCES
     test_spmm_coo.cpp
     test_spmm_csc.cpp
     test_spmm_csr.cpp
+    test_spmm_csr_pytorch_compat.cpp
     test_spmv_coo.cpp
     test_spmv_coo_aos.cpp
     test_spmv_csr.cpp
