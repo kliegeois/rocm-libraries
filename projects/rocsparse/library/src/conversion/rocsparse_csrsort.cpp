@@ -29,6 +29,10 @@
 
 #include "rocsparse_primitives.hpp"
 
+// DEBUG: Include for diagnostics
+#include <iostream>
+#include <vector>
+
 extern "C" rocsparse_status rocsparse_csrsort_buffer_size(rocsparse_handle     handle,
                                                           rocsparse_int        m,
                                                           rocsparse_int        n,
@@ -144,6 +148,110 @@ try
     // Stream
     hipStream_t stream = handle->stream;
 
+    // ========== DEBUG: Validate CSR row pointers ==========
+    {
+        std::vector<rocsparse_int> h_row_ptr(m + 1);
+        hipError_t hip_err = hipMemcpy(h_row_ptr.data(), csr_row_ptr, 
+                                        (m + 1) * sizeof(rocsparse_int), 
+                                        hipMemcpyDeviceToHost);
+        if(hip_err != hipSuccess)
+        {
+            std::cerr << "DEBUG ERROR: Failed to copy row_ptr to host: " 
+                      << hipGetErrorString(hip_err) << std::endl;
+        }
+        else
+        {
+            std::cerr << "=== CSRSORT DEBUG ===" << std::endl;
+            std::cerr << "Matrix dimensions: m=" << m << ", n=" << n << ", nnz=" << nnz << std::endl;
+            std::cerr << "row_ptr[0]=" << h_row_ptr[0] << ", row_ptr[m]=" << h_row_ptr[m] << std::endl;
+            std::cerr << "index_base=" << descr->base << " (0=zero, 1=one)" << std::endl;
+            
+            // Check for invalid row pointers
+            bool has_error = false;
+            rocsparse_int base_offset = (descr->base == rocsparse_index_base_one) ? 1 : 0;
+            rocsparse_int expected_last = nnz + base_offset;
+            
+            if(h_row_ptr[0] != base_offset)
+            {
+                std::cerr << "ERROR: row_ptr[0]=" << h_row_ptr[0] 
+                          << " but expected " << base_offset << std::endl;
+                has_error = true;
+            }
+            
+            if(h_row_ptr[m] != expected_last)
+            {
+                std::cerr << "ERROR: row_ptr[m]=" << h_row_ptr[m] 
+                          << " but expected " << expected_last << " (nnz=" << nnz << ")" << std::endl;
+                has_error = true;
+            }
+            
+            // Check monotonicity and find largest row
+            rocsparse_int max_row_len = 0;
+            rocsparse_int max_row_idx = -1;
+            for(rocsparse_int i = 0; i < m; i++)
+            {
+                rocsparse_int row_len = h_row_ptr[i+1] - h_row_ptr[i];
+                if(row_len > max_row_len)
+                {
+                    max_row_len = row_len;
+                    max_row_idx = i;
+                }
+                
+                if(h_row_ptr[i+1] < h_row_ptr[i])
+                {
+                    std::cerr << "ERROR: Non-monotonic row_ptr at row " << i 
+                              << ": row_ptr[" << i << "]=" << h_row_ptr[i]
+                              << " > row_ptr[" << (i+1) << "]=" << h_row_ptr[i+1] << std::endl;
+                    has_error = true;
+                }
+                
+                if(row_len < 0)
+                {
+                    std::cerr << "ERROR: Negative row length at row " << i 
+                              << ": " << row_len << std::endl;
+                    has_error = true;
+                }
+            }
+            
+            std::cerr << "Largest row: row " << max_row_idx << " with " << max_row_len << " elements" << std::endl;
+            
+            // Check if any offset exceeds nnz (the crash had end_offset=509787)
+            for(rocsparse_int i = 0; i <= m; i++)
+            {
+                rocsparse_int offset = h_row_ptr[i] - base_offset;
+                if(offset > nnz)
+                {
+                    std::cerr << "ERROR: row_ptr[" << i << "]=" << h_row_ptr[i] 
+                              << " (offset=" << offset << ") exceeds nnz=" << nnz << std::endl;
+                    has_error = true;
+                }
+            }
+            
+            // Look for the specific offsets from the crash
+            for(rocsparse_int i = 0; i < m; i++)
+            {
+                rocsparse_int begin = h_row_ptr[i] - base_offset;
+                rocsparse_int end = h_row_ptr[i+1] - base_offset;
+                if(begin == 305987 || end == 509787)
+                {
+                    std::cerr << "SUSPECT ROW " << i << ": offsets [" << begin << ", " << end 
+                              << "], length=" << (end - begin) << std::endl;
+                }
+            }
+            
+            if(has_error)
+            {
+                std::cerr << "DEBUG: CSR structure validation FAILED" << std::endl;
+            }
+            else
+            {
+                std::cerr << "DEBUG: CSR structure validation PASSED" << std::endl;
+            }
+            std::cerr << "=== END DEBUG ===" << std::endl;
+        }
+    }
+    // ========== END DEBUG ==========
+
     uint32_t startbit = 0;
     uint32_t endbit   = rocsparse::clz(n);
     size_t   size;
@@ -203,6 +311,18 @@ try
 
     // Switch between offsets
     const rocsparse_int* offsets = descr->base == rocsparse_index_base_one ? tmp_segm : csr_row_ptr;
+
+    // ========== DEBUG: Print buffer info before sort ==========
+    std::cerr << "DEBUG: About to call segmented_radix_sort" << std::endl;
+    std::cerr << "  csr_col_ind ptr: " << (void*)csr_col_ind << std::endl;
+    std::cerr << "  tmp_cols ptr: " << (void*)tmp_cols << std::endl;
+    std::cerr << "  perm ptr: " << (void*)perm << std::endl;
+    std::cerr << "  tmp_perm ptr: " << (void*)tmp_perm << std::endl;
+    std::cerr << "  offsets ptr: " << (void*)offsets << std::endl;
+    std::cerr << "  nnz=" << nnz << ", m=" << m << std::endl;
+    std::cerr << "  startbit=" << startbit << ", endbit=" << endbit << std::endl;
+    std::cerr << "  rocprim buffer size=" << size << std::endl;
+    // ========== END DEBUG ==========
 
     // Sort by columns and obtain permutation vector
 
