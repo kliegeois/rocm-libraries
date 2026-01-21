@@ -111,8 +111,8 @@ endif()
 
 #
 if(BUILD_CODE_COVERAGE)
-  add_compile_options(-fprofile-arcs -ftest-coverage)
-  add_link_options(--coverage -lgcov)
+  add_compile_options(-fprofile-instr-generate -fcoverage-mapping)
+  add_link_options(-fprofile-instr-generate)
 endif()
 
 if(BUILD_COMPRESSED_DBG)
