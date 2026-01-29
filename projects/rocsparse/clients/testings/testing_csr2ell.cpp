@@ -115,10 +115,10 @@ void testing_csr2ell(const Arguments& arg)
 
     device_csr_matrix<T> dA(hA);
 
-    // Obtain ELL width
+    // Obtain ELL width - use non-graph version as it writes to host pointer
+    // which is not capturable in HIP graphs
     rocsparse_int ell_width;
-    CHECK_ROCSPARSE_ERROR(
-        testing::rocsparse_csr2ell_width(handle, M, descrA, dA.ptr, descrB, &ell_width));
+    CHECK_ROCSPARSE_ERROR(rocsparse_csr2ell_width(handle, M, descrA, dA.ptr, descrB, &ell_width));
 
     CHECK_HIP_ERROR(hipStreamSynchronize(stream));
 

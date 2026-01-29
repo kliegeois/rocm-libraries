@@ -92,22 +92,31 @@ void testing_axpby(const Arguments& arg)
 
     if(arg.unit_check)
     {
-        // axpby - host pointer mode
-        CHECK_ROCSPARSE_ERROR(rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_host));
-        CHECK_ROCSPARSE_ERROR(testing::rocsparse_axpby(handle, &h_alpha, x, &h_beta, y1));
+        // axpby - host pointer mode - skip for graph testing as host pointers are not capturable
+        if(!arg.graph_test)
+        {
+            CHECK_ROCSPARSE_ERROR(rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_host));
+            CHECK_ROCSPARSE_ERROR(testing::rocsparse_axpby(handle, &h_alpha, x, &h_beta, y1));
+        }
 
         // axpby - device pointer mode
         CHECK_ROCSPARSE_ERROR(rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_device));
         CHECK_ROCSPARSE_ERROR(testing::rocsparse_axpby(handle, d_alpha, x, d_beta, y2));
 
         // Copy output to host
-        CHECK_HIP_ERROR(hipMemcpy(hy_1, dy_1, sizeof(Y) * size, hipMemcpyDeviceToHost));
+        if(!arg.graph_test)
+        {
+            CHECK_HIP_ERROR(hipMemcpy(hy_1, dy_1, sizeof(Y) * size, hipMemcpyDeviceToHost));
+        }
         CHECK_HIP_ERROR(hipMemcpy(hy_2, dy_2, sizeof(Y) * size, hipMemcpyDeviceToHost));
 
         // CPU axpby
         host_axpby<T, I, X, Y>(size, nnz, h_alpha, hx_val, hx_ind, h_beta, hy_gold, base);
 
-        hy_gold.unit_check(hy_1);
+        if(!arg.graph_test)
+        {
+            hy_gold.unit_check(hy_1);
+        }
         hy_gold.unit_check(hy_2);
 
         if(ROCSPARSE_REPRODUCIBILITY)

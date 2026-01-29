@@ -101,26 +101,35 @@ void testing_rot(const Arguments& arg)
 
     if(arg.unit_check)
     {
-        // rot - host pointer mode
-        CHECK_ROCSPARSE_ERROR(rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_host));
-        CHECK_ROCSPARSE_ERROR(testing::rocsparse_rot(handle, &hc[0], &hs[0], x1, y1));
+        // rot - host pointer mode - skip for graph testing as host pointers are not capturable
+        if(!arg.graph_test)
+        {
+            CHECK_ROCSPARSE_ERROR(rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_host));
+            CHECK_ROCSPARSE_ERROR(testing::rocsparse_rot(handle, &hc[0], &hs[0], x1, y1));
+        }
 
         // rot - device pointer mode
         CHECK_ROCSPARSE_ERROR(rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_device));
         CHECK_ROCSPARSE_ERROR(testing::rocsparse_rot(handle, dc, ds, x2, y2));
 
         // Copy output to host
-        CHECK_HIP_ERROR(hipMemcpy(hx_val_1, dx_val_1, sizeof(T) * nnz, hipMemcpyDeviceToHost));
+        if(!arg.graph_test)
+        {
+            CHECK_HIP_ERROR(hipMemcpy(hx_val_1, dx_val_1, sizeof(T) * nnz, hipMemcpyDeviceToHost));
+            CHECK_HIP_ERROR(hipMemcpy(hy_1, dy_1, sizeof(T) * size, hipMemcpyDeviceToHost));
+        }
         CHECK_HIP_ERROR(hipMemcpy(hx_val_2, dx_val_2, sizeof(T) * nnz, hipMemcpyDeviceToHost));
-        CHECK_HIP_ERROR(hipMemcpy(hy_1, dy_1, sizeof(T) * size, hipMemcpyDeviceToHost));
         CHECK_HIP_ERROR(hipMemcpy(hy_2, dy_2, sizeof(T) * size, hipMemcpyDeviceToHost));
 
         // CPU rot
         host_roti<I, T>(nnz, hx_val_gold, hx_ind, hy_gold, hc, hs, base);
 
-        hx_val_gold.unit_check(hx_val_1);
+        if(!arg.graph_test)
+        {
+            hx_val_gold.unit_check(hx_val_1);
+            hy_gold.unit_check(hy_1);
+        }
         hx_val_gold.unit_check(hx_val_2);
-        hy_gold.unit_check(hy_1);
         hy_gold.unit_check(hy_2);
 
         if(ROCSPARSE_REPRODUCIBILITY)

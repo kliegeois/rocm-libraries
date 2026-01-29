@@ -87,11 +87,14 @@ void testing_dotci(const Arguments& arg)
 
     if(arg.unit_check)
     {
-        // Pointer mode host
-        CHECK_ROCSPARSE_ERROR(rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_host));
-        CHECK_ROCSPARSE_ERROR(
-            testing::rocsparse_dotci<T>(handle, nnz, dx_val, dx_ind, dy, &hdot_1[0], base));
-        CHECK_HIP_ERROR(hipStreamSynchronize(stream));
+        // Pointer mode host - skip for graph testing as host pointers are not capturable
+        if(!arg.graph_test)
+        {
+            CHECK_ROCSPARSE_ERROR(rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_host));
+            CHECK_ROCSPARSE_ERROR(
+                testing::rocsparse_dotci<T>(handle, nnz, dx_val, dx_ind, dy, &hdot_1[0], base));
+            CHECK_HIP_ERROR(hipStreamSynchronize(stream));
+        }
 
         // Pointer mode device
         CHECK_ROCSPARSE_ERROR(rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_device));
@@ -104,7 +107,10 @@ void testing_dotci(const Arguments& arg)
         // CPU dotci
         host_dotci<rocsparse_int, T, T, T>(nnz, hx_val, hx_ind, hy, hdot_gold, base);
 
-        hdot_gold.unit_check(hdot_1);
+        if(!arg.graph_test)
+        {
+            hdot_gold.unit_check(hdot_1);
+        }
         hdot_gold.unit_check(hdot_2);
 
         if(ROCSPARSE_REPRODUCIBILITY)
