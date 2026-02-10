@@ -125,6 +125,10 @@ if(BUILD_ADDRESS_SANITIZER)
 
   # Fortran not supported, add_link_options below invalid for fortran linking
   set(BUILD_FORTRAN_CLIENTS OFF)
+  
+  # ASAN with clang/lld requires explicit pthread linkage
+  find_package(Threads REQUIRED)
+  link_libraries(Threads::Threads)
 endif()
 
 # Dependencies

@@ -91,6 +91,11 @@ if(HIPSPARSE_ENABLE_CLIENT OR HIPSPARSE_BUILD_TESTING OR BUILD_TESTING)
     endif()
 endif()
 
+# ASAN with lld linker requires explicit pthread linkage
+if(HIPSPARSE_ENABLE_ASAN)
+    find_package(Threads REQUIRED)
+endif()
+
 # --- Library target ---
 
 if(HIPSPARSE_ENABLE_HOST)
@@ -263,12 +268,15 @@ if(HIPSPARSE_ENABLE_ASAN)
     target_compile_options(hipsparse PRIVATE -fsanitize=address -shared-libasan)
     target_link_options(hipsparse PRIVATE -fsanitize=address -shared-libasan -fuse-ld=lld)
     
-    # Apply ASAN to client common libraries
-    if(HIPSPARSE_ENABLE_CLIENT)
+    # Apply ASAN to client common libraries (when any client is built)
+    if(HIPSPARSE_ENABLE_CLIENT OR HIPSPARSE_BUILD_TESTING OR BUILD_TESTING)
         target_compile_options(hipsparse-clients-common PUBLIC -fsanitize=address -shared-libasan)
         target_link_options(hipsparse-clients-common PUBLIC -fsanitize=address -shared-libasan -fuse-ld=lld)
+        # ASAN with clang/lld requires explicit pthread linkage for GTest
+        target_link_libraries(hipsparse-clients-common PUBLIC Threads::Threads)
         
         target_compile_options(hipsparse-samples-common PUBLIC -fsanitize=address -shared-libasan)
         target_link_options(hipsparse-samples-common PUBLIC -fsanitize=address -shared-libasan -fuse-ld=lld)
+        target_link_libraries(hipsparse-samples-common PUBLIC Threads::Threads)
     endif()
 endif()
