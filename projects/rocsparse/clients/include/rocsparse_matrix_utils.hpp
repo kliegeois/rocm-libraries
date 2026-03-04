@@ -118,11 +118,16 @@ struct rocsparse_matrix_utils
     template <typename T>
     static void compress(device_csr_matrix<T>&       result,
                          const device_csr_matrix<T>& that,
-                         rocsparse_index_base        base)
+                         rocsparse_index_base        base,
+                         rocsparse_handle            external_handle = nullptr)
     {
         result.define(that.m, that.n, 0, base);
-        rocsparse_handle handle;
-        CHECK_ROCSPARSE_THROW_ERROR(rocsparse_create_handle(&handle));
+        const bool       own_handle = (external_handle == nullptr);
+        rocsparse_handle handle     = external_handle;
+        if(own_handle)
+        {
+            CHECK_ROCSPARSE_THROW_ERROR(rocsparse_create_handle(&handle));
+        }
         rocsparse_mat_descr descr;
         CHECK_ROCSPARSE_THROW_ERROR(rocsparse_create_mat_descr(&descr));
         CHECK_ROCSPARSE_THROW_ERROR(rocsparse_set_mat_index_base(descr, that.base));
@@ -148,7 +153,10 @@ struct rocsparse_matrix_utils
                                                                   result.ind,
                                                                   tol));
         CHECK_ROCSPARSE_THROW_ERROR(rocsparse_destroy_mat_descr(descr));
-        CHECK_ROCSPARSE_THROW_ERROR(rocsparse_destroy_handle(handle));
+        if(own_handle)
+        {
+            CHECK_ROCSPARSE_THROW_ERROR(rocsparse_destroy_handle(handle));
+        }
     }
 
     //
@@ -260,7 +268,8 @@ struct rocsparse_matrix_utils
                         rocsparse_int               block_dim,
                         rocsparse_index_base        base,
                         rocsparse_storage_mode      storage,
-                        device_gebsr_matrix<T>&     c)
+                        device_gebsr_matrix<T>&     c,
+                        rocsparse_handle            external_handle = nullptr)
     {
         // Currently this routine only works on sorted input and output matrices
         if(storage == rocsparse_storage_mode_unsorted)
@@ -277,9 +286,12 @@ struct rocsparse_matrix_utils
         c.define(dirb, mb, nb, nnzb, block_dim, block_dim, base);
 
         {
-
-            rocsparse_handle handle;
-            CHECK_ROCSPARSE_THROW_ERROR(rocsparse_create_handle(&handle));
+            const bool       own_handle = (external_handle == nullptr);
+            rocsparse_handle handle     = external_handle;
+            if(own_handle)
+            {
+                CHECK_ROCSPARSE_THROW_ERROR(rocsparse_create_handle(&handle));
+            }
 
             rocsparse_mat_descr that_descr;
             CHECK_ROCSPARSE_THROW_ERROR(rocsparse_create_mat_descr(&that_descr));
@@ -318,7 +330,10 @@ struct rocsparse_matrix_utils
                                                              c.ind));
             CHECK_ROCSPARSE_THROW_ERROR(rocsparse_destroy_mat_descr(c_descr));
             CHECK_ROCSPARSE_THROW_ERROR(rocsparse_destroy_mat_descr(that_descr));
-            CHECK_ROCSPARSE_THROW_ERROR(rocsparse_destroy_handle(handle));
+            if(own_handle)
+            {
+                CHECK_ROCSPARSE_THROW_ERROR(rocsparse_destroy_handle(handle));
+            }
         }
     }
 

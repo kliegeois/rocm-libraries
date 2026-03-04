@@ -736,15 +736,24 @@ struct traits_init_bsr<
                          rocsparse_storage_mode_sorted);
 
         {
+            // Use a single shared handle for both compress and convert to avoid the
+            // repeated hipMalloc/hipFree churn from temporary handle creation/destruction
+            // that can cause GPU ASAN to poison VA pages later reused by test allocations.
+            rocsparse_handle shared_handle;
+            CHECK_ROCSPARSE_THROW_ERROR(rocsparse_create_handle(&shared_handle));
+
             device_csr_matrix<T, I, J> dA_uncompressed(hA_uncompressed);
             device_csr_matrix<T, I, J> dA_compressed;
-            rocsparse_matrix_utils::compress(dA_compressed, dA_uncompressed, base_);
+            rocsparse_matrix_utils::compress(dA_compressed, dA_uncompressed, base_, shared_handle);
             rocsparse_matrix_utils::convert(dA_compressed,
                                             factory.m_arg.direction,
                                             block_dim,
                                             base_,
                                             rocsparse_storage_mode_sorted,
-                                            that_on_device);
+                                            that_on_device,
+                                            shared_handle);
+
+            CHECK_ROCSPARSE_THROW_ERROR(rocsparse_destroy_handle(shared_handle));
         }
 
         that(that_on_device);
