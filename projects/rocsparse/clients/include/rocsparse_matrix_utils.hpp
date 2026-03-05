@@ -131,9 +131,35 @@ struct rocsparse_matrix_utils
         rocsparse_mat_descr descr;
         CHECK_ROCSPARSE_THROW_ERROR(rocsparse_create_mat_descr(&descr));
         CHECK_ROCSPARSE_THROW_ERROR(rocsparse_set_mat_index_base(descr, that.base));
-        T                            tol   = static_cast<T>(0);
-        rocsparse_int                nnz_c = 0;
-        device_vector<rocsparse_int> dnnz_per_row(that.m);
+        T             tol   = static_cast<T>(0);
+        rocsparse_int nnz_c = 0;
+
+        // Allocate dnnz_per_row without guard pages to avoid GPU ASAN XNACK false positives.
+        // Guard-page fills use synchronous hipMemcpy on the default hardware queue (HWq #1).
+        // When nnz_compress_kernel is loaded for the first time, HIP creates a new hardware
+        // queue (HWq #2).  HWq #2 has no TLB entries for pages written by HWq #1, so a
+        // XNACK fault occurs.  GPU ASAN intercepts this as an "unknown-crash" even though
+        // all shadow bytes are 00 (valid).  Using PAD=0 skips install_guards entirely,
+        // eliminating the spurious NaN-fill hipMemcpy calls on HWq #1 for this internal
+        // temporary buffer.
+        using dnnz_no_pad_alloc = rocsparse_allocator<memory_mode::device, rocsparse_int, 0>;
+        struct dnnz_raii_t
+        {
+            rocsparse_int* ptr;
+            explicit dnnz_raii_t(size_t n)
+                : ptr(dnnz_no_pad_alloc::malloc(n))
+            {
+            }
+            ~dnnz_raii_t()
+            {
+                dnnz_no_pad_alloc::free(ptr);
+            }
+            operator rocsparse_int*()
+            {
+                return ptr;
+            }
+        } dnnz_per_row(that.m);
+
         CHECK_ROCSPARSE_THROW_ERROR(
             rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_host));
         CHECK_ROCSPARSE_THROW_ERROR(rocsparse_nnz_compress<T>(
