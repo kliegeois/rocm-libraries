@@ -56,7 +56,7 @@ public:
                              bool                  full_rank = false,
                              bool                  noseed    = false);
 
-    rocsparse_matrix_factory(const rocsparse_matrix_factory& that) = delete;
+    rocsparse_matrix_factory(const rocsparse_matrix_factory& that)            = delete;
     rocsparse_matrix_factory& operator=(const rocsparse_matrix_factory& that) = delete;
     explicit rocsparse_matrix_factory(const Arguments& arg,
                                       bool             to_int    = false,
@@ -223,13 +223,18 @@ public:
                   J&                   block_dim,
                   rocsparse_index_base base);
 
-    void init_bsr(host_gebsr_matrix<T, I, J>& that_, J& mb_, J& nb_, rocsparse_index_base base_);
+    void init_bsr(host_gebsr_matrix<T, I, J>& that_,
+                  J&                          mb_,
+                  J&                          nb_,
+                  rocsparse_index_base        base_,
+                  rocsparse_handle            external_handle = nullptr);
 
     void init_bsr(host_gebsr_matrix<T, I, J>&   that,
                   device_gebsr_matrix<T, I, J>& that_on_device,
                   J&                            mb_,
                   J&                            nb_,
-                  rocsparse_index_base          base_);
+                  rocsparse_index_base          base_,
+                  rocsparse_handle              external_handle = nullptr);
 
     //
     // COO AOS

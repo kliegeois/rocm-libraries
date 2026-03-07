@@ -208,7 +208,7 @@ void testing_bsrmv(const Arguments& arg)
     device_gebsr_matrix<T> dA;
     if(strcmp(arg.category, "stress"))
     {
-        matrix_factory.init_bsr(hA, dA, mb, nb, base);
+        matrix_factory.init_bsr(hA, dA, mb, nb, base, handle);
     }
     else
     {

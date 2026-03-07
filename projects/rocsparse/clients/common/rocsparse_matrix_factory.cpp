@@ -689,7 +689,8 @@ struct traits_init_bsr
                      device_gebsr_matrix<T, I, J>&      that_on_device,
                      J&                                 mb_,
                      J&                                 nb_,
-                     rocsparse_index_base               base_)
+                     rocsparse_index_base               base_,
+                     rocsparse_handle                   external_handle = nullptr)
     {
         std::cout << "default traits_init_bsr not implemented (file: " << __FILE__ << ")"
                   << std::endl;
@@ -710,7 +711,8 @@ struct traits_init_bsr<
                      device_gebsr_matrix<T, I, J>&      that_on_device,
                      J&                                 mb_,
                      J&                                 nb_,
-                     rocsparse_index_base               base_)
+                     rocsparse_index_base               base_,
+                     rocsparse_handle                   external_handle = nullptr)
     {
         ROCSPARSE_CLIENTS_ROUTINE_TRACE;
 
@@ -736,24 +738,33 @@ struct traits_init_bsr<
                          rocsparse_storage_mode_sorted);
 
         {
-            // Use a single shared handle for both compress and convert to avoid the
-            // repeated hipMalloc/hipFree churn from temporary handle creation/destruction
-            // that can cause GPU ASAN to poison VA pages later reused by test allocations.
-            rocsparse_handle shared_handle;
-            CHECK_ROCSPARSE_THROW_ERROR(rocsparse_create_handle(&shared_handle));
+            // Use the caller's handle if provided.  This avoids creating and
+            // destroying a temporary handle whose hipFree'd device buffers
+            // (alpha, beta, buffer_) poison VA pages in GPU ASAN — pages that
+            // may later be reused by the test's device_scalar allocations,
+            // causing a spurious heap-use-after-free on the next kernel launch.
+            const bool       own_handle = (external_handle == nullptr);
+            rocsparse_handle handle     = external_handle;
+            if(own_handle)
+            {
+                CHECK_ROCSPARSE_THROW_ERROR(rocsparse_create_handle(&handle));
+            }
 
             device_csr_matrix<T, I, J> dA_uncompressed(hA_uncompressed);
             device_csr_matrix<T, I, J> dA_compressed;
-            rocsparse_matrix_utils::compress(dA_compressed, dA_uncompressed, base_, shared_handle);
+            rocsparse_matrix_utils::compress(dA_compressed, dA_uncompressed, base_, handle);
             rocsparse_matrix_utils::convert(dA_compressed,
                                             factory.m_arg.direction,
                                             block_dim,
                                             base_,
                                             rocsparse_storage_mode_sorted,
                                             that_on_device,
-                                            shared_handle);
+                                            handle);
 
-            CHECK_ROCSPARSE_THROW_ERROR(rocsparse_destroy_handle(shared_handle));
+            if(own_handle)
+            {
+                CHECK_ROCSPARSE_THROW_ERROR(rocsparse_destroy_handle(handle));
+            }
         }
 
         that(that_on_device);
@@ -782,12 +793,13 @@ template <typename T, typename I, typename J>
 void rocsparse_matrix_factory<T, I, J>::init_bsr(host_gebsr_matrix<T, I, J>& that_,
                                                  J&                          mb_,
                                                  J&                          nb_,
-                                                 rocsparse_index_base        base_)
+                                                 rocsparse_index_base        base_,
+                                                 rocsparse_handle            external_handle)
 {
     ROCSPARSE_CLIENTS_ROUTINE_TRACE;
 
     device_gebsr_matrix<T, I, J> dB;
-    this->init_bsr(that_, dB, mb_, nb_, base_);
+    this->init_bsr(that_, dB, mb_, nb_, base_, external_handle);
 }
 
 template <typename T, typename I, typename J>
@@ -795,11 +807,12 @@ void rocsparse_matrix_factory<T, I, J>::init_bsr(host_gebsr_matrix<T, I, J>&   t
                                                  device_gebsr_matrix<T, I, J>& that_on_device_,
                                                  J&                            mb_,
                                                  J&                            nb_,
-                                                 rocsparse_index_base          base_)
+                                                 rocsparse_index_base          base_,
+                                                 rocsparse_handle              external_handle)
 {
     ROCSPARSE_CLIENTS_ROUTINE_TRACE;
 
-    traits_init_bsr<T, I, J>::init(*this, that_, that_on_device_, mb_, nb_, base_);
+    traits_init_bsr<T, I, J>::init(*this, that_, that_on_device_, mb_, nb_, base_, external_handle);
 }
 
 //
