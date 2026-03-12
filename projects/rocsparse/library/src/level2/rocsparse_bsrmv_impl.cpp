@@ -324,22 +324,23 @@ rocsparse_status rocsparse::bsrmv_template_dispatch(rocsparse_handle          ha
     }
     else if(block_dim == 5)
     {
-        rocsparse::bsrxmvn_5x5<T, I, J>(handle,
-                                        dir,
-                                        mb,
-                                        nnzb,
-                                        alpha_device_host,
-                                        0,
-                                        nullptr,
-                                        bsr_row_ptr,
-                                        nullptr,
-
-                                        bsr_col_ind,
-                                        bsr_val,
-                                        x,
-                                        beta_device_host,
-                                        y,
-                                        descr->base);
+        // Use generic path to avoid int32 overflow in bsrxmvn_5x5_device
+        // for large row_begin values (see bsrxmv_spzl_5x5.cpp).
+        rocsparse::bsrxmvn_general<T, I, J>(handle,
+                                            dir,
+                                            mb,
+                                            alpha_device_host,
+                                            0,
+                                            nullptr,
+                                            bsr_row_ptr,
+                                            nullptr,
+                                            bsr_col_ind,
+                                            bsr_val,
+                                            block_dim,
+                                            x,
+                                            beta_device_host,
+                                            y,
+                                            descr->base);
     }
     else if(block_dim == 8)
     {
