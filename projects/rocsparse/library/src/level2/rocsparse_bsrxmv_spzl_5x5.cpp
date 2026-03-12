@@ -178,17 +178,24 @@ namespace rocsparse
         {
             I k = j + hipThreadIdx_x / (BSRDIM * BSRDIM);
 
+            // DEBUG: thread 25 boundary check (only when guard fails)
+            if(hipThreadIdx_x == 25 && k >= row_end)
+                printf("[DBG2b] bsrxmvn_5x5: blk=%d row=%d begin=%d end=%d j=%d k=%d bsr_val=%p\n",
+                       (int)hipBlockIdx_x, row, (int)row_begin, (int)row_end, (int)j, (int)k,
+                       (const void*)bsr_val);
+
             // Do not exceed the row
             if(k < row_end)
             {
                 // Column index into x vector
                 J col = (bsr_col_ind[k] - idx_base) * BSRDIM;
 
-                // DEBUG: print col+idx for thread 0 on each iteration
+                        // DEBUG: print col+idx and pointer for thread 0 on each iteration
                 if(hipThreadIdx_x == 0)
-                    printf("[DBG2] bsrxmvn_5x5: blk=%d row=%d begin=%d j=%d k=%d col_ind=%d col=%d idx=%d col+idx=%d\n",
+                    printf("[DBG2] bsrxmvn_5x5: blk=%d row=%d begin=%d j=%d k=%d col_ind=%d col=%d idx=%d col+idx=%d bsr_val=%p x_ptr=%p\n",
                            (int)hipBlockIdx_x, row, (int)row_begin, (int)j, (int)k,
-                           (int)bsr_col_ind[k], (int)col, (int)idx, (int)(col + idx));
+                           (int)bsr_col_ind[k], (int)col, (int)idx, (int)(col + idx),
+                           (const void*)bsr_val, (const void*)(x + col + idx));
 
                 sum = rocsparse::fma<T>(*bsr_val, x[col + idx], sum);
             }
