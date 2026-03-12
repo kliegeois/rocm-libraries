@@ -54,6 +54,10 @@ namespace rocsparse
         const rocsparse_int row_begin = bsr_row_ptr[row] - idx_base;
         const rocsparse_int row_end   = bsr_row_ptr[row + 1] - idx_base;
 
+        // Advance bsr_val pointer to the start of this row's blocks using size_t
+        // arithmetic to avoid int32 overflow when row_begin is large.
+        bsr_val += size_t(row_begin) * row_block_dim * col_block_dim;
+
         // Each wavefront processes a row of the BSR block.
         // If the number of BSR block rows exceed the number of wavefronts, each wavefront
         // processes multiple rows. 'bi' is the row index into the BSR block and 'bj' is
@@ -67,11 +71,12 @@ namespace rocsparse
             // BSR block row accumulator
             T sum = static_cast<T>(0);
 
-            // Loop over all BSR blocks in the current row
-            for(rocsparse_int j = row_begin; j < row_end; ++j)
+            // Loop over all BSR blocks in the current row.
+            // jj = j - row_begin is always small (< nnz per row), safe for int32.
+            for(rocsparse_int jj = 0; jj < row_end - row_begin; ++jj)
             {
                 // BSR column index
-                const rocsparse_int col = bsr_col_ind[j] - idx_base;
+                const rocsparse_int col = bsr_col_ind[row_begin + jj] - idx_base;
 
                 // Loop over the columns of the BSR block in chunks of WFSIZE, such that
                 // each lane will process a single value of the BSR block
@@ -80,7 +85,7 @@ namespace rocsparse
                     // Each lane computes the sum of a specific entry over all BSR blocks in
                     // the current row
                     sum = rocsparse::fma(
-                        bsr_val[GEBSR_IND(j, bi, bj, dir)], x[col_block_dim * col + bj], sum);
+                        bsr_val[GEBSR_IND(jj, bi, bj, dir)], x[col_block_dim * col + bj], sum);
                 }
             }
 
