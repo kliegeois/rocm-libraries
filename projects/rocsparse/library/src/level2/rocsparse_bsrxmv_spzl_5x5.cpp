@@ -184,10 +184,10 @@ namespace rocsparse
                 // Column index into x vector
                 J col = (bsr_col_ind[k] - idx_base) * BSRDIM;
 
-                // DEBUG: print col+idx for thread 0 of first iteration
-                if(hipThreadIdx_x == 0 && j == row_begin)
-                    printf("[DBG2] bsrxmvn_5x5: blk=%d row=%d begin=%d k=%d col_ind=%d col=%d idx=%d col+idx=%d\n",
-                           (int)hipBlockIdx_x, row, (int)row_begin, (int)k,
+                // DEBUG: print col+idx for thread 0 on each iteration
+                if(hipThreadIdx_x == 0)
+                    printf("[DBG2] bsrxmvn_5x5: blk=%d row=%d begin=%d j=%d k=%d col_ind=%d col=%d idx=%d col+idx=%d\n",
+                           (int)hipBlockIdx_x, row, (int)row_begin, (int)j, (int)k,
                            (int)bsr_col_ind[k], (int)col, (int)idx, (int)(col + idx));
 
                 sum = rocsparse::fma<T>(*bsr_val, x[col + idx], sum);
@@ -199,6 +199,11 @@ namespace rocsparse
         __shared__ T sdata[BSRDIM * BSRDIM * NBLOCKS];
 
         sdata[hipThreadIdx_x] = sum;
+
+        // DEBUG: checkpoint after loop, before reduction
+        if(hipThreadIdx_x == 0)
+            printf("[DBG_SDATA] bsrxmvn_5x5: blk=%d row=%d\n",
+                   (int)hipBlockIdx_x, row);
 
         __threadfence_block();
 
