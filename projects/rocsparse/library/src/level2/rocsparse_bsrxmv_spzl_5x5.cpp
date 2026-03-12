@@ -157,31 +157,31 @@ namespace rocsparse
             row = bsr_mask_ptr[row] - idx_base;
         }
 
-        // BSR row entry and exit point
-        I row_begin = bsr_row_ptr[row] - idx_base;
-        I row_end   = (bsr_end_ptr == nullptr) ? (bsr_row_ptr[row + 1] - idx_base)
-                                               : (bsr_end_ptr[row] - idx_base);
+        // BSR row entry and exit point — use int64_t to avoid overflow for large matrices
+        const int64_t row_begin = bsr_row_ptr[row] - idx_base;
+        const int64_t row_end   = (bsr_end_ptr == nullptr) ? (bsr_row_ptr[row + 1] - idx_base)
+                                                           : (bsr_end_ptr[row] - idx_base);
 
         // BSR block row accumulator
         T sum = static_cast<T>(0);
 
         // Loop over all BSR blocks in the current row where each lane
-        // processes a BSR block value
-        for(I j = row_begin; j < row_end; j += NBLOCKS)
+        // processes a BSR block value.
+        // Use pointer advance with size_t to avoid int32 overflow when row_begin is large.
+        bsr_val += size_t(row_begin) * BSRDIM * BSRDIM + hipThreadIdx_x;
+        for(int64_t j = row_begin; j < row_end; j += NBLOCKS)
         {
-            I k = j + hipThreadIdx_x / (BSRDIM * BSRDIM);
+            int64_t k = j + hipThreadIdx_x / (BSRDIM * BSRDIM);
 
             // Do not exceed the row
             if(k < row_end)
             {
-                // Column index into x vector
-                J col = (bsr_col_ind[k] - idx_base) * BSRDIM;
+                // Column index into x vector — use int64_t throughout
+                int64_t col = (int64_t)(bsr_col_ind[k] - idx_base) * BSRDIM;
 
-                // Compute the sum of the two rows within the BSR blocks of the current
-                // BSR row
-                sum = rocsparse::fma<T>(
-                    bsr_val[j * BSRDIM * BSRDIM + hipThreadIdx_x], x[col + idx], sum);
+                sum = rocsparse::fma<T>(*bsr_val, x[col + idx], sum);
             }
+            bsr_val += NBLOCKS * BSRDIM * BSRDIM;
         }
 
         // Accumulate each row sum of the BSR block
