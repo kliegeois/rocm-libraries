@@ -184,8 +184,12 @@ namespace rocsparse
                 // Column index into x vector
                 J col = (bsr_col_ind[k] - idx_base) * BSRDIM;
 
-                // Compute the sum of the two rows within the BSR blocks of the current
-                // BSR row
+                // DEBUG: print col+idx for thread 0 of first iteration
+                if(hipThreadIdx_x == 0 && j == row_begin)
+                    printf("[DBG2] bsrxmvn_5x5: blk=%d row=%d begin=%d k=%d col_ind=%d col=%d idx=%d col+idx=%d\n",
+                           (int)hipBlockIdx_x, row, (int)row_begin, (int)k,
+                           (int)bsr_col_ind[k], (int)col, (int)idx, (int)(col + idx));
+
                 sum = rocsparse::fma<T>(*bsr_val, x[col + idx], sum);
             }
             bsr_val += NBLOCKS * BSRDIM * BSRDIM;
@@ -235,6 +239,10 @@ namespace rocsparse
         // First 5 threads write row sums to global memory
         if(hipThreadIdx_x < BSRDIM)
         {
+            // DEBUG
+            if(hipThreadIdx_x == 0)
+                printf("[DBG3] bsrxmvn_5x5: blk=%d row=%d writing y[%d]\n",
+                       (int)hipBlockIdx_x, row, (int)(row * BSRDIM));
             if(beta != static_cast<T>(0))
             {
                 y[row * BSRDIM + hipThreadIdx_x]
