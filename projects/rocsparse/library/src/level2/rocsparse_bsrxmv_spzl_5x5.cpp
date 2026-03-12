@@ -162,6 +162,11 @@ namespace rocsparse
         I row_end   = (bsr_end_ptr == nullptr) ? (bsr_row_ptr[row + 1] - idx_base)
                                                : (bsr_end_ptr[row] - idx_base);
 
+        // DEBUG
+        if(hipThreadIdx_x == 0)
+            printf("[DBG] bsrxmvn_5x5: blk=%d row=%d begin=%d end=%d\n",
+                   (int)hipBlockIdx_x, row, (int)row_begin, (int)row_end);
+
         // BSR block row accumulator
         T sum = static_cast<T>(0);
 

@@ -54,6 +54,11 @@ namespace rocsparse
         const rocsparse_int row_begin = bsr_row_ptr[row] - idx_base;
         const rocsparse_int row_end   = bsr_row_ptr[row + 1] - idx_base;
 
+        // DEBUG
+        if(hipThreadIdx_x == 0)
+            printf("[DBG] gebsrmvn_general: blk=%d row=%d begin=%d end=%d rdim=%d cdim=%d\n",
+                   (int)hipBlockIdx_x, row, row_begin, row_end, row_block_dim, col_block_dim);
+
         // Advance bsr_val pointer to the start of this row's blocks using size_t
         // arithmetic to avoid int32 overflow when row_begin is large.
         bsr_val += size_t(row_begin) * row_block_dim * col_block_dim;
@@ -140,6 +145,11 @@ namespace rocsparse
         const rocsparse_int row_begin = bsr_row_ptr[row] - idx_base;
         const rocsparse_int row_end   = bsr_row_ptr[row + 1] - idx_base;
 
+        // DEBUG
+        if(hipThreadIdx_x == 0)
+            printf("[DBG] gebsrmvn_1xn: blk=%d row=%d begin=%d end=%d\n",
+                   (int)hipBlockIdx_x, row, row_begin, row_end);
+
         // BSR block row accumulator
         T sum = static_cast<T>(0);
 
@@ -212,6 +222,11 @@ namespace rocsparse
         // BSR row entry and exit point
         const rocsparse_int row_begin = bsr_row_ptr[row] - idx_base;
         const rocsparse_int row_end   = bsr_row_ptr[row + 1] - idx_base;
+
+        // DEBUG
+        if(hipThreadIdx_x == 0)
+            printf("[DBG] gebsrmvn_2xn: blk=%d row=%d begin=%d end=%d\n",
+                   (int)hipBlockIdx_x, row, row_begin, row_end);
 
         // BSR block row accumulator
         T sum0 = static_cast<T>(0);
@@ -312,6 +327,11 @@ namespace rocsparse
         // BSR row entry and exit point
         const rocsparse_int row_begin = bsr_row_ptr[row] - idx_base;
         const rocsparse_int row_end   = bsr_row_ptr[row + 1] - idx_base;
+
+        // DEBUG
+        if(hipThreadIdx_x == 0)
+            printf("[DBG] gebsrmvn_3xn: blk=%d row=%d begin=%d end=%d\n",
+                   (int)hipBlockIdx_x, row, row_begin, row_end);
 
         // BSR block row accumulator
         T sum0 = static_cast<T>(0);
@@ -421,6 +441,11 @@ namespace rocsparse
         // BSR row entry and exit point
         const rocsparse_int row_begin = bsr_row_ptr[row] - idx_base;
         const rocsparse_int row_end   = bsr_row_ptr[row + 1] - idx_base;
+
+        // DEBUG
+        if(hipThreadIdx_x == 0)
+            printf("[DBG] gebsrmvn_4xn: blk=%d row=%d begin=%d end=%d\n",
+                   (int)hipBlockIdx_x, row, row_begin, row_end);
 
         // BSR block row accumulator
         T sum0 = static_cast<T>(0);
@@ -534,6 +559,11 @@ namespace rocsparse
         // BSR row entry and exit point
         const rocsparse_int row_begin = bsr_row_ptr[row] - idx_base;
         const rocsparse_int row_end   = bsr_row_ptr[row + 1] - idx_base;
+
+        // DEBUG
+        if(hipThreadIdx_x == 0)
+            printf("[DBG] gebsrmvn_mxn(_16): blk=%d row=%d begin=%d end=%d rdim=%u cdim=%u\n",
+                   (int)hipBlockIdx_x, row, row_begin, row_end, ROWBSRDIM, COLBSRDIM);
 
         // BSR block row accumulator
         T sum = static_cast<T>(0);
@@ -765,6 +795,11 @@ namespace rocsparse
         // BSR row entry and exit point
         const rocsparse_int row_begin = bsr_row_ptr[row] - idx_base;
         const rocsparse_int row_end   = bsr_row_ptr[row + 1] - idx_base;
+
+        // DEBUG
+        if(hipThreadIdx_x == 0)
+            printf("[DBG] gebsrmvn_mxn(_16): blk=%d row=%d begin=%d end=%d rdim=%u cdim=%u\n",
+                   (int)hipBlockIdx_x, row, row_begin, row_end, ROWBSRDIM, COLBSRDIM);
 
         // BSR block row accumulator
         T sum = static_cast<T>(0);
