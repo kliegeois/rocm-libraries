@@ -167,7 +167,9 @@ namespace rocsparse
 
         // Loop over all BSR blocks in the current row where each lane
         // processes a BSR block value
-        for(I j = row_begin; j < row_end; j += NBLOCKS)
+        bsr_val += size_t(row_begin) * BSRDIM * BSRDIM + hipThreadIdx_x;
+        I j = row_begin;
+        for(; j < row_end; j += NBLOCKS)
         {
             I k = j + hipThreadIdx_x / (BSRDIM * BSRDIM);
 
@@ -179,9 +181,9 @@ namespace rocsparse
 
                 // Compute the sum of the two rows within the BSR blocks of the current
                 // BSR row
-                sum = rocsparse::fma<T>(
-                    bsr_val[j * BSRDIM * BSRDIM + hipThreadIdx_x], x[col + idx], sum);
+                sum = rocsparse::fma<T>(*bsr_val, x[col + idx], sum);
             }
+            bsr_val += NBLOCKS * BSRDIM * BSRDIM;
         }
 
         // Accumulate each row sum of the BSR block
