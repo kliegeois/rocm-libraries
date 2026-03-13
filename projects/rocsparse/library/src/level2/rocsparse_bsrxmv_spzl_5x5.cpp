@@ -144,8 +144,9 @@ namespace rocsparse
         // BSR block lane id
         J lid = hipThreadIdx_x % BSRDIM;
 
-        // Number of BSR blocks processed at the same time
-        const uint32_t NBLOCKS = BLOCKSIZE / (BSRDIM * BSRDIM);
+        // Number of BSR blocks processed at the same time.
+        // Must be constexpr so __shared__ sdata[] is statically sized.
+        static constexpr uint32_t NBLOCKS = BLOCKSIZE / (BSRDIM * BSRDIM);
 
         // Offset into x vector
         J idx = (dir == rocsparse_direction_column) ? ((hipThreadIdx_x / BSRDIM) % BSRDIM) : lid;
