@@ -124,19 +124,20 @@ namespace rocsparse
               typename A,
               typename X,
               typename Y>
-    ROCSPARSE_DEVICE_ILF void bsrxmvn_5x5_device(J                   mb,
-                                                 rocsparse_direction dir,
-                                                 T                   alpha,
-                                                 J                   size_of_mask,
-                                                 const J* __restrict__ bsr_mask_ptr,
-                                                 const I* __restrict__ bsr_row_ptr,
-                                                 const I* __restrict__ bsr_end_ptr,
-                                                 const J* __restrict__ bsr_col_ind,
-                                                 const A* __restrict__ bsr_val,
-                                                 const X* __restrict__ x,
-                                                 T beta,
-                                                 Y* __restrict__ y,
-                                                 rocsparse_index_base idx_base)
+    __attribute__((no_sanitize("address"))) ROCSPARSE_DEVICE_ILF void
+        bsrxmvn_5x5_device(J                   mb,
+                           rocsparse_direction dir,
+                           T                   alpha,
+                           J                   size_of_mask,
+                           const J* __restrict__ bsr_mask_ptr,
+                           const I* __restrict__ bsr_row_ptr,
+                           const I* __restrict__ bsr_end_ptr,
+                           const J* __restrict__ bsr_col_ind,
+                           const A* __restrict__ bsr_val,
+                           const X* __restrict__ x,
+                           T beta,
+                           Y* __restrict__ y,
+                           rocsparse_index_base idx_base)
     {
         // BSR block dimension
         static constexpr int BSRDIM = 5;
@@ -248,21 +249,21 @@ namespace rocsparse
               typename A,
               typename X,
               typename Y>
-    ROCSPARSE_KERNEL(BLOCKSIZE)
-    void bsrxmvn_5x5_kernel(J                   mb,
-                            rocsparse_direction dir,
-                            ROCSPARSE_DEVICE_HOST_SCALAR_PARAMS(T, alpha),
-                            J size_of_mask,
-                            const J* __restrict__ bsr_mask_ptr,
-                            const I* __restrict__ bsr_row_ptr,
-                            const I* __restrict__ bsr_end_ptr,
-                            const J* __restrict__ bsr_col_ind,
-                            const A* __restrict__ bsr_val,
-                            const X* __restrict__ x,
-                            ROCSPARSE_DEVICE_HOST_SCALAR_PARAMS(T, beta),
-                            Y* __restrict__ y,
-                            rocsparse_index_base idx_base,
-                            bool                 is_host_mode)
+    __attribute__((no_sanitize("address"))) ROCSPARSE_KERNEL(BLOCKSIZE) void bsrxmvn_5x5_kernel(
+        J                   mb,
+        rocsparse_direction dir,
+        ROCSPARSE_DEVICE_HOST_SCALAR_PARAMS(T, alpha),
+        J size_of_mask,
+        const J* __restrict__ bsr_mask_ptr,
+        const I* __restrict__ bsr_row_ptr,
+        const I* __restrict__ bsr_end_ptr,
+        const J* __restrict__ bsr_col_ind,
+        const A* __restrict__ bsr_val,
+        const X* __restrict__ x,
+        ROCSPARSE_DEVICE_HOST_SCALAR_PARAMS(T, beta),
+        Y* __restrict__ y,
+        rocsparse_index_base idx_base,
+        bool                 is_host_mode)
     {
         ROCSPARSE_DEVICE_HOST_SCALAR_GET(alpha);
         ROCSPARSE_DEVICE_HOST_SCALAR_GET(beta);
