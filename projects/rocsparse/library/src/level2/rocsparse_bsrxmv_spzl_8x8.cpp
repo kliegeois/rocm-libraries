@@ -183,8 +183,9 @@ namespace rocsparse
         // Offset into x vector
         J idx = (dir == rocsparse_direction_column) ? ((hipThreadIdx_x / BSRDIM) % BSRDIM) : lid;
 
-        // Number of BSR blocks processed at the same time
-        const uint32_t NBLOCKS = BLOCKSIZE / SQBSRDIM;
+        // Number of BSR blocks processed at the same time.
+        // Must be constexpr so __shared__ sdata[] is statically sized.
+        static constexpr uint32_t NBLOCKS = BLOCKSIZE / SQBSRDIM;
 
         // Each thread block processes a single BSR row
         J row = hipBlockIdx_x;
