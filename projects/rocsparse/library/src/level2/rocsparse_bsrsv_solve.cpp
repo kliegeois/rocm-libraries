@@ -425,6 +425,10 @@ namespace rocsparse
 
         if(handle->wavefront_size == 64)
         {
+// Shared memory based kernels trigger false positives under ASAN
+// (ROCm ASAN redirects LDS to global memory, causing data corruption).
+// Use the general kernel for all block dimensions when ASAN is enabled.
+#if !defined(__SANITIZE_ADDRESS__) && !(defined(__has_feature) && __has_feature(address_sanitizer))
             if(block_dim <= 8)
             {
                 // Launch shared memory based kernel for small BSR block dimensions
@@ -444,6 +448,7 @@ namespace rocsparse
                     fill_mode, handle->pointer_mode, 128, 64, 32, gcn_arch_name, asicRev);
             }
             else
+#endif
             {
                 // Launch general algorithm for large BSR block dimensions (> 32x32)
                 LAUNCH_BSRSV_GENERAL(
