@@ -202,8 +202,8 @@ rocsparse_status rocsparse::bsrxmv_template_dispatch(rocsparse_handle          h
                                  y,
                                  descr->base);
     }
-    else
 #endif
+    else
     {
         rocsparse::bsrxmvn_general(handle,
                                    dir,
