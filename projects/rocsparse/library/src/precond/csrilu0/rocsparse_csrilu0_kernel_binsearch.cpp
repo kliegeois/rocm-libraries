@@ -254,11 +254,17 @@ namespace rocsparse
         int32_t* done_array = reinterpret_cast<int32_t*>(reinterpret_cast<char*>(buffer) + 256);
         const int64_t done_array_stride = A->rows;
 
-        const T*     boost_val = reinterpret_cast<const T*>(gboost_val);
-        const float* boost_tol_32
-            = reinterpret_cast<const float*>((boost_enable) ? gboost_tol : nullptr);
-        const double* boost_tol_64
-            = reinterpret_cast<const double*>((boost_enable) ? gboost_tol : nullptr);
+        const T* boost_val = reinterpret_cast<const T*>(gboost_val);
+
+        // In host pointer mode, gboost_tol points to a float or double based on
+        // boost_tol_size. Only cast to the matching type to avoid reading past the allocation.
+        const bool   host_mode    = (handle->pointer_mode == rocsparse_pointer_mode_host);
+        const float* boost_tol_32 = reinterpret_cast<const float*>(
+            (boost_enable && (!host_mode || boost_tol_size == sizeof(float))) ? gboost_tol
+                                                                              : nullptr);
+        const double* boost_tol_64 = reinterpret_cast<const double*>(
+            (boost_enable && (!host_mode || boost_tol_size == sizeof(double))) ? gboost_tol
+                                                                               : nullptr);
 
         dim3 csrilu0_blocks((A->rows * handle->wavefront_size - 1) / BLOCKSIZE + 1, A->batch_count);
         dim3 csrilu0_threads(BLOCKSIZE);

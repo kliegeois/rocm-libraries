@@ -323,8 +323,15 @@ namespace rocsparse
         const auto boost_enable   = info->boost_enable;
         const auto boost_tol_size = info->boost_tol_size;
 
-        const float*  boost_tol_32 = reinterpret_cast<const float*>(info->boost_tol);
-        const double* boost_tol_64 = reinterpret_cast<const double*>(info->boost_tol);
+        // In host pointer mode, info->boost_tol points to a float or double based on
+        // boost_tol_size. Only cast to the matching type to avoid reading past the allocation.
+        const bool    host_mode    = (handle->pointer_mode == rocsparse_pointer_mode_host);
+        const float*  boost_tol_32 = (!host_mode || boost_tol_size == sizeof(float))
+                                         ? reinterpret_cast<const float*>(info->boost_tol)
+                                         : nullptr;
+        const double* boost_tol_64 = (!host_mode || boost_tol_size == sizeof(double))
+                                         ? reinterpret_cast<const double*>(info->boost_tol)
+                                         : nullptr;
         const T*      boost_val_T  = reinterpret_cast<const T*>(info->boost_val);
 
         auto trm_info = bsrilu0_info->get(rocsparse_operation_none, rocsparse_fill_mode_lower);
