@@ -322,6 +322,10 @@ rocsparse_status rocsparse::bsrmv_template_dispatch(rocsparse_handle          ha
                                         y,
                                         descr->base);
     }
+// Specialized kernels for block_dim 5, 8, 16, and 17-32 use __shared__ memory which
+// triggers false positives under ASAN (ROCm ASAN redirects LDS to global memory).
+// Fall through to the general kernel when ASAN is enabled.
+#if !defined(__SANITIZE_ADDRESS__) && !(defined(__has_feature) && __has_feature(address_sanitizer))
     else if(block_dim == 5)
     {
         rocsparse::bsrxmvn_5x5<T, I, J>(handle,
@@ -401,6 +405,7 @@ rocsparse_status rocsparse::bsrmv_template_dispatch(rocsparse_handle          ha
                                           descr->base);
     }
     else
+#endif
     {
         rocsparse::bsrxmvn_general<T, I, J>(handle,
                                             dir,
