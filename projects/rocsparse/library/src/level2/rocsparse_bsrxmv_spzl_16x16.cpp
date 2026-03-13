@@ -110,10 +110,10 @@ namespace rocsparse
             __syncthreads();
             if(hipThreadIdx_x < BSRDIM * 4)
                 sdata[hipThreadIdx_x] += sdata[hipThreadIdx_x + BSRDIM * 4];
-            __threadfence_block();
+            __syncthreads();
             if(hipThreadIdx_x < BSRDIM * 2)
                 sdata[hipThreadIdx_x] += sdata[hipThreadIdx_x + BSRDIM * 2];
-            __threadfence_block();
+            __syncthreads();
             if(hipThreadIdx_x < BSRDIM * 1)
                 sum = sdata[hipThreadIdx_x] + sdata[hipThreadIdx_x + BSRDIM * 1];
         }
