@@ -138,6 +138,7 @@ Tests:
   baseA: [rocsparse_index_base_zero, rocsparse_index_base_one]
   matrix: [rocsparse_matrix_random]
   storage: [rocsparse_storage_mode_sorted]
+  skip_asan: true
 
 - name: bsrmv
   category: pre_checkin

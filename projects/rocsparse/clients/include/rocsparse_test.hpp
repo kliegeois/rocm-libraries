@@ -213,7 +213,8 @@ inline void rocsparse_expect_data_status(rocsparse_data_status status, rocsparse
                                      && testclass::type_filter(arg)            \
                                      && testclass::function_filter(arg)        \
                                      && testclass::arch_filter(arg)            \
-                                     && testclass::memory_filter(arg);         \
+                                     && testclass::memory_filter(arg)          \
+                                     && testclass::asan_filter(arg);           \
                           }),                                                  \
                           RocSPARSE_TestData::end()),                          \
         testclass::PrintToStringParamName());
@@ -308,8 +309,8 @@ public:
         return std::move(name);
     }
 
-    RocSPARSE_TestName()                          = default;
-    RocSPARSE_TestName(const RocSPARSE_TestName&) = delete;
+    RocSPARSE_TestName()                                     = default;
+    RocSPARSE_TestName(const RocSPARSE_TestName&)            = delete;
     RocSPARSE_TestName& operator=(const RocSPARSE_TestName&) = delete;
 };
 

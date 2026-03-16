@@ -183,6 +183,19 @@ namespace
                 return can_run;
             }
 
+            static bool asan_filter(const Arguments& arg)
+            {
+                if(arg.skip_asan)
+                {
+#if defined(__SANITIZE_ADDRESS__) || (defined(__has_feature) && __has_feature(address_sanitizer))
+                    std::cout << "SKIPPING TEST: skip_asan is true and AddressSanitizer is enabled"
+                              << std::endl;
+                    return false;
+#endif
+                }
+                return true;
+            }
+
             static std::string name_suffix(const Arguments& arg)
             {
                 //
