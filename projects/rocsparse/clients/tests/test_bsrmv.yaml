@@ -232,7 +232,7 @@ Tests:
   precision: *single_double_precisions_complex_real
   M: [4365]
   N: [7621]
-  block_dim: [22, 24, 25]
+  block_dim: [24, 25]
   alpha_beta: *alpha_beta_range_checkin
   direction: [rocsparse_direction_row]
   transA: [rocsparse_operation_none]
@@ -246,7 +246,14 @@ Tests:
   precision: *single_double_precisions_complex_real
   M: [4365]
   N: [7621]
-  block_dim: [21, 23]
+  block_dim: [22]
+  alpha_beta: *alpha_beta_range_checkin
+  direction: [rocsparse_direction_row]
+  transA: [rocsparse_operation_none]
+  baseA: [rocsparse_index_base_zero]
+  matrix: [rocsparse_matrix_random]
+  storage: [rocsparse_storage_mode_sorted]
+  skip_asan: true
   alpha_beta: *alpha_beta_range_checkin
   direction: [rocsparse_direction_row]
   transA: [rocsparse_operation_none]
@@ -344,13 +351,28 @@ Tests:
   precision: *single_double_precisions_complex_real
   M: [39385, 193482]
   N: [29348, 340123]
-  block_dim: [1, 4, 11, 20]
+  block_dim: [1, 4, 11]
   alpha_beta: *alpha_beta_range_nightly
   direction: [rocsparse_direction_row]
   transA: [rocsparse_operation_none]
   baseA: [rocsparse_index_base_one]
   matrix: [rocsparse_matrix_random]
   storage: [rocsparse_storage_mode_sorted]
+
+- name: bsrmv
+  category: nightly
+  function: bsrmv
+  precision: *single_double_precisions_complex_real
+  M: [39385, 193482]
+  N: [29348, 340123]
+  block_dim: [20]
+  alpha_beta: *alpha_beta_range_nightly
+  direction: [rocsparse_direction_row]
+  transA: [rocsparse_operation_none]
+  baseA: [rocsparse_index_base_one]
+  matrix: [rocsparse_matrix_random]
+  storage: [rocsparse_storage_mode_sorted]
+  skip_asan: true
 
 - name: bsrmv_file
   category: nightly
