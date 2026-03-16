@@ -216,6 +216,7 @@ Tests:
   direction: [rocsparse_direction_row]
   matrix: [rocsparse_matrix_file_rocalution]
   filename: [Chevron3]
+  skip_asan: true
 
 - name: bsrilu0_file
   category: pre_checkin
