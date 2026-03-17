@@ -209,8 +209,9 @@ namespace rocsparse
         else
         {
             // Accumulate the row sum for different blocks
-            if(hipThreadIdx_x < BSRDIM * BSRDIM)
-                ; //sdata[hipThreadIdx_x] += sdata[hipThreadIdx_x + BSRDIM * BSRDIM];
+            if((hipThreadIdx_x < BSRDIM * BSRDIM)
+               && (hipThreadIdx_x + BSRDIM * BSRDIM < BSRDIM * BSRDIM * NBLOCKS))
+                sdata[hipThreadIdx_x] += sdata[hipThreadIdx_x + BSRDIM * BSRDIM];
             __threadfence_block();
 
             // Reduce the intra block row sum
