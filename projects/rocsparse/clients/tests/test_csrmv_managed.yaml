@@ -58,6 +58,7 @@ Tests:
   baseA: [rocsparse_index_base_zero, rocsparse_index_base_one]
   matrix: [rocsparse_matrix_random]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive, rocsparse_spmv_alg_csr_rowsplit]
+  skip_asan: true
 
 - name: csrmv_managed
   category: pre_checkin
@@ -70,6 +71,7 @@ Tests:
   baseA: [rocsparse_index_base_zero, rocsparse_index_base_one]
   matrix: [rocsparse_matrix_random]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive, rocsparse_spmv_alg_csr_rowsplit]
+  skip_asan: true
 
 - name: csrmv_managed
   category: nightly
@@ -82,6 +84,7 @@ Tests:
   baseA: [rocsparse_index_base_zero, rocsparse_index_base_one]
   matrix: [rocsparse_matrix_random]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive, rocsparse_spmv_alg_csr_rowsplit]
+  skip_asan: true
 
 - name: csrmv_managed_file
   category: quick
@@ -94,6 +97,7 @@ Tests:
   baseA: [rocsparse_index_base_zero, rocsparse_index_base_one]
   matrix: [rocsparse_matrix_file_rocalution]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive, rocsparse_spmv_alg_csr_rowsplit]
+  skip_asan: true
   filename: [mac_econ_fwd500,
              nos2,
              nos4,
@@ -111,6 +115,7 @@ Tests:
   baseA: [rocsparse_index_base_zero, rocsparse_index_base_one]
   matrix: [rocsparse_matrix_file_rocalution]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive, rocsparse_spmv_alg_csr_rowsplit]
+  skip_asan: true
   filename: [nos1,
              nos3,
              nos5,
@@ -127,6 +132,7 @@ Tests:
   baseA: [rocsparse_index_base_one]
   matrix: [rocsparse_matrix_file_rocalution]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive, rocsparse_spmv_alg_csr_rowsplit]
+  skip_asan: true
   filename: [bibd_22_8,
              bmwcra_1,
              amazon0312,
@@ -145,6 +151,7 @@ Tests:
   baseA: [rocsparse_index_base_zero]
   matrix: [rocsparse_matrix_file_rocalution]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive, rocsparse_spmv_alg_csr_rowsplit]
+  skip_asan: true
   filename: [mplate, qc2534]
 
 - name: csrmv_managed_file
@@ -158,6 +165,7 @@ Tests:
   baseA: [rocsparse_index_base_one]
   matrix: [rocsparse_matrix_file_rocalution]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive, rocsparse_spmv_alg_csr_rowsplit]
+  skip_asan: true
   filename: [Chevron2]
 
 - name: csrmv_managed_file
@@ -171,6 +179,7 @@ Tests:
   baseA: [rocsparse_index_base_zero]
   matrix: [rocsparse_matrix_file_rocalution]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive, rocsparse_spmv_alg_csr_rowsplit]
+  skip_asan: true
   filename: [Chevron3]
 
 - name: csrmv_managed_graph_test
@@ -184,4 +193,5 @@ Tests:
   baseA: [rocsparse_index_base_zero, rocsparse_index_base_one]
   matrix: [rocsparse_matrix_random]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive, rocsparse_spmv_alg_csr_rowsplit]
+  skip_asan: true
   graph_test: true

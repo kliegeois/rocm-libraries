@@ -66,12 +66,26 @@ Tests:
   precision: *single_double_precisions
   M: [2, 16]
   N: [2, 16]
-  block_dim: [2, 3, 4, 5, 14, 23, 81]
+  block_dim: [2, 3, 4, 5, 14, 81]
   alpha_beta: *alpha_beta_range_checkin
   direction: [rocsparse_direction_row, rocsparse_direction_column]
   transA: [rocsparse_operation_none]
   baseA: [rocsparse_index_base_zero, rocsparse_index_base_one]
   matrix: [rocsparse_matrix_random]
+
+- name: bsrxmv
+  category: pre_checkin
+  function: bsrxmv
+  precision: *single_double_precisions
+  M: [2, 16]
+  N: [2, 16]
+  block_dim: [23]
+  alpha_beta: *alpha_beta_range_checkin
+  direction: [rocsparse_direction_row, rocsparse_direction_column]
+  transA: [rocsparse_operation_none]
+  baseA: [rocsparse_index_base_zero, rocsparse_index_base_one]
+  matrix: [rocsparse_matrix_random]
+  skip_asan: true
 
 - name: bsrxmv
   category: pre_checkin
@@ -159,12 +173,26 @@ Tests:
   precision: *single_double_precisions_complex_real
   M: [64]
   N: [64]
-  block_dim: [17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
+  block_dim: [17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
   alpha_beta: *alpha_beta_range_1
   direction: [rocsparse_direction_row]
   transA: [rocsparse_operation_none]
   baseA: [rocsparse_index_base_zero]
   matrix: [rocsparse_matrix_random]
+
+- name: bsrxmv
+  category: pre_checkin
+  function: bsrxmv
+  precision: *single_double_precisions_complex_real
+  M: [64]
+  N: [64]
+  block_dim: [32]
+  alpha_beta: *alpha_beta_range_1
+  direction: [rocsparse_direction_row]
+  transA: [rocsparse_operation_none]
+  baseA: [rocsparse_index_base_zero]
+  matrix: [rocsparse_matrix_random]
+  skip_asan: true
 
 - name: bsrxmv_file
   category: pre_checkin

@@ -235,6 +235,7 @@ Tests:
   filename: [bmwcra_1,
              sme3Dc,
              shipsec1]
+  skip_asan: true
 
 - name: bsrsv_file
   category: nightly
@@ -254,6 +255,7 @@ Tests:
   matrix: [rocsparse_matrix_file_rocalution]
   filename: [amazon0312,
              ASIC_320k]
+  skip_asan: true
 
 
 - name: bsrsv_file

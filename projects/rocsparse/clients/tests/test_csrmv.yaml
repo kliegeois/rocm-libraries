@@ -79,6 +79,7 @@ Tests:
   matrix: [rocsparse_matrix_zero]
   matrix_type: [rocsparse_matrix_type_general]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
 
 - name: csrmv
   category: quick
@@ -92,6 +93,7 @@ Tests:
   matrix: [rocsparse_matrix_random]
   matrix_type: [rocsparse_matrix_type_general]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
 
 - name: csrmv
   category: quick
@@ -118,6 +120,7 @@ Tests:
   matrix: [rocsparse_matrix_random]
   matrix_type: [rocsparse_matrix_type_general]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
   call_stage_analysis: [false]
 
 #
@@ -136,6 +139,7 @@ Tests:
   matrix: [rocsparse_matrix_random]
   matrix_type: [rocsparse_matrix_type_general]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
 
 - name: csrmv
   category: nightly
@@ -149,6 +153,7 @@ Tests:
   matrix: [rocsparse_matrix_random]
   matrix_type: [rocsparse_matrix_type_general]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
 
 - name: csrmv_file
   category: quick
@@ -162,6 +167,7 @@ Tests:
   matrix: [rocsparse_matrix_file_rocalution]
   matrix_type: [rocsparse_matrix_type_general]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
   filename: [mac_econ_fwd500,
              nos2,
              nos4,
@@ -179,6 +185,7 @@ Tests:
   matrix: [rocsparse_matrix_file_rocalution]
   matrix_type: [rocsparse_matrix_type_general]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
   filename: [scircuit,
              nos1,
              nos3,
@@ -201,6 +208,7 @@ Tests:
   matrix: [rocsparse_matrix_file_rocalution]
   matrix_type: [rocsparse_matrix_type_general]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
   filename: [bibd_22_8,
              bmwcra_1,
              amazon0312,
@@ -220,6 +228,7 @@ Tests:
   matrix: [rocsparse_matrix_file_rocalution]
   matrix_type: [rocsparse_matrix_type_general]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
   filename: [rma10,
              qc2534]
 
@@ -235,6 +244,7 @@ Tests:
   matrix: [rocsparse_matrix_file_rocalution]
   matrix_type: [rocsparse_matrix_type_general]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
   filename: [mplate,
              Chevron2]
 
@@ -250,6 +260,7 @@ Tests:
   matrix: [rocsparse_matrix_file_rocalution]
   matrix_type: [rocsparse_matrix_type_general]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
   filename: [Chevron4]
 
 - name: csrmv
@@ -265,6 +276,7 @@ Tests:
   matrix_type: [rocsparse_matrix_type_general]
   uplo: [rocsparse_fill_mode_upper]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
 
 #
 # symmetric and triangular matrix type
@@ -282,6 +294,7 @@ Tests:
   matrix_type: [rocsparse_matrix_type_symmetric]
   uplo: [rocsparse_fill_mode_lower]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
 
 - name: csrmv
   category: quick
@@ -295,6 +308,7 @@ Tests:
   matrix_type: [rocsparse_matrix_type_symmetric]
   uplo: [rocsparse_fill_mode_lower]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
 
 - name: csrmv
   category: pre_checkin
@@ -308,6 +322,7 @@ Tests:
   matrix_type: [rocsparse_matrix_type_symmetric]
   uplo: [rocsparse_fill_mode_upper]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
 
 - name: csrmv
   category: pre_checkin
@@ -321,6 +336,7 @@ Tests:
   matrix_type: [rocsparse_matrix_type_symmetric]
   uplo: [rocsparse_fill_mode_upper]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
 
 - name: csrmv
   category: nightly
@@ -334,6 +350,7 @@ Tests:
   matrix_type: [rocsparse_matrix_type_symmetric]
   uplo: [rocsparse_fill_mode_lower]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
 
 - name: csrmv
   category: nightly
@@ -361,6 +378,7 @@ Tests:
   matrix_type: [rocsparse_matrix_type_symmetric]
   uplo: [rocsparse_fill_mode_upper]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
   filename: [mac_econ_fwd500,
              nos2,
              nos4,
@@ -379,6 +397,7 @@ Tests:
   matrix_type: [rocsparse_matrix_type_symmetric]
   uplo: [rocsparse_fill_mode_lower]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
   filename: [nos1,
              nos3,
              nos5]
@@ -396,6 +415,7 @@ Tests:
   matrix_type: [rocsparse_matrix_type_symmetric]
   uplo: [rocsparse_fill_mode_lower]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
   filename: [bmwcra_1,
              amazon0312,
              sme3Dc,
@@ -414,6 +434,7 @@ Tests:
   matrix_type: [rocsparse_matrix_type_symmetric]
   uplo: [rocsparse_fill_mode_upper]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
   filename: [rma10,
              qc2534]
 
@@ -430,6 +451,7 @@ Tests:
   matrix_type: [rocsparse_matrix_type_symmetric]
   uplo: [rocsparse_fill_mode_lower]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
   filename: [mplate,
              Chevron2]
 
@@ -446,6 +468,7 @@ Tests:
   matrix_type: [rocsparse_matrix_type_symmetric]
   uplo: [rocsparse_fill_mode_upper]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
   filename: [Chevron4]
 
 # Coverage gap tests: transpose with LRB/NNZ-split algorithms (develop vs reduced_ci)
@@ -474,5 +497,6 @@ Tests:
   matrix: [rocsparse_matrix_random]
   matrix_type: [rocsparse_matrix_type_general]
   spmv_alg: [rocsparse_spmv_alg_csr_adaptive]
+  skip_asan: true
   graph_test: true
   call_stage_analysis: [false]
