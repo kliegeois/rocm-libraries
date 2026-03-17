@@ -194,16 +194,16 @@ namespace rocsparse
         if(dir == rocsparse_direction_column)
         {
             if(hipThreadIdx_x < BLOCKSIZE - BSRDIM * 8)
-                ; //sdata[hipThreadIdx_x] += sdata[hipThreadIdx_x + BSRDIM * 8];
+                sdata[hipThreadIdx_x] += sdata[hipThreadIdx_x + BSRDIM * 8];
             __threadfence_block();
             if(hipThreadIdx_x < BSRDIM * 4)
-                ; //sdata[hipThreadIdx_x] += sdata[hipThreadIdx_x + BSRDIM * 4];
+                sdata[hipThreadIdx_x] += sdata[hipThreadIdx_x + BSRDIM * 4];
             __threadfence_block();
             if(hipThreadIdx_x < BSRDIM * 2)
-                ; //sdata[hipThreadIdx_x] += sdata[hipThreadIdx_x + BSRDIM * 2];
+                sdata[hipThreadIdx_x] += sdata[hipThreadIdx_x + BSRDIM * 2];
             __threadfence_block();
             if(hipThreadIdx_x < BSRDIM * 1)
-                ; //sum = sdata[hipThreadIdx_x] + sdata[hipThreadIdx_x + BSRDIM * 1];
+                sum = sdata[hipThreadIdx_x] + sdata[hipThreadIdx_x + BSRDIM * 1];
         }
         else
         {
