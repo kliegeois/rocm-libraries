@@ -189,9 +189,10 @@ namespace rocsparse
         __shared__ T sdata[BSRDIM * BSRDIM * NBLOCKS];
 
         sdata[hipThreadIdx_x] = sum;
-
+        */
         __threadfence_block();
 
+        /*
         if(dir == rocsparse_direction_column)
         {
             if(hipThreadIdx_x < BLOCKSIZE - BSRDIM * 8)
