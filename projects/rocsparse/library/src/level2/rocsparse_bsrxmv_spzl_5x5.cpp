@@ -191,6 +191,18 @@ namespace rocsparse
 
         __threadfence_block();
 
+        if(hipThreadIdx_x == 0)
+        {
+            if(dir == rocsparse_direction_column)
+            {
+                printf("dir == rocsparse_direction_column\n");
+            }
+            else
+            {
+                printf("dir != rocsparse_direction_column\n");
+            }
+        }
+
         //dir == rocsparse_direction_column
         if(false)
         {
@@ -211,9 +223,9 @@ namespace rocsparse
             // Accumulate the row sum for different blocks
             if(hipThreadIdx_x < BSRDIM * BSRDIM)
             {
-                auto tmp              = sdata[hipThreadIdx_x + BSRDIM * BSRDIM];
-                auto tmp2             = sdata[hipThreadIdx_x];
-                sdata[hipThreadIdx_x] = tmp + tmp2;
+                auto tmp  = sdata[hipThreadIdx_x + BSRDIM * BSRDIM];
+                auto tmp2 = sdata[hipThreadIdx_x];
+                //sdata[hipThreadIdx_x] = tmp + tmp2;
                 //sdata[hipThreadIdx_x] += 1; //tmp;
             }
             __threadfence_block();
