@@ -184,6 +184,7 @@ namespace rocsparse
             }
         }
 
+        /*
         // Accumulate each row sum of the BSR block
         __shared__ T sdata[BSRDIM * BSRDIM * NBLOCKS];
 
@@ -224,6 +225,7 @@ namespace rocsparse
             if(hipThreadIdx_x < BSRDIM)
                 sum = sdata[hipThreadIdx_x * BSRDIM] + sdata[hipThreadIdx_x * BSRDIM + 1];
         }
+        */
 
         // First 5 threads write row sums to global memory
         if(hipThreadIdx_x < BSRDIM)
