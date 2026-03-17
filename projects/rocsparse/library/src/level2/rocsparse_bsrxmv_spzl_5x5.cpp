@@ -191,41 +191,39 @@ namespace rocsparse
 
         __threadfence_block();
 
-        /*
         if(dir == rocsparse_direction_column)
         {
             if(hipThreadIdx_x < BLOCKSIZE - BSRDIM * 8)
-                sdata[hipThreadIdx_x] += sdata[hipThreadIdx_x + BSRDIM * 8];
+                ; //sdata[hipThreadIdx_x] += sdata[hipThreadIdx_x + BSRDIM * 8];
             __threadfence_block();
             if(hipThreadIdx_x < BSRDIM * 4)
-                sdata[hipThreadIdx_x] += sdata[hipThreadIdx_x + BSRDIM * 4];
+                ; //sdata[hipThreadIdx_x] += sdata[hipThreadIdx_x + BSRDIM * 4];
             __threadfence_block();
             if(hipThreadIdx_x < BSRDIM * 2)
-                sdata[hipThreadIdx_x] += sdata[hipThreadIdx_x + BSRDIM * 2];
+                ; //sdata[hipThreadIdx_x] += sdata[hipThreadIdx_x + BSRDIM * 2];
             __threadfence_block();
             if(hipThreadIdx_x < BSRDIM * 1)
-                sum = sdata[hipThreadIdx_x] + sdata[hipThreadIdx_x + BSRDIM * 1];
+                ; //sum = sdata[hipThreadIdx_x] + sdata[hipThreadIdx_x + BSRDIM * 1];
         }
         else
         {
             // Accumulate the row sum for different blocks
             if(hipThreadIdx_x < BSRDIM * BSRDIM)
-                sdata[hipThreadIdx_x] += sdata[hipThreadIdx_x + BSRDIM * BSRDIM];
+                ; //sdata[hipThreadIdx_x] += sdata[hipThreadIdx_x + BSRDIM * BSRDIM];
             __threadfence_block();
 
             // Reduce the intra block row sum
             if(lid < 1)
-                sdata[hipThreadIdx_x] += sdata[hipThreadIdx_x + 4];
+                ; //sdata[hipThreadIdx_x] += sdata[hipThreadIdx_x + 4];
             __threadfence_block();
             if(lid < 2)
-                sdata[hipThreadIdx_x] += sdata[hipThreadIdx_x + 2];
+                ; //sdata[hipThreadIdx_x] += sdata[hipThreadIdx_x + 2];
             __threadfence_block();
 
             // Final reduction
             if(hipThreadIdx_x < BSRDIM)
-                sum = sdata[hipThreadIdx_x * BSRDIM] + sdata[hipThreadIdx_x * BSRDIM + 1];
+                ; //sum = sdata[hipThreadIdx_x * BSRDIM] + sdata[hipThreadIdx_x * BSRDIM + 1];
         }
-        */
 
         // First 5 threads write row sums to global memory
         if(hipThreadIdx_x < BSRDIM)
