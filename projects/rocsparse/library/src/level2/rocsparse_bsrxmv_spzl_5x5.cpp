@@ -191,7 +191,7 @@ namespace rocsparse
 
         __threadfence_block();
 
-        if(hipThreadIdx_x == 0)
+        if(hipThreadIdx_x == 0 && hipBlockIdx_x == 0)
         {
             if(dir == rocsparse_direction_column)
             {
