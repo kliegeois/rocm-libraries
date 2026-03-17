@@ -184,12 +184,11 @@ namespace rocsparse
             }
         }
 
-        /*
         // Accumulate each row sum of the BSR block
         __shared__ T sdata[BSRDIM * BSRDIM * NBLOCKS];
 
         sdata[hipThreadIdx_x] = sum;
-        */
+
         __threadfence_block();
 
         /*
