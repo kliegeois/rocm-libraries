@@ -225,7 +225,7 @@ namespace rocsparse
             {
                 auto tmp  = sdata[hipThreadIdx_x + BSRDIM * BSRDIM];
                 auto tmp2 = sdata[hipThreadIdx_x];
-                sum += 1;
+                sum += tmp2;
                 //sdata[hipThreadIdx_x] = tmp + tmp2;
                 //sdata[hipThreadIdx_x] += 1; //tmp;
             }
