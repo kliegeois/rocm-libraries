@@ -109,8 +109,7 @@ Tests:
   N: 1
   alpha_alphai: *alpha_csr_range_checkin
   transA: [rocsparse_operation_none]
-  diag: [rocsparse_diag_type_non_unit]
-#  TODO rocsparse_diag_type_unit
+  diag: [rocsparse_diag_type_non_unit, rocsparse_diag_type_unit]
   uplo: [rocsparse_fill_mode_lower]
   baseA: [rocsparse_index_base_one]
   sptrsv_alg: [rocsparse_sptrsv_alg_default]
@@ -154,8 +153,7 @@ Tests:
   N: 1
   alpha_alphai: *alpha_csr_range_checkin
   transA: [rocsparse_operation_none]
-  diag: [rocsparse_diag_type_non_unit]
-# TODO rocsparse_diag_type_unit
+  diag: [rocsparse_diag_type_non_unit, rocsparse_diag_type_unit]
   uplo: [rocsparse_fill_mode_lower]
   baseA: [rocsparse_index_base_zero]
   sptrsv_alg: [rocsparse_sptrsv_alg_default]
@@ -175,8 +173,7 @@ Tests:
   N: 1
   alpha_alphai: *alpha_csr_range_checkin
   transA: [rocsparse_operation_none]
-  diag: [rocsparse_diag_type_non_unit]
-# TODO rocsparse_diag_type_unit
+  diag: [rocsparse_diag_type_non_unit, rocsparse_diag_type_unit]
   uplo: [rocsparse_fill_mode_lower]
   baseA: [rocsparse_index_base_zero]
   sptrsv_alg: [rocsparse_sptrsv_alg_default]
@@ -275,8 +272,7 @@ Tests:
   N: 1
   alpha_alphai: *alpha_csr_range_quick
   transA: [rocsparse_operation_none]
-  diag: [rocsparse_diag_type_non_unit]
-# TODO rocsparse_diag_type_unit
+  diag: [rocsparse_diag_type_non_unit, rocsparse_diag_type_unit]
   uplo: [rocsparse_fill_mode_lower]
   baseA: [rocsparse_index_base_one]
   sptrsv_alg: [rocsparse_sptrsv_alg_default]
@@ -371,8 +367,7 @@ Tests:
   N: 1
   alpha_alphai: *alpha_csr_range_nightly
   transA: [rocsparse_operation_transpose]
-  diag: [rocsparse_diag_type_non_unit]
-# TODO rocsparse_diag_type_unit
+  diag: [rocsparse_diag_type_non_unit, rocsparse_diag_type_unit]
   uplo: [rocsparse_fill_mode_upper]
   baseA: [rocsparse_index_base_zero]
   sptrsv_alg: [rocsparse_sptrsv_alg_default]
@@ -474,7 +469,7 @@ Tests:
   N: 1
   alpha_alphai: *alpha_coo_range_checkin
   transA: [rocsparse_operation_none]
-  diag: [rocsparse_diag_type_non_unit] # TODO rocsparse_diag_type_unit
+  diag: [rocsparse_diag_type_non_unit, rocsparse_diag_type_unit]
   uplo: [rocsparse_fill_mode_lower]
   baseA: [rocsparse_index_base_one]
   sptrsv_alg: [rocsparse_sptrsv_alg_default]
@@ -495,7 +490,7 @@ Tests:
   N: 1
   alpha_alphai: *alpha_coo_range_checkin
   transA: [rocsparse_operation_none]
-  diag: [rocsparse_diag_type_non_unit] # TODO rocsparse_diag_type_unit
+  diag: [rocsparse_diag_type_non_unit, rocsparse_diag_type_unit]
   uplo: [rocsparse_fill_mode_lower]
   baseA: [rocsparse_index_base_zero]
   sptrsv_alg: [rocsparse_sptrsv_alg_default]
@@ -590,7 +585,7 @@ Tests:
   N: 1
   alpha_alphai: *alpha_coo_range_quick
   transA: [rocsparse_operation_none]
-  diag: [rocsparse_diag_type_non_unit] # TODO rocsparse_diag_type_unit
+  diag: [rocsparse_diag_type_non_unit, rocsparse_diag_type_unit]
   uplo: [rocsparse_fill_mode_lower]
   baseA: [rocsparse_index_base_one]
   sptrsv_alg: [rocsparse_sptrsv_alg_default]
@@ -633,7 +628,7 @@ Tests:
   N: 1
   alpha_alphai: *alpha_coo_range_quick
   transA: [rocsparse_operation_none]
-  diag: [rocsparse_diag_type_non_unit] # TODO rocsparse_diag_type_unit
+  diag: [rocsparse_diag_type_non_unit, rocsparse_diag_type_unit]
   uplo: [rocsparse_fill_mode_lower]
   baseA: [rocsparse_index_base_one]
   sptrsv_alg: [rocsparse_sptrsv_alg_default]
@@ -709,7 +704,7 @@ Tests:
   N: 1
   alpha_alphai: *alpha_coo_range_nightly
   transA: [rocsparse_operation_transpose]
-  diag: [rocsparse_diag_type_non_unit] # TODO rocsparse_diag_type_unit
+  diag: [rocsparse_diag_type_non_unit, rocsparse_diag_type_unit]
   uplo: [rocsparse_fill_mode_upper]
   baseA: [rocsparse_index_base_zero]
   sptrsv_alg: [rocsparse_sptrsv_alg_default]
