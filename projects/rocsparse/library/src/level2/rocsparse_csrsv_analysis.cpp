@@ -128,7 +128,10 @@ static rocsparse_status rocsparse_trm_transpose(rocsparse_handle          handle
     const rocsparse_indextype csrt_col_ind_indextype = csr_col_ind_indextype;
 
     hipStream_t stream = handle->stream;
-    // TODO: this need to be changed.
+    // Guard: if transposed arrays were already allocated for this info object,
+    // that signals an inconsistent re-analysis attempt and should not occur via
+    // the public API.  Return an internal error to surface the bug rather than
+    // silently overwriting or leaking allocations.
     // LCOV_EXCL_START
     if(info->get_transposed_perm() != nullptr || info->get_transposed_row_ptr() != nullptr
        || info->get_transposed_col_ind() != nullptr)

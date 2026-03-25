@@ -2563,9 +2563,10 @@ try
     (*descr)->format   = rocsparse_format_ell;
 
     //
-    // This is not really the number of non-zeros.
-    // TODO: refactor the descriptors and having a proper design (get_nnz and different implementation for different format).
-    // ell_width = nnz / rows.
+    // For ELL format nnz holds ell_width * rows (the total number of stored
+    // entries including padding).  This differs from the strict "number of
+    // structural non-zeros" used for other formats; callers must be aware of
+    // this convention.
     //
     (*descr)->nnz = ell_width * rows;
     RETURN_IF_ROCSPARSE_ERROR(rocsparse_create_mat_descr(&(*descr)->descr));

@@ -156,7 +156,8 @@ rocsparse_status rocsparse::csr2bsr_core(rocsparse_handle          handle,
     const J nb = (n + block_dim - 1) / block_dim;
 
     //
-    // TODO: should it be user responsibility ?
+    // Zero-initialize the value array so that padding entries in partially-filled
+    // BSR blocks are well-defined and do not affect numerical results.
     //
     RETURN_IF_HIP_ERROR(
         hipMemsetAsync(bsr_val, 0, sizeof(T) * nnzb * block_dim * block_dim, handle->stream));

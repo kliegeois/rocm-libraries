@@ -24,11 +24,169 @@
 
 #pragma once
 
+#include "../level2/rocsparse_csrsv.hpp"
 #include "rocsparse_control.hpp"
 #include "rocsparse_csrsm_info.hpp"
+#include "rocsparse_dnvec_descr.hpp"
 
 namespace rocsparse
 {
+    // ---------------------------------------------------------------------------
+    // Thin adapters that construct a spmat/dnvec descriptor from legacy scalar
+    // arguments and forward to the current (non-deprecated) csrsv entry points.
+    // Used by csrsm when nrhs == 1.
+    // ---------------------------------------------------------------------------
+    template <typename I, typename J, typename T>
+    inline rocsparse_status csrsv_buffer_size_template(rocsparse_handle          handle,
+                                                       rocsparse_operation       op,
+                                                       int64_t                   m,
+                                                       int64_t                   nnz,
+                                                       const rocsparse_mat_descr descr,
+                                                       const void*               csr_val,
+                                                       const void*               csr_row_ptr,
+                                                       const void*               csr_col_ind,
+                                                       rocsparse_mat_info        info,
+                                                       size_t*                   p_buffer_size)
+    {
+        _rocsparse_spmat_descr csr(rocsparse_format_csr,
+                                   false,
+                                   static_cast<int64_t>(1),
+                                   m,
+                                   m,
+                                   nnz,
+                                   rocsparse::get_datatype<T>(),
+                                   csr_val,
+                                   nullptr,
+                                   static_cast<int64_t>(0),
+                                   rocsparse::get_indextype<I>(),
+                                   csr_row_ptr,
+                                   nullptr,
+                                   static_cast<int64_t>(0),
+                                   rocsparse::get_indextype<J>(),
+                                   csr_col_ind,
+                                   nullptr,
+                                   static_cast<int64_t>(0),
+                                   descr->base,
+                                   descr,
+                                   info);
+        RETURN_IF_ROCSPARSE_ERROR(
+            rocsparse::csrsv_analysis_buffer_size(handle, op, &csr, p_buffer_size));
+        size_t solve_size;
+        RETURN_IF_ROCSPARSE_ERROR(
+            rocsparse::csrsv_solve_buffer_size(handle, op, &csr, &solve_size));
+        p_buffer_size[0] = std::max(p_buffer_size[0], solve_size);
+        return rocsparse_status_success;
+    }
+
+    template <typename I, typename J, typename T>
+    inline rocsparse_status csrsv_analysis_template(rocsparse_handle          handle,
+                                                    rocsparse_operation       op,
+                                                    int64_t                   m,
+                                                    int64_t                   nnz,
+                                                    const rocsparse_mat_descr descr,
+                                                    const void*               csr_val,
+                                                    const void*               csr_row_ptr,
+                                                    const void*               csr_col_ind,
+                                                    rocsparse_mat_info        info,
+                                                    rocsparse_analysis_policy analysis,
+                                                    rocsparse_solve_policy    solve,
+                                                    rocsparse_csrsv_info*     p_csrsv_info,
+                                                    void*                     buffer)
+    {
+        _rocsparse_spmat_descr csr(rocsparse_format_csr,
+                                   false,
+                                   static_cast<int64_t>(1),
+                                   m,
+                                   m,
+                                   nnz,
+                                   rocsparse::get_datatype<T>(),
+                                   csr_val,
+                                   nullptr,
+                                   static_cast<int64_t>(0),
+                                   rocsparse::get_indextype<I>(),
+                                   csr_row_ptr,
+                                   nullptr,
+                                   static_cast<int64_t>(0),
+                                   rocsparse::get_indextype<J>(),
+                                   csr_col_ind,
+                                   nullptr,
+                                   static_cast<int64_t>(0),
+                                   descr->base,
+                                   descr,
+                                   info);
+        RETURN_IF_ROCSPARSE_ERROR(
+            rocsparse::csrsv_analysis(handle, op, &csr, analysis, solve, p_csrsv_info, buffer));
+        return rocsparse_status_success;
+    }
+
+    template <typename I, typename J, typename T>
+    inline rocsparse_status csrsv_solve_template(rocsparse_handle          handle,
+                                                 rocsparse_operation       op,
+                                                 int64_t                   m,
+                                                 int64_t                   nnz,
+                                                 const void*               alpha,
+                                                 const rocsparse_mat_descr descr,
+                                                 const void*               csr_val,
+                                                 const void*               csr_row_ptr,
+                                                 const void*               csr_col_ind,
+                                                 rocsparse_mat_info        info,
+                                                 const void*               x,
+                                                 int64_t                   x_inc,
+                                                 void*                     y,
+                                                 rocsparse_solve_policy    policy,
+                                                 rocsparse_csrsv_info      csrsv_info,
+                                                 void*                     buffer)
+    {
+        _rocsparse_spmat_descr csr(rocsparse_format_csr,
+                                   false,
+                                   static_cast<int64_t>(1),
+                                   m,
+                                   m,
+                                   nnz,
+                                   rocsparse::get_datatype<T>(),
+                                   csr_val,
+                                   nullptr,
+                                   static_cast<int64_t>(0),
+                                   rocsparse::get_indextype<I>(),
+                                   csr_row_ptr,
+                                   nullptr,
+                                   static_cast<int64_t>(0),
+                                   rocsparse::get_indextype<J>(),
+                                   csr_col_ind,
+                                   nullptr,
+                                   static_cast<int64_t>(0),
+                                   descr->base,
+                                   descr,
+                                   info);
+        _rocsparse_dnvec_descr dnx(static_cast<int64_t>(1),
+                                   m,
+                                   rocsparse::get_datatype<T>(),
+                                   x,
+                                   nullptr,
+                                   x_inc,
+                                   static_cast<int64_t>(0));
+        _rocsparse_dnvec_descr dny(static_cast<int64_t>(1),
+                                   m,
+                                   rocsparse::get_datatype<T>(),
+                                   y,
+                                   y,
+                                   static_cast<int64_t>(1),
+                                   static_cast<int64_t>(0));
+        RETURN_IF_ROCSPARSE_ERROR(rocsparse::csrsv_solve(handle,
+                                                         op,
+                                                         rocsparse::get_datatype<T>(),
+                                                         alpha,
+                                                         static_cast<int64_t>(0),
+                                                         &csr,
+                                                         &dnx,
+                                                         &dny,
+                                                         policy,
+                                                         csrsv_info,
+                                                         buffer));
+        return rocsparse_status_success;
+    }
+
+
     rocsparse_status csrsm_zero_pivot(rocsparse_handle     handle,
                                       rocsparse_csrsm_info info,
                                       rocsparse_indextype  indextype,

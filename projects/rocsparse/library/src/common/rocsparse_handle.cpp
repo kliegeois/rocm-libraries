@@ -200,7 +200,17 @@ rocsparse_status _rocsparse_handle::set_stream(hipStream_t user_stream)
 {
     ROCSPARSE_ROUTINE_TRACE;
 
-    // TODO check if stream is valid
+    // Validate that the stream handle is live. hipStreamQuery returns hipSuccess
+    // (stream idle) or hipErrorNotReady (stream has pending work), both of which
+    // are valid.  Any other error code means the handle is invalid.
+    if(user_stream != nullptr)
+    {
+        const hipError_t hip_status = hipStreamQuery(user_stream);
+        if(hip_status != hipSuccess && hip_status != hipErrorNotReady)
+        {
+            return rocsparse_status_invalid_handle;
+        }
+    }
     stream = user_stream;
 
     // blas set stream
@@ -227,7 +237,6 @@ rocsparse_status _rocsparse_handle::set_pointer_mode(rocsparse_pointer_mode user
 {
     ROCSPARSE_ROUTINE_TRACE;
 
-    // TODO check if stream is valid
     this->pointer_mode = user_mode;
 
     // blas set stream
@@ -337,8 +346,6 @@ catch(...)
 
 /*******************************************************************************
  * \brief convert hipError_t to rocsparse_status
- * TODO - enumerate library calls to hip runtime, enumerate possible errors from
- * those calls
  ******************************************************************************/
 rocsparse_status rocsparse::get_rocsparse_status_for_hip_status(hipError_t status)
 {
