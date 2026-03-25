@@ -1247,8 +1247,31 @@ void rocsparse_init_gebsr_rocsparseio(const char*          filename,
 
     if(import_dir != dir)
     {
-        std::cerr << "TODO, reorder ?" << std::endl;
-        exit(1);
+        // The on-disk block storage direction differs from what the caller requested.
+        // Re-layout each block between row-major and column-major using an out-of-place copy.
+        const size_t       nblocks = size_t(nnzb);
+        const size_t       brows   = size_t(row_block_dim);
+        const size_t       bcols   = size_t(col_block_dim);
+        std::vector<T>     tmp(brows * bcols);
+        for(size_t b = 0; b < nblocks; ++b)
+        {
+            T* block = val.data() + b * brows * bcols;
+            std::copy(block, block + brows * bcols, tmp.data());
+            if(import_dir == rocsparse_direction_row)
+            {
+                // row-major → column-major: tmp[r*bcols+c] → block[c*brows+r]
+                for(size_t r = 0; r < brows; ++r)
+                    for(size_t c = 0; c < bcols; ++c)
+                        block[c * brows + r] = tmp[r * bcols + c];
+            }
+            else
+            {
+                // column-major → row-major: tmp[c*brows+r] → block[r*bcols+c]
+                for(size_t r = 0; r < brows; ++r)
+                    for(size_t c = 0; c < bcols; ++c)
+                        block[r * bcols + c] = tmp[c * brows + r];
+            }
+        }
     }
 }
 

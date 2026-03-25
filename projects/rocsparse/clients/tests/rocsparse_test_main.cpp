@@ -25,6 +25,7 @@
 #include "rocsparse_clients_envariables.hpp"
 #include "rocsparse_data.hpp"
 #include "rocsparse_parse_data.hpp"
+#include "rocsparse_random.hpp"
 #include "rocsparse_reproducibility.hpp"
 #include "rocsparse_test_listeners.hpp"
 #include "utility.hpp"
@@ -128,11 +129,20 @@ int main(int argc, char** argv)
     // Override for showSkipped: -1 = auto, 0 = hide, 1 = show
     int showSkippedOverride = -1;
 
+    // Optional RNG seed (default matches compile-time default in rocsparse_random.cpp)
+    uint32_t rng_seed      = 69069;
+    bool     seed_override = false;
+
     for(int i = 1; i < argc; ++i)
     {
         if(strcmp(argv[i], "--device") == 0 && argc > i + 1)
         {
             dev = atoi(argv[i + 1]);
+        }
+        else if(strcmp(argv[i], "--seed") == 0 && argc > i + 1)
+        {
+            rng_seed      = static_cast<uint32_t>(std::stoul(argv[i + 1]));
+            seed_override = true;
         }
         else if(strcmp(argv[i], "--version") == 0)
         {
@@ -212,6 +222,14 @@ int main(int argc, char** argv)
 
     // Print test data path being used
     std::cout << "rocSPARSE data path: " << datapath << std::endl;
+
+    // Apply seed override and print active seed for reproducibility
+    if(seed_override)
+    {
+        rocsparse_seed_set(rocsparse_rng_t(rng_seed));
+        rocsparse_seedrand();
+    }
+    std::cout << "rocSPARSE RNG seed: " << rng_seed << std::endl;
 
     // Set data file path
     rocsparse_parse_data(argc, argv, datapath + "rocsparse_test.data");

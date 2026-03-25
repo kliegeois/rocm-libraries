@@ -28,8 +28,8 @@
 
 // Random number generator
 // Note: We do not use random_device to initialize the RNG, because we want
-// repeatability in case of test failure. TODO: Add seed as an optional CLI
-// argument, and print the seed on output, to ensure repeatability.
+// repeatability in case of test failure. Pass --seed <N> on the command line
+// to override the default seed; the active seed is printed at test startup.
 rocsparse_rng_t rocsparse_rng(69069);
 rocsparse_rng_t rocsparse_rng_nan(69069);
 rocsparse_rng_t rocsparse_seed(rocsparse_rng);
