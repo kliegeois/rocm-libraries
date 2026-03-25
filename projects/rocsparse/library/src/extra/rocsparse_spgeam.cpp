@@ -925,9 +925,9 @@ namespace rocsparse
 
                 if(mat_C != nullptr && mat_C->row_type == rocsparse_indextype_i32)
                 {
-                    // Temporary hack to handle the fact that we pass mat_C->nnz as an int64_t* but internally in order to match
-                    // the legacy API we handle nnz_C using int32_t* when csr_row_ptr_C is int32_t*
-                    mat_C->nnz = *reinterpret_cast<const int32_t*>(&mat_C->nnz);
+                    // nnz_C was written as int32_t into the lower 32 bits of int64_t nnz by the
+                    // legacy API path; extract it with a well-defined cast.
+                    mat_C->nnz = static_cast<int32_t>(mat_C->nnz);
                 }
 
                 return rocsparse_status_success;

@@ -909,9 +909,6 @@ FUNCTION_CONVERT(bell, bell)
     RETURN_IF_ROCSPARSE_ERROR(rocsparse_status_not_implemented);
 }
 
-//
-// Not implemented.
-//
 FUNCTION_CONVERT(coo, bell)
 {
     ROCSPARSE_ROUTINE_TRACE;

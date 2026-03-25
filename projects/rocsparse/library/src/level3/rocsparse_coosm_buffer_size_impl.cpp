@@ -51,10 +51,11 @@ rocsparse_status rocsparse::coosm_buffer_size_core(rocsparse_handle          han
     const T* coo_val     = reinterpret_cast<const T*>(coo_val_);
     const I* coo_col_ind = reinterpret_cast<const I*>(coo_col_ind_);
 
+    // csrsm_buffer_size_template only uses m, nnz, nrhs, and operation type to compute the
+    // buffer size — the row pointer is stored in a descriptor but never dereferenced during
+    // the buffer-size query.  Pass nullptr rather than a fake non-null sentinel.
     if(std::is_same<I, int32_t>() && nnz < std::numeric_limits<int32_t>::max())
     {
-        // Trick since it is not used in csrsm_buffer_size, otherwise we need to create a proper ptr array for nothing.
-        const int32_t* ptr = (const int32_t*)0x4;
         RETURN_IF_ROCSPARSE_ERROR(
             (rocsparse::csrsm_buffer_size_template<int32_t, int32_t, T>(handle,
                                                                         trans_A,
@@ -64,7 +65,7 @@ rocsparse_status rocsparse::coosm_buffer_size_core(rocsparse_handle          han
                                                                         nnz,
                                                                         descr,
                                                                         coo_val,
-                                                                        ptr,
+                                                                        nullptr,
                                                                         coo_col_ind,
                                                                         order_B,
                                                                         info,
@@ -73,12 +74,6 @@ rocsparse_status rocsparse::coosm_buffer_size_core(rocsparse_handle          han
     }
     else
     {
-        //
-        // Trick since it is not used in csrsm_buffer_size, otherwise we need to create a proper ptr array for nothing.
-        //
-        // Note: If this is not used, then it shouldn't be there!
-        //
-        const int64_t* ptr = (const int64_t*)0x4;
         RETURN_IF_ROCSPARSE_ERROR(
             (rocsparse::csrsm_buffer_size_template<int64_t, int64_t, T>(handle,
                                                                         trans_A,
@@ -88,7 +83,7 @@ rocsparse_status rocsparse::coosm_buffer_size_core(rocsparse_handle          han
                                                                         nnz,
                                                                         descr,
                                                                         coo_val,
-                                                                        ptr,
+                                                                        nullptr,
                                                                         coo_col_ind,
                                                                         order_B,
                                                                         info,
