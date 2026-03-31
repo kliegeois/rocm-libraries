@@ -120,11 +120,10 @@ try
         {
             size_t current_stack_size = 0;
             THROW_IF_HIP_ERROR(hipDeviceGetLimit(&current_stack_size, hipLimitStackSize));
-            const size_t required_stack_size = 128 * 1024;
+            const size_t required_stack_size = 64 * 1024;
             if(current_stack_size < required_stack_size)
             {
-                THROW_IF_HIP_ERROR(
-                    hipDeviceSetLimit(hipLimitStackSize, required_stack_size));
+                THROW_IF_HIP_ERROR(hipDeviceSetLimit(hipLimitStackSize, required_stack_size));
             }
         }
     }
