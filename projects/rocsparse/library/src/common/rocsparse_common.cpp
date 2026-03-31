@@ -260,7 +260,7 @@ namespace rocsparse
     }
 
     template <uint32_t BLOCKSIZE, typename I, typename A, typename T>
-    ROCSPARSE_KERNEL(BLOCKSIZE)
+    ROCSPARSE_KERNEL_NO_ASAN(BLOCKSIZE)
     void scale_2d_kernel(I       m,
                          I       n,
                          int64_t ld,

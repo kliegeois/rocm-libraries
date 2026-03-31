@@ -29,7 +29,7 @@
 namespace rocsparse
 {
     template <uint32_t BLOCKSIZE, uint32_t WFSIZE, uint32_t BLOCKDIM, typename I, typename J>
-    ROCSPARSE_KERNEL(BLOCKSIZE)
+    ROCSPARSE_KERNEL_NO_ASAN(BLOCKSIZE)
     void csr2bsr_nnz_wavefront_per_row_multipass_kernel(J                    m,
                                                         J                    n,
                                                         J                    mb,
@@ -127,7 +127,7 @@ namespace rocsparse
     }
 
     template <uint32_t BLOCKSIZE, uint32_t BLOCKDIM, typename I, typename J>
-    ROCSPARSE_KERNEL(BLOCKSIZE)
+    ROCSPARSE_KERNEL_NO_ASAN(BLOCKSIZE)
     void csr2bsr_nnz_block_per_row_multipass_kernel(J                    m,
                                                     J                    n,
                                                     J                    mb,

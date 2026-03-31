@@ -37,7 +37,7 @@
 namespace rocsparse
 {
     template <uint32_t BLOCKSIZE, uint32_t WFSIZE, bool SLEEP, typename I, typename J, typename T>
-    ROCSPARSE_KERNEL(BLOCKSIZE)
+    ROCSPARSE_KERNEL_NO_ASAN(BLOCKSIZE)
     void csrsm(rocsparse_operation transB,
                J                   m,
                J                   nrhs,
