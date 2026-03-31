@@ -63,7 +63,6 @@ Tests:
   spmm_alg: [rocsparse_spmm_alg_csr]
   orderB: [rocsparse_order_column]
   orderC: [rocsparse_order_row]
-  skip_xnack_plus: true
 
 - name: spmm_batched_csc
   category: quick
@@ -84,7 +83,6 @@ Tests:
   spmm_alg: [rocsparse_spmm_alg_csr]
   orderB: [rocsparse_order_row]
   orderC: [rocsparse_order_column]
-  skip_xnack_plus: true
 
 - name: spmm_batched_csc
   category: quick
@@ -105,7 +103,6 @@ Tests:
   spmm_alg: [rocsparse_spmm_alg_csr]
   orderB: [rocsparse_order_column]
   orderC: [rocsparse_order_column]
-  skip_xnack_plus: true
 
 - name: spmm_batched_csc
   category: quick
@@ -129,7 +126,6 @@ Tests:
   rand_gen_min: -128.0
   rand_gen_max: 127.0
   convert_to_int: true
-  skip_xnack_plus: true
 
 - name: spmm_batched_csc
   category: quick
@@ -153,7 +149,6 @@ Tests:
   rand_gen_min: -128.0
   rand_gen_max: 127.0
   convert_to_int: true
-  skip_xnack_plus: true
 
 ##############################
 # Precheckin
@@ -190,7 +185,6 @@ Tests:
              nos5,
              nos6,
              nos7]
-  skip_xnack_plus: true
 
 - name: spmm_batched_csc_file
   category: pre_checkin
@@ -212,7 +206,6 @@ Tests:
   orderB: [rocsparse_order_row]
   orderC: [rocsparse_order_column]
   filename: [amazon0312]
-  skip_xnack_plus: true
 
 - name: spmm_batched_csc_file
   category: pre_checkin
@@ -234,7 +227,6 @@ Tests:
   orderB: [rocsparse_order_row]
   orderC: [rocsparse_order_row]
   filename: [mac_econ_fwd500]
-  skip_xnack_plus: true
 
 - name: spmm_batched_csc_file
   category: pre_checkin
@@ -256,7 +248,6 @@ Tests:
   orderB: [rocsparse_order_row]
   orderC: [rocsparse_order_column]
   filename: [Chebyshev4]
-  skip_xnack_plus: true
 
 - name: spmm_batched_csc_file
   category: pre_checkin
@@ -282,7 +273,6 @@ Tests:
   rand_gen_min: -128.0
   rand_gen_max: 127.0
   convert_to_int: true
-  skip_xnack_plus: true
 
 - name: spmm_batched_csc_graph_test
   category: pre_checkin
@@ -304,7 +294,6 @@ Tests:
   orderB: [rocsparse_order_row]
   orderC: [rocsparse_order_column]
   graph_test: true
-  skip_xnack_plus: true
 
 - name: spmm_batched_csc_graph_test
   category: pre_checkin
@@ -326,7 +315,6 @@ Tests:
   orderB: [rocsparse_order_row]
   orderC: [rocsparse_order_row]
   graph_test: true
-  skip_xnack_plus: true
 
 - name: spmm_batched_csc_graph_test
   category: pre_checkin
@@ -348,7 +336,6 @@ Tests:
   orderB: [rocsparse_order_row]
   orderC: [rocsparse_order_column]
   graph_test: true
-  skip_xnack_plus: true
 
 ##############################
 # Nightly
@@ -373,7 +360,6 @@ Tests:
   spmm_alg: [rocsparse_spmm_alg_csr]
   orderB: [rocsparse_order_column]
   orderC: [rocsparse_order_row]
-  skip_xnack_plus: true
 
 - name: spmm_batched_csc_file
   category: nightly
@@ -395,7 +381,6 @@ Tests:
   orderB: [rocsparse_order_column, rocsparse_order_row]
   orderC: [rocsparse_order_column]
   filename: [sme3Dc]
-  skip_xnack_plus: true
 
 - name: spmm_batched_csc_file
   category: nightly
@@ -417,7 +402,6 @@ Tests:
   orderB: [rocsparse_order_row]
   orderC: [rocsparse_order_column]
   filename: [webbase-1M]
-  skip_xnack_plus: true
 
 - name: spmm_batched_csc_file
   category: nightly
@@ -439,7 +423,6 @@ Tests:
   orderB: [rocsparse_order_column]
   orderC: [rocsparse_order_row]
   filename: [Chevron2]
-  skip_xnack_plus: true
 
 - name: spmm_batched_csc_file
   category: nightly
@@ -461,7 +444,6 @@ Tests:
   orderB: [rocsparse_order_row]
   orderC: [rocsparse_order_column]
   filename: [shipsec1]
-  skip_xnack_plus: true
 
 - name: spmm_batched_csc_file
   category: nightly
@@ -483,7 +465,6 @@ Tests:
   orderB: [rocsparse_order_column]
   orderC: [rocsparse_order_row]
   filename: [bmwcra_1]
-  skip_xnack_plus: true
 
 ##############################
 # Stress
@@ -515,4 +496,4 @@ Tests:
   rand_gen_max: 100.0
   convert_to_int: true
   filename: [mac_econ_fwd500,
-             scircuit]  skip_xnack_plus: true
+             scircuit]
