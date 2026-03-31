@@ -36,10 +36,20 @@
 #include <stdint.h>
 
 /// \cond DO_NOT_DOCUMENT
+// ASAN false positive: GPU kernels report false heap-use-after-free / heap-buffer-overflow
+// under xnack+ ASAN instrumentation. Disable ASAN for all GPU kernels.
+#if defined(__SANITIZE_ADDRESS__)
+#define ROCSPARSE_KERNEL_W(MAX_THREADS_PER_BLOCK, MIN_WARPS_PER_EXECUTION_UNIT) \
+    __launch_bounds__(MAX_THREADS_PER_BLOCK, MIN_WARPS_PER_EXECUTION_UNIT)       \
+        __attribute__((no_sanitize("address"))) static __global__
+#define ROCSPARSE_KERNEL(MAX_THREADS_PER_BLOCK) \
+    __launch_bounds__(MAX_THREADS_PER_BLOCK) __attribute__((no_sanitize("address"))) static __global__
+#else
 #define ROCSPARSE_KERNEL_W(MAX_THREADS_PER_BLOCK, MIN_WARPS_PER_EXECUTION_UNIT) \
     __launch_bounds__(MAX_THREADS_PER_BLOCK, MIN_WARPS_PER_EXECUTION_UNIT) static __global__
 #define ROCSPARSE_KERNEL(MAX_THREADS_PER_BLOCK) \
     __launch_bounds__(MAX_THREADS_PER_BLOCK) static __global__
+#endif
 #define ROCSPARSE_DEVICE_ILF static __device__ __forceinline__
 /// \endcond
 
