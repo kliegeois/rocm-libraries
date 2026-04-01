@@ -207,22 +207,23 @@ namespace rocsparse
     // Splitting row into several chunks such that we can use shared memory to store whether
     // a column index is populated or not.
     template <uint32_t BLOCKSIZE, uint32_t WFSIZE, typename I, typename J, typename T>
-    ROCSPARSE_DEVICE_ILF void csrgeam_fill_multipass_device(int64_t m,
-                                                            int64_t n,
-                                                            T       alpha,
-                                                            const I* __restrict__ csr_row_ptr_A,
-                                                            const J* __restrict__ csr_col_ind_A,
-                                                            const T* __restrict__ csr_val_A,
-                                                            T beta,
-                                                            const I* __restrict__ csr_row_ptr_B,
-                                                            const J* __restrict__ csr_col_ind_B,
-                                                            const T* __restrict__ csr_val_B,
-                                                            const I* __restrict__ csr_row_ptr_C,
-                                                            J* __restrict__ csr_col_ind_C,
-                                                            T* __restrict__ csr_val_C,
-                                                            rocsparse_index_base idx_base_A,
-                                                            rocsparse_index_base idx_base_B,
-                                                            rocsparse_index_base idx_base_C)
+    ROCSPARSE_DEVICE_ILF_NO_ASAN void
+        csrgeam_fill_multipass_device(int64_t m,
+                                      int64_t n,
+                                      T       alpha,
+                                      const I* __restrict__ csr_row_ptr_A,
+                                      const J* __restrict__ csr_col_ind_A,
+                                      const T* __restrict__ csr_val_A,
+                                      T beta,
+                                      const I* __restrict__ csr_row_ptr_B,
+                                      const J* __restrict__ csr_col_ind_B,
+                                      const T* __restrict__ csr_val_B,
+                                      const I* __restrict__ csr_row_ptr_C,
+                                      J* __restrict__ csr_col_ind_C,
+                                      T* __restrict__ csr_val_C,
+                                      rocsparse_index_base idx_base_A,
+                                      rocsparse_index_base idx_base_B,
+                                      rocsparse_index_base idx_base_C)
     {
         // Lane id
         const uint32_t lid = hipThreadIdx_x & (WFSIZE - 1);
