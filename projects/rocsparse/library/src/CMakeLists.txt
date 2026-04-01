@@ -682,3 +682,23 @@ set(rocsparse_source
   src/generic/spic0/rocsparse_spic0_buffer_size.cpp
 
 )
+
+# Disable address sanitizer for primitives files that compile rocprim GPU kernels.
+# rocprim kernels produce false positives under GPU ASAN (xnack+) because their
+# device memory accesses get instrumented against the host shadow memory.
+if(BUILD_ADDRESS_SANITIZER)
+  set(rocsparse_primitives_sources
+    src/primitives/rocsparse_radix_sort_pairs.cpp
+    src/primitives/rocsparse_radix_sort_keys.cpp
+    src/primitives/rocsparse_run_length_encode.cpp
+    src/primitives/rocsparse_exclusive_scan.cpp
+    src/primitives/rocsparse_inclusive_scan.cpp
+    src/primitives/rocsparse_find_max.cpp
+    src/primitives/rocsparse_find_sum.cpp
+    src/primitives/rocsparse_segmented_radix_sort_pairs.cpp
+    src/primitives/rocsparse_segmented_radix_sort_keys.cpp
+  )
+  set_source_files_properties(${rocsparse_primitives_sources}
+    PROPERTIES COMPILE_FLAGS "-fno-sanitize=address"
+  )
+endif()
