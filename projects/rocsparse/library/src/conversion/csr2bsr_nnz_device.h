@@ -349,7 +349,7 @@ namespace rocsparse
     }
 
     template <uint32_t BLOCKSIZE, typename I, typename J>
-    ROCSPARSE_KERNEL(BLOCKSIZE)
+    ROCSPARSE_KERNEL_NO_ASAN(BLOCKSIZE)
     void csr2bsr_nnz_compute_nnz_total_kernel(J mb,
                                               const I* __restrict__ bsr_row_ptr,
                                               I* __restrict__ bsr_nnz)

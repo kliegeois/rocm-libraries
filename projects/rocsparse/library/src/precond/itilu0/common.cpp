@@ -63,7 +63,7 @@ namespace rocsparse
     //
     //
     template <uint32_t BLOCKSIZE, typename T, typename I>
-    ROCSPARSE_KERNEL(BLOCKSIZE)
+    ROCSPARSE_KERNEL_NO_ASAN(BLOCKSIZE)
     void kernel_set_permuted_array(I size_, T* a_, const T* x_, const I* perm_)
     {
         const I i = hipBlockDim_x * hipBlockIdx_x + hipThreadIdx_x;

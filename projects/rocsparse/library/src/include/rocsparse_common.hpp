@@ -2738,7 +2738,7 @@ namespace rocsparse
 
     // BSR gather functionality to permute the BSR values array
     template <uint32_t WFSIZE, uint32_t DIMY, uint32_t BSRDIM, typename I, typename T>
-    ROCSPARSE_KERNEL(WFSIZE* DIMY)
+    ROCSPARSE_KERNEL_NO_ASAN(WFSIZE* DIMY)
     void bsr_gather(rocsparse_direction dir,
                     I                   nnzb,
                     const I* __restrict__ perm,

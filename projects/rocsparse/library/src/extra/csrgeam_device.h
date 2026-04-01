@@ -29,7 +29,7 @@
 namespace rocsparse
 {
     template <uint32_t BLOCKSIZE, typename I, typename J>
-    ROCSPARSE_KERNEL(BLOCKSIZE)
+    ROCSPARSE_KERNEL_NO_ASAN(BLOCKSIZE)
     void csrgeam_check_row_ptr(J m, I* __restrict__ csr_row_ptr_C, rocsparse_index_base idx_base_C)
     {
         const J gid = BLOCKSIZE * hipBlockIdx_x + hipThreadIdx_x;
@@ -57,7 +57,7 @@ namespace rocsparse
     // Splitting row into several chunks such that we can use shared memory to store whether
     // a column index is populated or not.
     template <uint32_t BLOCKSIZE, uint32_t WFSIZE, typename I, typename J, typename K>
-    ROCSPARSE_KERNEL(BLOCKSIZE)
+    ROCSPARSE_KERNEL_NO_ASAN(BLOCKSIZE)
     void csrgeam_nnz_multipass_device(int64_t m,
                                       int64_t n,
                                       const I* __restrict__ csr_row_ptr_A,
