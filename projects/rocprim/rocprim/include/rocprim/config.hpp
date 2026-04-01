@@ -83,9 +83,18 @@
     #endif
 
     #ifndef DOXYGEN_DOCUMENTATION_BUILD
-        #define ROCPRIM_FORCE_INLINE __attribute__((always_inline))
-        #define ROCPRIM_INLINE inline
-        #define ROCPRIM_KERNEL __global__ __attribute__((__visibility__("hidden")))
+        #if defined(__SANITIZE_ADDRESS__)
+            #define ROCPRIM_FORCE_INLINE \
+                __attribute__((always_inline)) __attribute__((no_sanitize("address")))
+            #define ROCPRIM_INLINE inline __attribute__((no_sanitize("address")))
+            #define ROCPRIM_KERNEL \
+                __global__ __attribute__((__visibility__("hidden"))) \
+                __attribute__((no_sanitize("address")))
+        #else
+            #define ROCPRIM_FORCE_INLINE __attribute__((always_inline))
+            #define ROCPRIM_INLINE inline
+            #define ROCPRIM_KERNEL __global__ __attribute__((__visibility__("hidden")))
+        #endif
         #define ROCPRIM_LAUNCH_BOUNDS(...) __launch_bounds__(__VA_ARGS__)
     #else
         // Prefer simpler signatures to let Sphinx/Breathe parse them
