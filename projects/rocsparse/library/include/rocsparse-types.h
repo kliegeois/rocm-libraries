@@ -36,35 +36,32 @@
 #include <stdint.h>
 
 /// \cond DO_NOT_DOCUMENT
+// Under ASAN (xnack+ mode), GPU kernels produce false heap-use-after-free /
+// heap-buffer-overflow because device memory accesses get checked against the
+// host shadow memory.  Suppress ASAN on ALL GPU kernels and device functions
+// to avoid these false positives.
+#if defined(__SANITIZE_ADDRESS__)
+#define ROCSPARSE_KERNEL_W(MAX_THREADS_PER_BLOCK, MIN_WARPS_PER_EXECUTION_UNIT) \
+    __launch_bounds__(MAX_THREADS_PER_BLOCK, MIN_WARPS_PER_EXECUTION_UNIT)      \
+        __attribute__((no_sanitize("address"))) static __global__
+#define ROCSPARSE_KERNEL(MAX_THREADS_PER_BLOCK) \
+    __launch_bounds__(MAX_THREADS_PER_BLOCK)    \
+        __attribute__((no_sanitize("address"))) static __global__
+#define ROCSPARSE_DEVICE_ILF \
+    static __device__ __forceinline__ __attribute__((no_sanitize("address")))
+#else
 #define ROCSPARSE_KERNEL_W(MAX_THREADS_PER_BLOCK, MIN_WARPS_PER_EXECUTION_UNIT) \
     __launch_bounds__(MAX_THREADS_PER_BLOCK, MIN_WARPS_PER_EXECUTION_UNIT) static __global__
 #define ROCSPARSE_KERNEL(MAX_THREADS_PER_BLOCK) \
     __launch_bounds__(MAX_THREADS_PER_BLOCK) static __global__
-
-// ASAN false positive: some GPU kernels report false heap-use-after-free / heap-buffer-overflow
-// under xnack+ ASAN instrumentation. Use these macros only for kernels with known false positives.
-#if defined(__SANITIZE_ADDRESS__)
-#define ROCSPARSE_KERNEL_W_NO_ASAN(MAX_THREADS_PER_BLOCK, MIN_WARPS_PER_EXECUTION_UNIT) \
-    __launch_bounds__(MAX_THREADS_PER_BLOCK, MIN_WARPS_PER_EXECUTION_UNIT)              \
-        __attribute__((no_sanitize("address"))) static __global__
-#define ROCSPARSE_KERNEL_NO_ASAN(MAX_THREADS_PER_BLOCK) \
-    __launch_bounds__(MAX_THREADS_PER_BLOCK)            \
-        __attribute__((no_sanitize("address"))) static __global__
-#else
-#define ROCSPARSE_KERNEL_W_NO_ASAN(MAX_THREADS_PER_BLOCK, MIN_WARPS_PER_EXECUTION_UNIT) \
-    __launch_bounds__(MAX_THREADS_PER_BLOCK, MIN_WARPS_PER_EXECUTION_UNIT) static __global__
-#define ROCSPARSE_KERNEL_NO_ASAN(MAX_THREADS_PER_BLOCK) \
-    __launch_bounds__(MAX_THREADS_PER_BLOCK) static __global__
-#endif
-
-#if defined(__SANITIZE_ADDRESS__)
-#define ROCSPARSE_DEVICE_ILF_NO_ASAN \
-    static __device__ __forceinline__ __attribute__((no_sanitize("address")))
-#else
-#define ROCSPARSE_DEVICE_ILF_NO_ASAN static __device__ __forceinline__
-#endif
-
 #define ROCSPARSE_DEVICE_ILF static __device__ __forceinline__
+#endif
+
+// Legacy aliases — kept for backward compatibility with existing code that
+// explicitly uses the _NO_ASAN variants.  Now identical to the base macros.
+#define ROCSPARSE_KERNEL_W_NO_ASAN ROCSPARSE_KERNEL_W
+#define ROCSPARSE_KERNEL_NO_ASAN   ROCSPARSE_KERNEL
+#define ROCSPARSE_DEVICE_ILF_NO_ASAN ROCSPARSE_DEVICE_ILF
 /// \endcond
 
 /*! \ingroup types_module
