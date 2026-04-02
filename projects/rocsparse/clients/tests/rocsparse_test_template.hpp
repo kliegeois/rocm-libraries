@@ -160,6 +160,15 @@ namespace
                     }
                 }
 
+                if(arg.skip_asan)
+                {
+#if defined(ROCSPARSE_WITH_ASAN)
+                    return false;
+#else
+                    return true;
+#endif
+                }
+
                 return true;
             }
 
