@@ -123,6 +123,12 @@ if(BUILD_ADDRESS_SANITIZER)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -shared-libasan")
   set(CMAKE_C_LINK_EXECUTABLE "${CMAKE_C_LINK_EXECUTABLE} -fuse-ld=lld")
 
+  # Define a macro visible to both host and device compilation so that GPU
+  # kernels can suppress ASAN false positives via no_sanitize attributes.
+  # The compiler-internal __SANITIZE_ADDRESS__ may not be defined during
+  # device (amdgcn) compilation, so this explicit -D flag is needed.
+  add_compile_definitions(ROCSPARSE_WITH_ASAN)
+
   # Fortran not supported, add_link_options below invalid for fortran linking
   set(BUILD_FORTRAN_CLIENTS OFF)
 endif()
