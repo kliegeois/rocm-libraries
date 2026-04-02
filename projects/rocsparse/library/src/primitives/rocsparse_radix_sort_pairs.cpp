@@ -26,21 +26,22 @@
 #include "rocsparse_primitives.hpp"
 #include "rocsparse_utility.hpp"
 
+// Suppress ASAN on all functions in this TU including rocprim template instantiations.
+// The pragma must wrap the call sites (where templates are instantiated),
+// not just the #include (where templates are declared).
 #if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
 _Pragma("clang attribute push(__attribute__((no_sanitize(\"address\"))), apply_to = function)")
 #endif
-#include <rocprim/rocprim.hpp>
-#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
-_Pragma("clang attribute pop")
-#endif
 
-template <typename K, typename V>
-rocsparse_status rocsparse::primitives::radix_sort_pairs_buffer_size(rocsparse_handle handle,
-                                                                     size_t           length,
-                                                                     uint32_t         startbit,
-                                                                     uint32_t         endbit,
-                                                                     size_t*          buffer_size,
-                                                                     bool using_double_buffers)
+#include <rocprim/rocprim.hpp>
+
+    template <typename K, typename V>
+    rocsparse_status rocsparse::primitives::radix_sort_pairs_buffer_size(rocsparse_handle handle,
+                                                                         size_t           length,
+                                                                         uint32_t         startbit,
+                                                                         uint32_t         endbit,
+                                                                         size_t* buffer_size,
+                                                                         bool using_double_buffers)
 {
     ROCSPARSE_ROUTINE_TRACE;
 
@@ -140,6 +141,10 @@ rocsparse_status rocsparse::primitives::radix_sort_pairs(rocsparse_handle handle
     return rocsparse_status_success;
 }
 
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
+_Pragma("clang attribute pop")
+#endif
+
 #define INSTANTIATE(KTYPE, VTYPE)                                                                \
     template rocsparse_status rocsparse::primitives::radix_sort_pairs_buffer_size<KTYPE, VTYPE>( \
         rocsparse_handle handle,                                                                 \
@@ -158,7 +163,7 @@ rocsparse_status rocsparse::primitives::radix_sort_pairs(rocsparse_handle handle
         size_t                buffer_size,                                                       \
         void*                 buffer);
 
-INSTANTIATE(int32_t, int32_t);
+    INSTANTIATE(int32_t, int32_t);
 INSTANTIATE(int32_t, int64_t);
 INSTANTIATE(int64_t, int32_t);
 INSTANTIATE(int64_t, int64_t);

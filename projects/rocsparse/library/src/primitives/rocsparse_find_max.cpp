@@ -26,18 +26,19 @@
 #include "rocsparse_primitives.hpp"
 #include "rocsparse_utility.hpp"
 
+// Suppress ASAN on all functions in this TU including rocprim template instantiations.
+// The pragma must wrap the call sites (where templates are instantiated),
+// not just the #include (where templates are declared).
 #if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
 _Pragma("clang attribute push(__attribute__((no_sanitize(\"address\"))), apply_to = function)")
 #endif
-#include <rocprim/rocprim.hpp>
-#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
-_Pragma("clang attribute pop")
-#endif
 
-template <typename I, typename J>
-rocsparse_status rocsparse::primitives::find_max_buffer_size(rocsparse_handle handle,
-                                                             size_t           length,
-                                                             size_t*          buffer_size)
+#include <rocprim/rocprim.hpp>
+
+    template <typename I, typename J>
+    rocsparse_status rocsparse::primitives::find_max_buffer_size(rocsparse_handle handle,
+                                                                 size_t           length,
+                                                                 size_t*          buffer_size)
 {
     ROCSPARSE_ROUTINE_TRACE;
 
@@ -64,6 +65,10 @@ rocsparse_status rocsparse::primitives::find_max(
     return rocsparse_status_success;
 }
 
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
+_Pragma("clang attribute pop")
+#endif
+
 #define INSTANTIATE(ITYPE, JTYPE)                                                           \
     template rocsparse_status rocsparse::primitives::find_max_buffer_size<ITYPE, JTYPE>(    \
         rocsparse_handle handle, size_t length, size_t * buffer_size);                      \
@@ -74,6 +79,6 @@ rocsparse_status rocsparse::primitives::find_max(
                                                               size_t           buffer_size, \
                                                               void*            buffer);
 
-INSTANTIATE(int32_t, int32_t);
+    INSTANTIATE(int32_t, int32_t);
 INSTANTIATE(int64_t, int64_t);
 #undef INSTANTIATE

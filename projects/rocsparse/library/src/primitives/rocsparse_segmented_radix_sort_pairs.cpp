@@ -26,13 +26,14 @@
 #include "rocsparse_primitives.hpp"
 #include "rocsparse_utility.hpp"
 
+// Suppress ASAN on all functions in this TU including rocprim template instantiations.
+// The pragma must wrap the call sites (where templates are instantiated),
+// not just the #include (where templates are declared).
 #if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
 _Pragma("clang attribute push(__attribute__((no_sanitize(\"address\"))), apply_to = function)")
 #endif
+
 #include <rocprim/rocprim.hpp>
-#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
-_Pragma("clang attribute pop")
-#endif
 
 template <typename K, typename V, typename I>
 rocsparse_status
@@ -113,6 +114,10 @@ rocsparse_status rocsparse::primitives::segmented_radix_sort_pairs(rocsparse_han
 
     return rocsparse_status_success;
 }
+
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
+_Pragma("clang attribute pop")
+#endif
 
 #define INSTANTIATE(KTYPE, VTYPE, ITYPE)                                                    \
     template rocsparse_status                                                               \
