@@ -108,7 +108,7 @@ namespace rocsparse
     }
     __device__ __forceinline__ int8_t ldg(const int8_t* ptr)
     {
-#if defined(__SANITIZE_ADDRESS__)
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
         return *ptr;
 #else
         return __ldg(ptr);
@@ -116,7 +116,7 @@ namespace rocsparse
     }
     __device__ __forceinline__ int32_t ldg(const int32_t* ptr)
     {
-#if defined(__SANITIZE_ADDRESS__)
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
         return *ptr;
 #else
         return __ldg(ptr);
@@ -124,7 +124,7 @@ namespace rocsparse
     }
     __device__ __forceinline__ int64_t ldg(const int64_t* ptr)
     {
-#if defined(__SANITIZE_ADDRESS__)
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
         return *ptr;
 #else
         return __ldg(ptr);
@@ -132,7 +132,7 @@ namespace rocsparse
     }
     __device__ __forceinline__ float ldg(const float* ptr)
     {
-#if defined(__SANITIZE_ADDRESS__)
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
         return *ptr;
 #else
         return __ldg(ptr);
@@ -140,7 +140,7 @@ namespace rocsparse
     }
     __device__ __forceinline__ double ldg(const double* ptr)
     {
-#if defined(__SANITIZE_ADDRESS__)
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
         return *ptr;
 #else
         return __ldg(ptr);
@@ -148,7 +148,7 @@ namespace rocsparse
     }
     __device__ __forceinline__ rocsparse_float_complex ldg(const rocsparse_float_complex* ptr)
     {
-#if defined(__SANITIZE_ADDRESS__)
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
         return *ptr;
 #else
         return rocsparse_float_complex(__ldg((const float*)ptr), __ldg((const float*)ptr + 1));
@@ -156,7 +156,7 @@ namespace rocsparse
     }
     __device__ __forceinline__ rocsparse_double_complex ldg(const rocsparse_double_complex* ptr)
     {
-#if defined(__SANITIZE_ADDRESS__)
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
         return *ptr;
 #else
         return rocsparse_double_complex(__ldg((const double*)ptr), __ldg((const double*)ptr + 1));
@@ -600,7 +600,7 @@ namespace rocsparse
     }
     __device__ __forceinline__ float nontemporal_load(const float* ptr)
     {
-#if defined(__SANITIZE_ADDRESS__)
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
         return *ptr;
 #else
         return __builtin_nontemporal_load(ptr);
@@ -608,7 +608,7 @@ namespace rocsparse
     }
     __device__ __forceinline__ double nontemporal_load(const double* ptr)
     {
-#if defined(__SANITIZE_ADDRESS__)
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
         return *ptr;
 #else
         return __builtin_nontemporal_load(ptr);
@@ -617,7 +617,7 @@ namespace rocsparse
     __device__ __forceinline__ rocsparse_float_complex
         nontemporal_load(const rocsparse_float_complex* ptr)
     {
-#if defined(__SANITIZE_ADDRESS__)
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
         return *ptr;
 #else
         return rocsparse_float_complex(__builtin_nontemporal_load((const float*)ptr),
@@ -627,7 +627,7 @@ namespace rocsparse
     __device__ __forceinline__ rocsparse_double_complex
         nontemporal_load(const rocsparse_double_complex* ptr)
     {
-#if defined(__SANITIZE_ADDRESS__)
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
         return *ptr;
 #else
         return rocsparse_double_complex(__builtin_nontemporal_load((const double*)ptr),
@@ -636,7 +636,7 @@ namespace rocsparse
     }
     __device__ __forceinline__ int8_t nontemporal_load(const int8_t* ptr)
     {
-#if defined(__SANITIZE_ADDRESS__)
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
         return *ptr;
 #else
         return __builtin_nontemporal_load(ptr);
@@ -644,7 +644,7 @@ namespace rocsparse
     }
     __device__ __forceinline__ int32_t nontemporal_load(const int32_t* ptr)
     {
-#if defined(__SANITIZE_ADDRESS__)
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
         return *ptr;
 #else
         return __builtin_nontemporal_load(ptr);
@@ -652,7 +652,7 @@ namespace rocsparse
     }
     __device__ __forceinline__ int64_t nontemporal_load(const int64_t* ptr)
     {
-#if defined(__SANITIZE_ADDRESS__)
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
         return *ptr;
 #else
         return __builtin_nontemporal_load(ptr);
@@ -661,7 +661,7 @@ namespace rocsparse
 
     __device__ __forceinline__ void nontemporal_store(float val, float* ptr)
     {
-#if defined(__SANITIZE_ADDRESS__)
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
         *ptr = val;
 #else
         __builtin_nontemporal_store(val, ptr);
@@ -669,7 +669,7 @@ namespace rocsparse
     }
     __device__ __forceinline__ void nontemporal_store(double val, double* ptr)
     {
-#if defined(__SANITIZE_ADDRESS__)
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
         *ptr = val;
 #else
         __builtin_nontemporal_store(val, ptr);
@@ -678,7 +678,7 @@ namespace rocsparse
     __device__ __forceinline__ void nontemporal_store(rocsparse_float_complex  val,
                                                       rocsparse_float_complex* ptr)
     {
-#if defined(__SANITIZE_ADDRESS__)
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
         *ptr = val;
 #else
         __builtin_nontemporal_store(std::real(val), (float*)ptr);
@@ -688,7 +688,7 @@ namespace rocsparse
     __device__ __forceinline__ void nontemporal_store(rocsparse_double_complex  val,
                                                       rocsparse_double_complex* ptr)
     {
-#if defined(__SANITIZE_ADDRESS__)
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
         *ptr = val;
 #else
         __builtin_nontemporal_store(std::real(val), (double*)ptr);
@@ -697,7 +697,7 @@ namespace rocsparse
     }
     __device__ __forceinline__ void nontemporal_store(int8_t val, int8_t* ptr)
     {
-#if defined(__SANITIZE_ADDRESS__)
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
         *ptr = val;
 #else
         __builtin_nontemporal_store(val, ptr);
@@ -705,7 +705,7 @@ namespace rocsparse
     }
     __device__ __forceinline__ void nontemporal_store(int32_t val, int32_t* ptr)
     {
-#if defined(__SANITIZE_ADDRESS__)
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
         *ptr = val;
 #else
         __builtin_nontemporal_store(val, ptr);
@@ -713,7 +713,7 @@ namespace rocsparse
     }
     __device__ __forceinline__ void nontemporal_store(int64_t val, int64_t* ptr)
     {
-#if defined(__SANITIZE_ADDRESS__)
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
         *ptr = val;
 #else
         __builtin_nontemporal_store(val, ptr);

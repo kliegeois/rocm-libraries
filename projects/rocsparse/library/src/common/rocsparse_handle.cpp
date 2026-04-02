@@ -110,23 +110,10 @@ try
     // Wait for device transfer to finish
     THROW_IF_HIP_ERROR(hipStreamSynchronize(stream));
 
-    // With -fsanitize=address the kernels use dynamic stack (.amdhsa_uses_dynamic_stack 1)
-    // and require a larger per-thread stack size to run correctly.
-    {
-        const char* hsa_xnack     = getenv("HSA_XNACK");
-        const bool  is_xnack_plus = rocsparse::handle_get_xnack_mode(this) == "xnack+"
-                                   || (hsa_xnack && strcmp(hsa_xnack, "1") == 0);
-        if(is_xnack_plus)
-        {
-            size_t current_stack_size = 0;
-            THROW_IF_HIP_ERROR(hipDeviceGetLimit(&current_stack_size, hipLimitStackSize));
-            const size_t required_stack_size = 64 * 1024;
-            if(current_stack_size < required_stack_size)
-            {
-                THROW_IF_HIP_ERROR(hipDeviceSetLimit(hipLimitStackSize, required_stack_size));
-            }
-        }
-    }
+#if defined(ROCSPARSE_WITH_ASAN)
+    const size_t required_stack_size = 64 * 1024;
+    THROW_IF_HIP_ERROR(hipDeviceSetLimit(hipLimitStackSize, required_stack_size));
+#endif
 
     // create blas handle
     rocsparse::blas_impl blas_impl;
