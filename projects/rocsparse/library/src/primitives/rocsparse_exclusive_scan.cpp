@@ -26,7 +26,17 @@
 #include "rocsparse_primitives.hpp"
 #include "rocsparse_utility.hpp"
 
+// Suppress ASAN on all rocprim GPU kernels/device functions compiled in this TU.
+// rocprim's lookback-scan and other device code triggers false positives under
+// GPU ASAN (xnack+) because device memory accesses are checked against the host
+// shadow memory.
+#if defined(__SANITIZE_ADDRESS__)
+_Pragma("clang attribute push(__attribute__((no_sanitize(\"address\"))), apply_to = function)")
+#endif
 #include <rocprim/rocprim.hpp>
+#if defined(__SANITIZE_ADDRESS__)
+_Pragma("clang attribute pop")
+#endif
 
 template <typename I, typename J>
 rocsparse_status rocsparse::primitives::exclusive_scan_buffer_size(rocsparse_handle handle,

@@ -26,7 +26,13 @@
 #include "rocsparse_primitives.hpp"
 #include "rocsparse_utility.hpp"
 
+#if defined(__SANITIZE_ADDRESS__)
+_Pragma("clang attribute push(__attribute__((no_sanitize(\"address\"))), apply_to = function)")
+#endif
 #include <rocprim/rocprim.hpp>
+#if defined(__SANITIZE_ADDRESS__)
+_Pragma("clang attribute pop")
+#endif
 
 template <typename I, typename J>
 rocsparse_status rocsparse::primitives::find_max_buffer_size(rocsparse_handle handle,
