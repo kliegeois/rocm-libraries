@@ -28,6 +28,9 @@
 #include "rocsparse_convert_scalar.hpp"
 #include <map>
 
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
+_Pragma("clang attribute push(__attribute__((no_sanitize(\"address\"))), apply_to = function)")
+#endif
 namespace rocsparse
 {
 
@@ -174,3 +177,6 @@ namespace rocsparse
     }
 
 }
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
+_Pragma("clang attribute pop")
+#endif

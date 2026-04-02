@@ -682,3 +682,22 @@ set(rocsparse_source
   src/generic/spic0/rocsparse_spic0_buffer_size.cpp
 
 )
+
+# When building with address sanitizer, rocprim template instantiations inside
+# the primitives TUs produce false-positive reports.  Disable ASAN instrumentation
+# for those files at the compiler level as a belt-and-suspenders measure
+# (the source files also carry _Pragma wrappers for the same reason).
+if(BUILD_ADDRESS_SANITIZER)
+  set_source_files_properties(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/primitives/rocsparse_radix_sort_pairs.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/primitives/rocsparse_radix_sort_keys.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/primitives/rocsparse_run_length_encode.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/primitives/rocsparse_exclusive_scan.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/primitives/rocsparse_inclusive_scan.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/primitives/rocsparse_find_max.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/primitives/rocsparse_find_sum.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/primitives/rocsparse_segmented_radix_sort_pairs.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/primitives/rocsparse_segmented_radix_sort_keys.cpp
+    PROPERTIES COMPILE_FLAGS "-fno-sanitize=address"
+  )
+endif()

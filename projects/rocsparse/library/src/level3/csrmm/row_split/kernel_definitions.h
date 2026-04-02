@@ -25,6 +25,9 @@
 #include "../csrmm_common.h"
 #include "rocsparse_scalar.hpp"
 
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
+_Pragma("clang attribute push(__attribute__((no_sanitize(\"address\"))), apply_to = function)")
+#endif
 namespace rocsparse
 {
 
@@ -470,6 +473,10 @@ namespace rocsparse
             conj_B);
     }
 }
+
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
+_Pragma("clang attribute pop")
+#endif
 
 #define CSRMMNT_ROW_SPLIT_SUBWFSIZE_X_LOOP_COLUMNS_KERNEL(                                      \
     T, I, J, A, B, C, BLOCKSIZE, WFSIZE, SUBWFSIZE, LOOPS)                                      \

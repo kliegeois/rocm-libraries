@@ -25,6 +25,9 @@
 #include "../coomm_common.h"
 #include "rocsparse_scalar.hpp"
 
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
+_Pragma("clang attribute push(__attribute__((no_sanitize(\"address\"))), apply_to = function)")
+#endif
 namespace rocsparse
 {
     template <uint32_t WF_SIZE,
@@ -81,6 +84,10 @@ namespace rocsparse
         }
     }
 }
+
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
+_Pragma("clang attribute pop")
+#endif
 
 #define COOMMNN_SEGMENTED_ATOMIC_KERNEL(T, I, A, B, C, WFSIZE, LOOPS, COLS, NT) \
     template __launch_bounds__(WFSIZE) __global__ void                          \

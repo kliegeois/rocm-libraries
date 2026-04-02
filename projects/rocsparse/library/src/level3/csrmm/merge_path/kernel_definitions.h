@@ -25,6 +25,9 @@
 #include "../csrmm_common.h"
 #include "rocsparse_scalar.hpp"
 
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
+_Pragma("clang attribute push(__attribute__((no_sanitize(\"address\"))), apply_to = function)")
+#endif
 namespace rocsparse
 {
 
@@ -206,6 +209,10 @@ namespace rocsparse
         }
     }
 }
+
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
+_Pragma("clang attribute pop")
+#endif
 
 #define CSRMMNN_MERGE_PATH_KERNEL(T, I, J, A, B, C, BLOCKSIZE, WFSIZE, ITEM_PER_THREAD) \
     template __launch_bounds__(BLOCKSIZE) __global__ void                               \

@@ -26,6 +26,9 @@
 #include "rocsparse_primitives.hpp"
 #include "rocsparse_utility.hpp"
 
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
+_Pragma("clang attribute push(__attribute__((no_sanitize(\"address\"))), apply_to = function)")
+#endif
 #include <rocprim/rocprim.hpp>
 
 template <typename I, typename J>
@@ -72,3 +75,6 @@ INSTANTIATE(uint32_t, uint32_t);
 INSTANTIATE(int32_t, int32_t);
 INSTANTIATE(int64_t, int64_t);
 #undef INSTANTIATE
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
+_Pragma("clang attribute pop")
+#endif
