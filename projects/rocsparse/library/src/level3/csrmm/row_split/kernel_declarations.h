@@ -23,9 +23,6 @@
  * ************************************************************************ */
 #include "rocsparse_scalar.hpp"
 
-#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
-_Pragma("clang attribute push(__attribute__((no_sanitize(\"address\"))), apply_to = function)")
-#endif
 namespace rocsparse
 {
 
@@ -41,6 +38,7 @@ namespace rocsparse
 #if defined(__gfx908__)
         __attribute__((amdgpu_waves_per_eu(6, 6)))
 #endif
+        __attribute__((no_sanitize("address")))
         void csrmmnn_row_split_shared_kernel(ROCSPARSE_DEVICE_HOST_SCALAR_PARAMS(T, alpha),
                                              ROCSPARSE_DEVICE_HOST_SCALAR_PARAMS(T, beta),
                                              bool                 is_host_mode,
@@ -71,6 +69,7 @@ namespace rocsparse
               typename B,
               typename C>
     __launch_bounds__(BLOCKSIZE) __global__
+        __attribute__((no_sanitize("address")))
         void csrmmnn_row_split_kernel(ROCSPARSE_DEVICE_HOST_SCALAR_PARAMS(T, alpha),
                                       ROCSPARSE_DEVICE_HOST_SCALAR_PARAMS(T, beta),
                                       bool                 is_host_mode,
@@ -103,6 +102,7 @@ namespace rocsparse
               typename B,
               typename C>
     __launch_bounds__(BLOCKSIZE) __global__
+        __attribute__((no_sanitize("address")))
         void csrmmnt_row_split_shared_remainder_kernel(ROCSPARSE_DEVICE_HOST_SCALAR_PARAMS(T,
                                                                                            alpha),
                                                        ROCSPARSE_DEVICE_HOST_SCALAR_PARAMS(T, beta),
@@ -136,6 +136,7 @@ namespace rocsparse
               typename B,
               typename C>
     __launch_bounds__(BLOCKSIZE) __global__
+        __attribute__((no_sanitize("address")))
         void csrmmtn_row_split_kernel(ROCSPARSE_DEVICE_HOST_SCALAR_PARAMS(T, alpha),
                                       ROCSPARSE_DEVICE_HOST_SCALAR_PARAMS(T, beta),
                                       bool                 is_host_mode,
@@ -166,6 +167,7 @@ namespace rocsparse
               typename B,
               typename C>
     __launch_bounds__(BLOCKSIZE) __global__
+        __attribute__((no_sanitize("address")))
         void csrmmtt_row_split_kernel(ROCSPARSE_DEVICE_HOST_SCALAR_PARAMS(T, alpha),
                                       ROCSPARSE_DEVICE_HOST_SCALAR_PARAMS(T, beta),
                                       bool                 is_host_mode,
@@ -196,7 +198,9 @@ namespace rocsparse
               typename A,
               typename B,
               typename C>
-    __launch_bounds__(BLOCKSIZE) __global__ void csrmmnt_row_split_subwfsize_x_loop_columns_kernel(
+    __launch_bounds__(BLOCKSIZE) __global__
+        __attribute__((no_sanitize("address")))
+        void csrmmnt_row_split_subwfsize_x_loop_columns_kernel(
         ROCSPARSE_DEVICE_HOST_SCALAR_PARAMS(T, alpha),
         ROCSPARSE_DEVICE_HOST_SCALAR_PARAMS(T, beta),
         bool                 is_host_mode,
@@ -232,6 +236,7 @@ namespace rocsparse
               typename B,
               typename C>
     __launch_bounds__(BLOCKSIZE) __global__
+        __attribute__((no_sanitize("address")))
         void csrmmnt_row_split_subwfsize_x_loop_plus_swfs_columns_kernel(
             ROCSPARSE_DEVICE_HOST_SCALAR_PARAMS(T, alpha),
             ROCSPARSE_DEVICE_HOST_SCALAR_PARAMS(T, beta),
@@ -256,6 +261,3 @@ namespace rocsparse
             bool                 conj_A,
             bool                 conj_B);
 }
-#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
-_Pragma("clang attribute pop")
-#endif

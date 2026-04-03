@@ -23,9 +23,6 @@
 * ************************************************************************ */
 #include "rocsparse_scalar.hpp"
 
-#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
-_Pragma("clang attribute push(__attribute__((no_sanitize(\"address\"))), apply_to = function)")
-#endif
 namespace rocsparse
 {
     template <uint32_t BLOCKSIZE,
@@ -38,6 +35,7 @@ namespace rocsparse
               typename B,
               typename C>
     __launch_bounds__(BLOCKSIZE) __global__
+        __attribute__((no_sanitize("address")))
         void coommnn_segmented_main_kernel(bool    conj_A,
                                            bool    conj_B,
                                            I       M,
@@ -71,6 +69,7 @@ namespace rocsparse
               typename B,
               typename C>
     __launch_bounds__(BLOCKSIZE) __global__
+        __attribute__((no_sanitize("address")))
         void coommnn_segmented_remainder_kernel(bool    conj_A,
                                                 bool    conj_B,
                                                 I       colB_offset,
@@ -95,6 +94,3 @@ namespace rocsparse
                                                 rocsparse_index_base idx_base,
                                                 bool                 is_host_mode);
 }
-#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
-_Pragma("clang attribute pop")
-#endif

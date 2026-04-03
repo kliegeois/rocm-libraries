@@ -30,6 +30,9 @@
 _Pragma("clang attribute push(__attribute__((no_sanitize(\"address\"))), apply_to = function)")
 #endif
 #include <rocprim/rocprim.hpp>
+#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
+_Pragma("clang attribute pop")
+#endif
 
 template <typename I, typename J>
 rocsparse_status rocsparse::primitives::inclusive_scan_buffer_size(rocsparse_handle handle,
@@ -75,6 +78,3 @@ INSTANTIATE(uint32_t, uint32_t);
 INSTANTIATE(int32_t, int32_t);
 INSTANTIATE(int64_t, int64_t);
 #undef INSTANTIATE
-#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
-_Pragma("clang attribute pop")
-#endif

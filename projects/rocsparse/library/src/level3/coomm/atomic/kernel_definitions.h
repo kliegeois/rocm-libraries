@@ -25,9 +25,6 @@
 #include "../coomm_common.h"
 #include "rocsparse_scalar.hpp"
 
-#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
-_Pragma("clang attribute push(__attribute__((no_sanitize(\"address\"))), apply_to = function)")
-#endif
 namespace rocsparse
 {
     template <uint32_t BLOCKSIZE,
@@ -40,6 +37,7 @@ namespace rocsparse
               typename B,
               typename C>
     __launch_bounds__(BLOCKSIZE) __global__
+        __attribute__((no_sanitize("address")))
         void coommnn_atomic_main(bool    conj_A,
                                  bool    conj_B,
                                  I       ncol,
@@ -94,6 +92,7 @@ namespace rocsparse
               typename B,
               typename C>
     __launch_bounds__(BLOCKSIZE) __global__
+        __attribute__((no_sanitize("address")))
         void coommnn_atomic_remainder(bool    conj_A,
                                       bool    conj_B,
                                       I       ncol_offset,
@@ -146,6 +145,7 @@ namespace rocsparse
               typename B,
               typename C>
     __launch_bounds__(BLOCKSIZE) __global__
+        __attribute__((no_sanitize("address")))
         void coommtn_atomic_main(bool    conj_A,
                                  bool    conj_B,
                                  int64_t nnz,
@@ -188,10 +188,6 @@ namespace rocsparse
         }
     }
 }
-
-#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
-_Pragma("clang attribute pop")
-#endif
 
 #define COOMMNN_ATOMIC_MAIN_KERNEL(T, I, A, B, C, BLOCKSIZE, WFSIZE, LOOPS, TRANSB) \
     template __launch_bounds__(BLOCKSIZE) __global__ void                           \

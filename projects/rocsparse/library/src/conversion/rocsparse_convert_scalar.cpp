@@ -28,9 +28,6 @@
 #include "rocsparse_convert_scalar.hpp"
 #include <map>
 
-#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
-_Pragma("clang attribute push(__attribute__((no_sanitize(\"address\"))), apply_to = function)")
-#endif
 namespace rocsparse
 {
 
@@ -105,6 +102,7 @@ namespace rocsparse
 
     template <typename S, typename T>
     __launch_bounds__(64) __global__
+        __attribute__((no_sanitize("address")))
         void convert_device_scalars_kernel(const void* source, void* target)
     {
         const size_t tid = hipBlockIdx_x * 64 + hipThreadIdx_x;
@@ -177,6 +175,3 @@ namespace rocsparse
     }
 
 }
-#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
-_Pragma("clang attribute pop")
-#endif

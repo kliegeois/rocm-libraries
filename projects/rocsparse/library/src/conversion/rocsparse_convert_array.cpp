@@ -29,9 +29,6 @@
 
 #include "rocsparse_convert_array.hpp"
 
-#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
-_Pragma("clang attribute push(__attribute__((no_sanitize(\"address\"))), apply_to = function)")
-#endif
 namespace rocsparse
 {
     //
@@ -39,6 +36,7 @@ namespace rocsparse
     //
     template <uint32_t BLOCKSIZE, typename TARGET, typename SOURCE>
     __launch_bounds__(BLOCKSIZE) __global__
+        __attribute__((no_sanitize("address")))
         static void copy_indexbase_iarray_mix_safe(const size_t               nitems_,
                                                    TARGET*                    target_,
                                                    const rocsparse_index_base target_indexbase_,
@@ -80,6 +78,7 @@ namespace rocsparse
     //
     template <uint32_t BLOCKSIZE, typename TARGET, typename SOURCE>
     __launch_bounds__(BLOCKSIZE) __global__
+        __attribute__((no_sanitize("address")))
         static void copy_iarray_mix_safe(const size_t  nitems_,
                                          TARGET*       target_,
                                          const size_t  target_inc_,
@@ -342,6 +341,7 @@ namespace rocsparse
     {
         template <uint32_t BLOCKSIZE>
         __launch_bounds__(BLOCKSIZE) __global__
+            __attribute__((no_sanitize("address")))
             static void run(const size_t             nitems_,
                             TARGET*                  target_,
                             const SOURCE*            source_,
@@ -361,6 +361,7 @@ namespace rocsparse
     {
         template <uint32_t BLOCKSIZE>
         __launch_bounds__(BLOCKSIZE) __global__
+            __attribute__((no_sanitize("address")))
             static void run(const size_t             nitems_,
                             TARGET*                  target_,
                             const SOURCE*            source_,
@@ -385,6 +386,7 @@ namespace rocsparse
 
         template <uint32_t BLOCKSIZE>
         __launch_bounds__(BLOCKSIZE) __global__
+            __attribute__((no_sanitize("address")))
             static void run(const size_t             nitems_,
                             TARGET*                  target_,
                             const SOURCE*            source_,
@@ -410,6 +412,7 @@ namespace rocsparse
 
         template <uint32_t BLOCKSIZE>
         __launch_bounds__(BLOCKSIZE) __global__
+            __attribute__((no_sanitize("address")))
             static void run(const size_t             nitems_,
                             TARGET*                  target_,
                             const SOURCE*            source_,
@@ -452,6 +455,7 @@ namespace rocsparse
 
         template <uint32_t BLOCKSIZE>
         __launch_bounds__(BLOCKSIZE) __global__
+            __attribute__((no_sanitize("address")))
             static void run(const size_t             nitems_,
                             TARGET*                  target_,
                             const SOURCE*            source_,
@@ -497,6 +501,7 @@ namespace rocsparse
 
         template <uint32_t BLOCKSIZE>
         __launch_bounds__(BLOCKSIZE) __global__
+            __attribute__((no_sanitize("address")))
             static void run(size_t                   nitems_,
                             TARGET*                  target_,
                             const SOURCE*            source_,
@@ -519,6 +524,7 @@ namespace rocsparse
         using SOURCE = double;
         template <uint32_t BLOCKSIZE>
         __launch_bounds__(BLOCKSIZE) __global__
+            __attribute__((no_sanitize("address")))
             static void run(size_t                   nitems_,
                             TARGET*                  target_,
                             const SOURCE*            source_,
@@ -954,6 +960,3 @@ rocsparse_status rocsparse::dnvec_transfer_from(rocsparse_handle            hand
                                                        source->values));
     return rocsparse_status_success;
 }
-#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
-_Pragma("clang attribute pop")
-#endif

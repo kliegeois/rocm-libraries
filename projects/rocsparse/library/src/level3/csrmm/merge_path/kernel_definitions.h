@@ -25,9 +25,6 @@
 #include "../csrmm_common.h"
 #include "rocsparse_scalar.hpp"
 
-#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
-_Pragma("clang attribute push(__attribute__((no_sanitize(\"address\"))), apply_to = function)")
-#endif
 namespace rocsparse
 {
 
@@ -41,6 +38,7 @@ namespace rocsparse
               typename B,
               typename C>
     __launch_bounds__(WF_SIZE) __global__
+        __attribute__((no_sanitize("address")))
         void csrmmnt_merge_path_main_kernel(bool conj_A,
                                             bool conj_B,
                                             J    ncol_offset,
@@ -102,6 +100,7 @@ namespace rocsparse
               typename B,
               typename C>
     __launch_bounds__(BLOCKSIZE) __global__
+        __attribute__((no_sanitize("address")))
         void csrmmnt_merge_path_remainder_kernel(bool conj_A,
                                                  bool conj_B,
                                                  J    ncol_offset,
@@ -162,6 +161,7 @@ namespace rocsparse
               typename B,
               typename C>
     __launch_bounds__(BLOCKSIZE) __global__
+        __attribute__((no_sanitize("address")))
         void csrmmnn_merge_path_kernel(bool conj_A,
                                        bool conj_B,
                                        J    m,
@@ -209,10 +209,6 @@ namespace rocsparse
         }
     }
 }
-
-#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
-_Pragma("clang attribute pop")
-#endif
 
 #define CSRMMNN_MERGE_PATH_KERNEL(T, I, J, A, B, C, BLOCKSIZE, WFSIZE, ITEM_PER_THREAD) \
     template __launch_bounds__(BLOCKSIZE) __global__ void                               \
