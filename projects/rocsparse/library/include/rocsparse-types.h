@@ -36,7 +36,12 @@
 #include <stdint.h>
 
 /// \cond DO_NOT_DOCUMENT
-#if defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)
+// ROCSPARSE_ASAN_KERNELS: defined per-TU by CMake when that file is being bisected
+// (i.e., ASAN is re-enabled for its kernels during bisection).
+// When ASAN is active globally but ROCSPARSE_ASAN_KERNELS is NOT set, kernels suppress ASAN.
+// When ROCSPARSE_ASAN_KERNELS IS set, kernels run with ASAN enabled.
+#if (defined(ROCSPARSE_WITH_ASAN) || defined(__SANITIZE_ADDRESS__)) \
+    && !defined(ROCSPARSE_ASAN_KERNELS)
 #define ROCSPARSE_KERNEL_W(MAX_THREADS_PER_BLOCK, MIN_WARPS_PER_EXECUTION_UNIT) \
     __launch_bounds__(MAX_THREADS_PER_BLOCK, MIN_WARPS_PER_EXECUTION_UNIT)      \
         __attribute__((no_sanitize("address"))) static __global__
@@ -45,18 +50,24 @@
         __attribute__((no_sanitize("address"))) static __global__
 #define ROCSPARSE_DEVICE_ILF \
     static __device__ __forceinline__ __attribute__((no_sanitize("address")))
+#define ROCSPARSE_NO_ASAN_ATTR __attribute__((no_sanitize("address")))
 #else
 #define ROCSPARSE_KERNEL_W(MAX_THREADS_PER_BLOCK, MIN_WARPS_PER_EXECUTION_UNIT) \
     __launch_bounds__(MAX_THREADS_PER_BLOCK, MIN_WARPS_PER_EXECUTION_UNIT) static __global__
 #define ROCSPARSE_KERNEL(MAX_THREADS_PER_BLOCK) \
     __launch_bounds__(MAX_THREADS_PER_BLOCK) static __global__
 #define ROCSPARSE_DEVICE_ILF static __device__ __forceinline__
+#define ROCSPARSE_NO_ASAN_ATTR
 #endif
 // Aliases for sites that must never be sanitized regardless of build flags.
-// Currently identical to the base macros; kept separate for documentation purposes.
-#define ROCSPARSE_KERNEL_W_NO_ASAN ROCSPARSE_KERNEL_W
-#define ROCSPARSE_KERNEL_NO_ASAN ROCSPARSE_KERNEL
-#define ROCSPARSE_DEVICE_ILF_NO_ASAN ROCSPARSE_DEVICE_ILF
+#define ROCSPARSE_KERNEL_W_NO_ASAN(MAX_THREADS_PER_BLOCK, MIN_WARPS_PER_EXECUTION_UNIT) \
+    __launch_bounds__(MAX_THREADS_PER_BLOCK, MIN_WARPS_PER_EXECUTION_UNIT)              \
+        __attribute__((no_sanitize("address"))) static __global__
+#define ROCSPARSE_KERNEL_NO_ASAN(MAX_THREADS_PER_BLOCK)  \
+    __launch_bounds__(MAX_THREADS_PER_BLOCK)             \
+        __attribute__((no_sanitize("address"))) static __global__
+#define ROCSPARSE_DEVICE_ILF_NO_ASAN \
+    static __device__ __forceinline__ __attribute__((no_sanitize("address")))
 /// \endcond
 
 /*! \ingroup types_module

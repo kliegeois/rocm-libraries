@@ -37,7 +37,7 @@ namespace rocsparse
               typename B,
               typename C>
     __launch_bounds__(BLOCKSIZE) __global__
-        __attribute__((no_sanitize("address")))
+        ROCSPARSE_NO_ASAN_ATTR
         void coommnn_atomic_main(bool    conj_A,
                                  bool    conj_B,
                                  I       ncol,
@@ -92,7 +92,7 @@ namespace rocsparse
               typename B,
               typename C>
     __launch_bounds__(BLOCKSIZE) __global__
-        __attribute__((no_sanitize("address")))
+        ROCSPARSE_NO_ASAN_ATTR
         void coommnn_atomic_remainder(bool    conj_A,
                                       bool    conj_B,
                                       I       ncol_offset,
@@ -145,7 +145,7 @@ namespace rocsparse
               typename B,
               typename C>
     __launch_bounds__(BLOCKSIZE) __global__
-        __attribute__((no_sanitize("address")))
+        ROCSPARSE_NO_ASAN_ATTR
         void coommtn_atomic_main(bool    conj_A,
                                  bool    conj_B,
                                  int64_t nnz,

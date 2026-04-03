@@ -701,3 +701,18 @@ if(BUILD_ADDRESS_SANITIZER)
     PROPERTIES COMPILE_FLAGS "-fno-sanitize=address"
   )
 endif()
+
+# Bisection support: re-enable ASAN instrumentation for a selected set of source files.
+# Set ROCSPARSE_ASAN_ENABLED_FILES to a space-separated list of paths relative to
+# ${CMAKE_CURRENT_SOURCE_DIR} (e.g. "src/level2/rocsparse_bsrmv.cpp").
+# Each listed file is compiled with ROCSPARSE_ASAN_KERNELS defined, which causes the
+# ROCSPARSE_KERNEL/ROCSPARSE_DEVICE_ILF macros to omit the no_sanitize suppression.
+if(BUILD_ADDRESS_SANITIZER AND ROCSPARSE_ASAN_ENABLED_FILES)
+  separate_arguments(_asan_enabled_files UNIX_COMMAND "${ROCSPARSE_ASAN_ENABLED_FILES}")
+  foreach(_f ${_asan_enabled_files})
+    set_source_files_properties(
+      "${CMAKE_CURRENT_SOURCE_DIR}/${_f}"
+      PROPERTIES COMPILE_DEFINITIONS "ROCSPARSE_ASAN_KERNELS"
+    )
+  endforeach()
+endif()
