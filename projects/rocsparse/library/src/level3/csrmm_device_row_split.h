@@ -85,13 +85,13 @@ namespace rocsparse
                                  csr_val[k + columns_values_batch_stride_A * batch], conj_A))
                                            : static_cast<T>(0);
 
-            if(col < N)
+            for(uint32_t i = 0; i < WF_SIZE; ++i)
             {
-                for(uint32_t i = 0; i < WF_SIZE; ++i)
+                const J sc = rocsparse::shfl(my_col, i, WF_SIZE);
+                const T sv = rocsparse::shfl(my_val, i, WF_SIZE);
+                if(col < N)
                 {
-                    const J sc = rocsparse::shfl(my_col, i, WF_SIZE);
-                    const T sv = rocsparse::shfl(my_val, i, WF_SIZE);
-                    sum        = rocsparse::fma<T>(
+                    sum = rocsparse::fma<T>(
                         sv,
                         rocsparse::conj_val(dense_B[sc + colB + batch_stride_B * batch], conj_B),
                         sum);
@@ -480,13 +480,13 @@ namespace rocsparse
                                  conj_A))
                                            : static_cast<T>(0);
 
-            if(col < col_end)
+            for(uint32_t i = 0; i < SUB_WF_SIZE; ++i)
             {
-                for(uint32_t i = 0; i < SUB_WF_SIZE; ++i)
+                const int64_t sc = rocsparse::shfl(my_col, SUB_WF_SIZE * swid + i, WF_SIZE);
+                const T       sv = rocsparse::shfl(my_val, SUB_WF_SIZE * swid + i, WF_SIZE);
+                if(col < col_end)
                 {
-                    const int64_t sc = rocsparse::shfl(my_col, SUB_WF_SIZE * swid + i, SUB_WF_SIZE);
-                    const T       sv = rocsparse::shfl(my_val, SUB_WF_SIZE * swid + i, SUB_WF_SIZE);
-                    sum              = rocsparse::fma<T>(
+                    sum = rocsparse::fma<T>(
                         sv, rocsparse::conj_val(rocsparse::ldg(dense_B + col + sc), conj_B), sum);
                 }
             }
