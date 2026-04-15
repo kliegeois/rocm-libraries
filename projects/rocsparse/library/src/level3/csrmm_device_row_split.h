@@ -81,8 +81,8 @@ namespace rocsparse
             const J my_col = (k < row_end)
                                  ? csr_col_ind[k + columns_values_batch_stride_A * batch] - idx_base
                                  : 0;
-            const T my_val = (k < row_end) ? rocsparse::conj_val(
-                                 csr_val[k + columns_values_batch_stride_A * batch], conj_A)
+            const T my_val = (k < row_end) ? static_cast<T>(rocsparse::conj_val(
+                                 csr_val[k + columns_values_batch_stride_A * batch], conj_A))
                                            : static_cast<T>(0);
 
             if(col < N)
@@ -474,10 +474,10 @@ namespace rocsparse
                                    - idx_base)
                             + batch_stride_B * batch
                       : 0;
-            const T my_val = (k < row_end) ? rocsparse::conj_val(
+            const T my_val = (k < row_end) ? static_cast<T>(rocsparse::conj_val(
                                  rocsparse::nontemporal_load(
                                      csr_val + k + columns_values_batch_stride_A * batch),
-                                 conj_A)
+                                 conj_A))
                                            : static_cast<T>(0);
 
             if(col < col_end)
