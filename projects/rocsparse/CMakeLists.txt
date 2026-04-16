@@ -115,6 +115,11 @@ if(BUILD_ADDRESS_SANITIZER)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -shared-libasan")
   set(CMAKE_C_LINK_EXECUTABLE "${CMAKE_C_LINK_EXECUTABLE} -fuse-ld=lld")
 
+  # ASAN instrumentation inflates GPU register usage. Allow kernels to use up
+  # to 512 VGPRs (occupancy 1 wave/SIMD) so the register allocator does not
+  # exceed the hardware limit and trigger HSA_STATUS_ERROR_INVALID_ISA.
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mllvm -amdgpu-max-waves-per-eu=1")
+
   # Define a macro visible to both host and device compilation
   add_compile_definitions(ROCSPARSE_WITH_ASAN)
 
