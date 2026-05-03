@@ -31,7 +31,7 @@
 namespace rocsparse
 {
     template <uint32_t BLOCKSIZE, typename I, typename J>
-    ROCSPARSE_KERNEL(BLOCKSIZE)
+    ROCSPARSE_KERNEL_NO_ASAN(BLOCKSIZE)
     void kernel_count_missing_diagonal(J m,
                                        const I* __restrict__ ptr_diag_,
                                        J ptr_shift_,
@@ -54,7 +54,7 @@ namespace rocsparse
     }
 
     template <rocsparse_fill_mode FILL_MODE, uint32_t BLOCKSIZE, typename I, typename J>
-    ROCSPARSE_KERNEL(BLOCKSIZE)
+    ROCSPARSE_KERNEL_NO_ASAN(BLOCKSIZE)
     void kernel_count_missing_diagonal2(J m,
                                         const I* __restrict__ ptr_,
                                         const J* __restrict__ ind_,
@@ -77,7 +77,7 @@ namespace rocsparse
     }
 
     template <rocsparse_fill_mode FILL_MODE, uint32_t BLOCKSIZE, typename I, typename J>
-    ROCSPARSE_KERNEL(BLOCKSIZE)
+    ROCSPARSE_KERNEL_NO_ASAN(BLOCKSIZE)
     void kernel_count_diagonal_triangular(J m,
                                           const I* __restrict__ ptr_,
                                           const J* __restrict__ ind_,
@@ -97,7 +97,7 @@ namespace rocsparse
     }
 
     template <uint32_t BLOCKSIZE, typename I, typename J>
-    ROCSPARSE_KERNEL(BLOCKSIZE)
+    ROCSPARSE_KERNEL_NO_ASAN(BLOCKSIZE)
     void kernel_ptr_end_unit(J m,
                              const I* __restrict__ ptr_,
                              const J* __restrict__ ind_,
@@ -120,7 +120,7 @@ namespace rocsparse
     }
 
     template <uint32_t BLOCKSIZE, typename I, typename J>
-    ROCSPARSE_KERNEL(BLOCKSIZE)
+    ROCSPARSE_KERNEL_NO_ASAN(BLOCKSIZE)
     void kernel_ptr_end_non_unit(J m,
                                  const I* __restrict__ ptr_,
                                  const J* __restrict__ ind_,
