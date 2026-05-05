@@ -76,13 +76,19 @@ inline const char* rocsparse_asan_skip_reason(const Arguments& arg)
         "v2_spmv_csr",          "v2_spmv_csc",          "v2_spmv_coo",
         "v2_spmv_ell",          "v2_spmv_sell",         "v2_spmv_coo_aos",
         "v2_spmv_csr_res",
-        // Format conversion — rocprim prefix scan
+        // Sort — rocprim segmented_radix_sort
+        "csrsort",              "cscsort",              "coosort",
+        // Format conversion — rocprim prefix scan / sort
         "csr2gebsr",            "csr2bsr",              "bsr2csr",
+        "csr2csc",              "csr2hyb",              "hyb2csr",
+        "ell2csr",              "gebsr2gebsc",
         // Other rocprim users
-        "gemvi",
+        "gemvi",                "nnz",
         "gtsv",                 "gtsv_no_pivot",        "gtsv_no_pivot_strided_batch",
         "sparse_to_sparse",
         "bsrxmv",               "copy_info",
+        "prune_csr2csr_by_percentage",
+        "prune_dense2csr",      "prune_dense2csr_by_percentage",
         nullptr
     };
     // clang-format on
