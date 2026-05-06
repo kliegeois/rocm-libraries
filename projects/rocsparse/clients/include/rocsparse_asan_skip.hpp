@@ -81,7 +81,7 @@ inline const char* rocsparse_asan_skip_reason(const Arguments& arg)
         "spmv_ell",             "spmv_coo_aos",
         "v2_spmv_csr",          "v2_spmv_csc",          "v2_spmv_coo",
         "v2_spmv_ell",          "v2_spmv_sell",         "v2_spmv_coo_aos",
-        "v2_spmv_csr_res",
+        "v2_spmv_csr_res",      "v2_spmv_csr_res_multiple",
         // Sort — rocprim segmented_radix_sort
         "csrsort",              "cscsort",              "coosort",
         // Format conversion — rocprim prefix scan / sort
