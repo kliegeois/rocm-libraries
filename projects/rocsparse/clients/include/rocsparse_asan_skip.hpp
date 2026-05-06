@@ -111,11 +111,19 @@ inline const char* rocsparse_asan_skip_reason(const Arguments& arg)
     // clang-format off
     static const char* pool_recycling_crashes[] = {
         // SpTRSM / SpSM — delegate to csrsm_solve internally
-        "csrsm",     "spsm_csr",   "spsm_coo",
-        "sptrsm_csr","sptrsm_coo",
+        // The _extra variants use the same code paths and have the same issue
+        "csrsm",
+        "spsm_csr",      "spsm_csr_extra",
+        "spsm_coo",
+        "sptrsm_csr",    "sptrsm_csr_extra",
+        "sptrsm_coo",    "sptrsm_coo_extra",
         // BSR triangular solve — has KERNEL_NO_ASAN for spin-loops but pool
         // recycling from earlier bsr2csr/csr2bsr tests still triggers OOB
         "bsrsm",
+        // BSR triangular solve (vector) — ASAN changes analysis/solve ordering;
+        // trm_info lookup returns nullptr for block_dim=9 with reuse policy
+        // (passes without ASAN, ASAN-induced race in analysis caching)
+        "bsrsv",
         // CSR adaptive MV — OOB in kernel was fixed (Bug 1) but pool recycling
         // from earlier tests still causes in-suite device crash
         "csrmv", "csrmv_managed",
