@@ -40,6 +40,11 @@ int64_t rocsparse::position_t::get_stride() const
 
 rocsparse::position_t::~position_t()
 {
+    // Due to the changes in the hipFree introduced in HIP 7.0
+    // https://rocm.docs.amd.com/projects/HIP/en/latest/hip-7-changes.html#update-hipfree
+    // hipFree() no longer implicitly synchronizes for hipMallocAsync allocations.
+    // Synchronize before freeing to ensure the pool allocation is properly released.
+    WARNING_IF_HIP_ERROR(hipDeviceSynchronize());
     WARNING_IF_HIP_ERROR(rocsparse_hipFree(this->m_position));
 }
 
