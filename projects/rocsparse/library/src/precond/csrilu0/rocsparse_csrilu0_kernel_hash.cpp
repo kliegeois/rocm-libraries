@@ -255,7 +255,7 @@ namespace rocsparse
               typename T,
               typename I,
               typename J>
-    ROCSPARSE_KERNEL(BLOCKSIZE)
+    ROCSPARSE_KERNEL_NO_ASAN(BLOCKSIZE)
     void csrilu0_kernel_hash(J m,
                              const I* __restrict__ csr_row_ptr,
                              const J* __restrict__ csr_col_ind,

@@ -348,7 +348,7 @@ namespace rocsparse
               typename T,
               typename I,
               typename J>
-    ROCSPARSE_KERNEL(BLOCKSIZE)
+    ROCSPARSE_KERNEL_NO_ASAN(BLOCKSIZE)
     void bsrilu0_kernel_33_64(rocsparse_direction dir,
                               J                   mb,
                               const I* __restrict__ bsr_row_ptr,

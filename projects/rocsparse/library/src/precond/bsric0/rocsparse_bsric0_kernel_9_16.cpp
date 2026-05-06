@@ -394,7 +394,7 @@ namespace rocsparse
     }
 
     template <uint32_t MAX_NNZB, typename T, typename I, typename J>
-    ROCSPARSE_KERNEL(BLOCKSIZE)
+    ROCSPARSE_KERNEL_NO_ASAN(BLOCKSIZE)
     void bsric0_kernel_9_16(rocsparse_direction dir,
                             J                   mb,
                             const I* __restrict__ bsr_row_ptr,
