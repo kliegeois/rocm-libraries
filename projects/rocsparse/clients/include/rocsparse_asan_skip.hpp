@@ -33,7 +33,7 @@
 // All remaining failures are ASAN infrastructure artifacts — not rocsparse bugs.
 // Real OOB/UAF bugs found by ASAN have been fixed separately (see PR #7010).
 //
-// Three categories:
+// Two categories:
 //
 //  A. Functions that call rocprim (sort, scan, reduce) internally.
 //     rocprim emits ASAN callbacks for every memory access, causing 1.5–10×
@@ -42,20 +42,10 @@
 //     the symbolic (counting) and fill phases.
 //     Lift this entire block once rocprim is ASAN-clean.
 //
-//  B. False-positive crashes from HIP memory pool page recycling.
-//     HIP's GPU allocator recycles freed pages; ASAN reports use-after-free
-//     on the recycled addresses. Not a rocsparse memory safety issue.
-//     Confirmed: tests that crash in-suite pass when run in isolation.
-//
-//  C. Spin-loop family: HIP memory pool false positives.
-//     These kernels use inter-workgroup atomic synchronization (spin-loops).
-//     The kernels are annotated with KERNEL_NO_ASAN (no_sanitize) to prevent
-//     hangs, and the spin-loop logic itself is correct. However, when run
-//     in-suite, HIP's memory pool recycles freed pages from earlier tests,
-//     and ASAN reports false-positive overflows on the recycled addresses.
-//     Confirmed: failing tests pass when run in isolation.
-//     Skip all parameterizations — the crash depends on test ordering, not
-//     on (M, N) values.
+//  B. Residual false-positive crashes from HIP memory pool page recycling.
+//     Most pool-recycling crashes were fixed by switching position_t::m_position
+//     from hipMallocAsync to hipMalloc (keeping it outside the pool).
+//     The remaining entries below have causes unrelated to position_t.
 //
 inline const char* rocsparse_asan_skip_reason(const Arguments& arg)
 {
@@ -105,35 +95,26 @@ inline const char* rocsparse_asan_skip_reason(const Arguments& arg)
     }
 
     // ── Category B: HIP memory pool false-positive crashes ─────────────────
-    // These functions crash in-suite due to HIP memory pool page recycling:
-    // a freed GPU page from an earlier test is reused, and ASAN reports the
-    // access as use-after-free. Tests pass when run in isolation.
+    // These functions crash due to HIP memory pool page recycling:
+    // a freed GPU page is reused within or between tests, and ASAN reports
+    // the access as use-after-free. Not a rocsparse memory safety issue.
     // clang-format off
     static const char* pool_recycling_crashes[] = {
-        // SpTRSM / SpSM — delegate to csrsm_solve internally
-        // The _extra variants use the same code paths and have the same issue
-        "csrsm",
-        "spsm_csr",      "spsm_csr_extra",
-        "spsm_coo",
-        "sptrsm_csr",    "sptrsm_csr_extra",
-        "sptrsm_coo",    "sptrsm_coo_extra",
-        // BSR triangular solve — has KERNEL_NO_ASAN for spin-loops but pool
-        // recycling from earlier bsr2csr/csr2bsr tests still triggers OOB
+        // BSR triangular solve — has KERNEL_NO_ASAN for spin-loops; pool recycling
+        // from earlier Category-A tests (bsr2csr/csr2bsr) still triggers OOB on
+        // recycled addresses unrelated to position_t. Needs Category A fixed first.
         "bsrsm",
-        // BSR triangular solve (vector) — ASAN changes analysis/solve ordering;
-        // trm_info lookup returns nullptr for block_dim=9 with reuse policy
-        // (passes without ASAN, ASAN-induced race in analysis caching)
+        // BSR triangular solve (vector) — ASAN-induced race in analysis caching:
+        // trm_info lookup returns nullptr for block_dim=9 with analysis_policy_reuse.
+        // Passes without ASAN; root cause is lock ordering under ASAN timing.
         "bsrsv",
-        // CSR adaptive MV — OOB in kernel was fixed (Bug 1) but pool recycling
-        // from earlier tests still causes in-suite device crash
-        "csrmv", "csrmv_managed",
         nullptr
     };
     // clang-format on
     for(int i = 0; pool_recycling_crashes[i]; ++i)
     {
         if(std::strcmp(func, pool_recycling_crashes[i]) == 0)
-            return "ASAN false positive: HIP memory pool page recycling (in-suite crash)";
+            return "ASAN false positive: HIP memory pool page recycling";
     }
 
     if(arg.a_type == rocsparse_datatype_f32_c || arg.a_type == rocsparse_datatype_f64_c
@@ -145,17 +126,6 @@ inline const char* rocsparse_asan_skip_reason(const Arguments& arg)
     }
     if(std::strcmp(func, "bsrpad_value") == 0)
         return "ASAN false positive: device crash (HIP pool recycling)";
-
-    // Large external matrix: too slow under ASAN regardless of rocprim
-    if(arg.filename[0] != '\0' && std::strstr(arg.filename, "amazon0312") != nullptr)
-        return "ASAN overhead: large external matrix (amazon0312) exceeds timeout";
-
-    // ── Category C: iterative ILU0 — uninstrumented failure at M=187 ────────
-    // These kernels do NOT use spin-loops and are fully ASAN-instrumented.
-    // They fail in isolation at certain matrix sizes (e.g., M=187).
-    // Root cause is under investigation.
-    if(std::strcmp(func, "csritilu0") == 0 || std::strcmp(func, "csritilu0_ex") == 0)
-        return "ASAN failure: csritilu0 crashes in isolation (under investigation)";
 
     return nullptr;
 }

@@ -40,17 +40,14 @@ int64_t rocsparse::position_t::get_stride() const
 
 rocsparse::position_t::~position_t()
 {
-    // Due to the changes in the hipFree introduced in HIP 7.0
-    // https://rocm.docs.amd.com/projects/HIP/en/latest/hip-7-changes.html#update-hipfree
-    // hipFree() no longer implicitly synchronizes for hipMallocAsync allocations.
-    // Synchronize before freeing to ensure the pool allocation is properly released.
-    WARNING_IF_HIP_ERROR(hipDeviceSynchronize());
     WARNING_IF_HIP_ERROR(rocsparse_hipFree(this->m_position));
 }
 
 rocsparse_status rocsparse::position_t::free_position_async(hipStream_t stream)
 {
-    RETURN_IF_HIP_ERROR(rocsparse_hipFreeAsync(this->m_position, stream));
+    // m_position is allocated with hipMalloc (not hipMallocAsync), so use
+    // synchronous hipFree. The stream parameter is ignored intentionally.
+    RETURN_IF_HIP_ERROR(rocsparse_hipFree(this->m_position));
     this->m_position = nullptr;
     return rocsparse_status_success;
 }
@@ -87,16 +84,20 @@ rocsparse_status rocsparse::position_t::create_position_async(int64_t           
                                                               rocsparse_indextype indextype,
                                                               hipStream_t         stream)
 {
+    // Use hipMalloc (not hipMallocAsync) to keep this buffer outside HIP's
+    // memory pool. Pool-allocated pages are recycled and ASAN-poisoned on free,
+    // causing false-positive GPU Memory Faults when the position is read back
+    // across iterations (csritilu0) or across tests in a suite (csrsm, csrmv).
     if((this->m_position != nullptr) && (this->m_batch_count != batch_count))
     {
-        RETURN_IF_HIP_ERROR(rocsparse_hipFreeAsync(this->m_position, stream));
+        RETURN_IF_HIP_ERROR(rocsparse_hipFree(this->m_position));
         this->m_position = nullptr;
     }
 
     if(this->m_position == nullptr)
     {
         RETURN_IF_HIP_ERROR(
-            rocsparse_hipMallocAsync(&this->m_position, sizeof(int64_t) * batch_count, stream));
+            rocsparse_hipMalloc(&this->m_position, sizeof(int64_t) * batch_count));
         if(indextype == rocsparse_indextype_i32)
         {
             RETURN_IF_HIP_ERROR(

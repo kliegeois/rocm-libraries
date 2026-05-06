@@ -467,8 +467,22 @@ Tests:
   matrix_type: [rocsparse_matrix_type_general]
   spmv_alg: [rocsparse_spmv_alg_csr_rowsplit]
   filename: [bmwcra_1,
-             amazon0312,
              sme3Dc]
+
+- name: spmv_csc_file
+  category: pre_checkin
+  function: spmv_csc
+  indextype: *i32
+  precision: *float32_float64_float64_float64
+  M: 1
+  N: 1
+  alpha_beta: *alpha_beta_range_quick
+  transA: [rocsparse_operation_none]
+  baseA: [rocsparse_index_base_one]
+  matrix: [rocsparse_matrix_file_rocalution]
+  matrix_type: [rocsparse_matrix_type_general]
+  spmv_alg: [rocsparse_spmv_alg_csr_rowsplit]
+  filename: [amazon0312]
 
 - name: spmv_csc
   category: pre_checkin
@@ -499,8 +513,22 @@ Tests:
   matrix_type: [rocsparse_matrix_type_general]
   spmv_alg: [rocsparse_spmv_alg_csr_rowsplit]
   filename: [bmwcra_1,
-             amazon0312,
              sme3Dc]
+
+- name: spmv_csc_file
+  category: pre_checkin
+  function: spmv_csc
+  indextype: *i32
+  precision: *int8_int8_int32_int32_axyt_precision
+  M: 1
+  N: 1
+  alpha_beta: *alpha_beta_range_quick
+  transA: [rocsparse_operation_none]
+  baseA: [rocsparse_index_base_one]
+  matrix: [rocsparse_matrix_file_rocalution]
+  matrix_type: [rocsparse_matrix_type_general]
+  spmv_alg: [rocsparse_spmv_alg_csr_rowsplit]
+  filename: [amazon0312]
 
 - name: spmv_csc
   category: pre_checkin
