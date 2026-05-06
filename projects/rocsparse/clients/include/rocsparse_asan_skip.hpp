@@ -114,36 +114,17 @@ inline const char* rocsparse_asan_skip_reason(const Arguments& arg)
     }
     if(std::strcmp(func, "bsrpad_value") == 0)
         return "ASAN false positive: device crash (HIP pool recycling)";
-    if(std::strcmp(func, "csric0") == 0)
-        return "ASAN false positive: HIP pool recycling (all csric0 tests crash in-suite)";
+
     // Large external matrix: too slow under ASAN regardless of rocprim
     if(arg.filename[0] != '\0' && std::strstr(arg.filename, "amazon0312") != nullptr)
         return "ASAN overhead: large external matrix (amazon0312) exceeds timeout";
 
-    // ── Category C: spin-loop family — HIP memory pool false positives ──────
-    // These functions use inter-workgroup atomic spin-loops (KERNEL_NO_ASAN).
-    // When run in-suite, HIP's memory pool recycles freed pages from earlier
-    // tests, causing false-positive ASAN reports. Tests pass in isolation.
-    // Skip all parameterizations — crash depends on test ordering, not (M, N).
-    // clang-format off
-    static const char* spin_loop_funcs[] = {
-        "bsric0",       "bsrilu0",      "bsrsm",        "bsrsv",
-        "csrilu0",      "csritilu0",    "csritilu0_ex",
-        "csrsm",        "csrsv",        "csritsv",      "csricsv",      "csrilusv",
-        "spic0",        "spilu0",
-        "spsm_csr",     "spsm_coo",
-        "spsv_csr",     "spsv_coo",
-        "sptrsm_csr",   "sptrsm_coo",
-        "sptrsv",       "sptrsv_csr",   "sptrsv_coo",
-        "spitsv_csr",
-        nullptr
-    };
-    // clang-format on
-    for(int i = 0; spin_loop_funcs[i]; ++i)
-    {
-        if(std::strcmp(func, spin_loop_funcs[i]) == 0)
-            return "ASAN false positive: spin-loop family, HIP pool recycling (passes in isolation)";
-    }
+    // ── Category C: iterative ILU0 — uninstrumented failure at M=187 ────────
+    // These kernels do NOT use spin-loops and are fully ASAN-instrumented.
+    // They fail in isolation at certain matrix sizes (e.g., M=187).
+    // Root cause is under investigation.
+    if(std::strcmp(func, "csritilu0") == 0 || std::strcmp(func, "csritilu0_ex") == 0)
+        return "ASAN failure: csritilu0 crashes in isolation (under investigation)";
 
     return nullptr;
 }
