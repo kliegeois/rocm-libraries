@@ -116,9 +116,6 @@ inline const char* rocsparse_asan_skip_reason(const Arguments& arg)
         return "ASAN false positive: device crash (HIP pool recycling)";
     if(std::strcmp(func, "csric0") == 0)
         return "ASAN false positive: HIP pool recycling (all csric0 tests crash in-suite)";
-    if(std::strcmp(func, "csrmv") == 0 || std::strcmp(func, "csrmv_managed") == 0)
-        return "ASAN false positive: HIP pool recycling (csradaptive path, passes in isolation)";
-
     // Large external matrix: too slow under ASAN regardless of rocprim
     if(arg.filename[0] != '\0' && std::strstr(arg.filename, "amazon0312") != nullptr)
         return "ASAN overhead: large external matrix (amazon0312) exceeds timeout";
