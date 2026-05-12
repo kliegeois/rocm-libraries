@@ -97,9 +97,9 @@ inline const char* rocsparse_asan_skip_reason(const Arguments& arg)
         "spsm_coo",
         "sptrsm_csr",       "sptrsm_csr_extra",
         "sptrsm_coo",       "sptrsm_coo_extra",
-        // CSR SpMV adaptive — same in-suite pool recycling issue.
-        // rocsparse allocs now use hipMalloc but HIP runtime pool residue persists.
-        "csrmv",            "csrmv_managed",
+        // CSR SpMV adaptive (managed) — in-suite pool recycling from HIP runtime.
+        // csrmv (non-managed) was unblocked by the position_t hipMalloc fix.
+        "csrmv_managed",
         // BSR pad value — device crash from HIP pool recycling.
         "bsrpad_value",
         // BSR triangular solve — has KERNEL_NO_ASAN for spin-loops; pool recycling

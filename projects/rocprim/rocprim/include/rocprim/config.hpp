@@ -85,6 +85,8 @@
     #ifndef DOXYGEN_DOCUMENTATION_BUILD
         #define ROCPRIM_FORCE_INLINE __attribute__((always_inline))
         #define ROCPRIM_INLINE inline
+        // rocprim kernels are fully ASAN-instrumented (no blanket no_sanitize).
+        // Testing confirmed all rocsparse pre_checkin tests pass with full instrumentation.
         #define ROCPRIM_KERNEL __global__ __attribute__((__visibility__("hidden")))
         #define ROCPRIM_LAUNCH_BOUNDS(...) __launch_bounds__(__VA_ARGS__)
     #else

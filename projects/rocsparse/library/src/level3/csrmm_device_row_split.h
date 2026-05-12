@@ -78,12 +78,14 @@ namespace rocsparse
         {
             const I k = j + lid;
 
-            const J my_col = (k < row_end)
-                                 ? csr_col_ind[k + columns_values_batch_stride_A * batch] - idx_base
+            const bool k_valid = (k < row_end);
+            const I    safe_k  = k_valid ? k : row_start;
+            const J my_col = k_valid
+                                 ? csr_col_ind[safe_k + columns_values_batch_stride_A * batch] - idx_base
                                  : 0;
-            const T my_val = (k < row_end) ? static_cast<T>(rocsparse::conj_val(
-                                 csr_val[k + columns_values_batch_stride_A * batch], conj_A))
-                                           : static_cast<T>(0);
+            const T my_val = k_valid ? static_cast<T>(rocsparse::conj_val(
+                                 csr_val[safe_k + columns_values_batch_stride_A * batch], conj_A))
+                                     : static_cast<T>(0);
 
             for(uint32_t i = 0; i < WF_SIZE; ++i)
             {
@@ -309,17 +311,20 @@ namespace rocsparse
             {
                 const I k = j + lid;
 
-                const J c = (k < row_end)
+                const bool k_valid = (k < row_end);
+                const I    safe_k  = k_valid ? k : row_start;
+
+                const J c = k_valid
                                 ? (rocsparse::nontemporal_load(
-                                       csr_col_ind + k + columns_values_batch_stride_A * batch)
+                                       csr_col_ind + safe_k + columns_values_batch_stride_A * batch)
                                    - idx_base)
                                 : 0;
 
-                const T v = (k < row_end) ? static_cast<T>(rocsparse::conj_val(
+                const T v = k_valid ? static_cast<T>(rocsparse::conj_val(
                                 rocsparse::nontemporal_load(
-                                    csr_val + k + columns_values_batch_stride_A * batch),
+                                    csr_val + safe_k + columns_values_batch_stride_A * batch),
                                 conj_A))
-                                          : static_cast<T>(0);
+                                    : static_cast<T>(0);
 
                 for(uint32_t i = 0; i < SUBWFSIZE; ++i)
                 {
@@ -466,19 +471,21 @@ namespace rocsparse
         {
             const I k = j + lid;
 
+            const bool k_valid = (k < row_end);
+            const I    safe_k  = k_valid ? k : row_start;
             const int64_t my_col
-                = (k < row_end)
+                = k_valid
                       ? ldb
                                 * (rocsparse::nontemporal_load(
-                                       csr_col_ind + k + columns_values_batch_stride_A * batch)
+                                       csr_col_ind + safe_k + columns_values_batch_stride_A * batch)
                                    - idx_base)
                             + batch_stride_B * batch
                       : 0;
-            const T my_val = (k < row_end) ? static_cast<T>(rocsparse::conj_val(
+            const T my_val = k_valid ? static_cast<T>(rocsparse::conj_val(
                                  rocsparse::nontemporal_load(
-                                     csr_val + k + columns_values_batch_stride_A * batch),
+                                     csr_val + safe_k + columns_values_batch_stride_A * batch),
                                  conj_A))
-                                           : static_cast<T>(0);
+                                     : static_cast<T>(0);
 
             for(uint32_t i = 0; i < SUB_WF_SIZE; ++i)
             {
@@ -637,17 +644,20 @@ namespace rocsparse
         {
             const I k = j + lid;
 
-            const J c = (k < row_end)
-                            ? (rocsparse::nontemporal_load(csr_col_ind + k
+            const bool k_valid = (k < row_end);
+            const I    safe_k  = k_valid ? k : row_start;
+
+            const J c = k_valid
+                            ? (rocsparse::nontemporal_load(csr_col_ind + safe_k
                                                            + columns_values_batch_stride_A * batch)
                                - idx_base)
                             : 0;
 
-            const T v = (k < row_end) ? static_cast<T>(rocsparse::conj_val(
-                            rocsparse::nontemporal_load(csr_val + k
+            const T v = k_valid ? static_cast<T>(rocsparse::conj_val(
+                            rocsparse::nontemporal_load(csr_val + safe_k
                                                         + columns_values_batch_stride_A * batch),
                             conj_A))
-                                      : static_cast<T>(0);
+                                : static_cast<T>(0);
 
             for(uint32_t i = 0; i < SUBWFSIZE; ++i)
             {

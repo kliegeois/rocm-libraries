@@ -66,15 +66,14 @@ namespace rocsparse
         {
             for(rocsparse_int k = 0; k < 4; ++k)
             {
-                if(ind + k * DIM_X < m)
+                const bool        row_valid = (ind + k * DIM_X < m);
+                const rocsparse_int safe_row  = row_valid ? (ind + k * DIM_X) : 0;
+                for(rocsparse_int j = 0; j < 4; ++j)
                 {
-                    for(rocsparse_int j = 0; j < 4; ++j)
-                    {
-                        res_A[k]
-                            += (rocsparse::abs(A[ind + k * DIM_X + (col + j) * lda]) > threshold)
-                                   ? 1
-                                   : 0;
-                    }
+                    res_A[k]
+                        += (rocsparse::abs(A[safe_row + (col + j) * lda]) > threshold && row_valid)
+                               ? 1
+                               : 0;
                 }
             }
         }
@@ -83,17 +82,16 @@ namespace rocsparse
         {
             for(rocsparse_int k = 0; k < 4; ++k)
             {
-                if(ind + k * DIM_X < m)
+                const bool        row_valid = (ind + k * DIM_X < m);
+                const rocsparse_int safe_row  = row_valid ? (ind + k * DIM_X) : 0;
+                for(rocsparse_int j = 0; j < 4; ++j)
                 {
-                    for(rocsparse_int j = 0; j < 4; ++j)
+                    if(col + j < n && row_valid)
                     {
-                        if(col + j < n)
-                        {
-                            res_A[k] += (rocsparse::abs(A[ind + k * DIM_X + (col + j) * lda])
-                                         > threshold)
-                                            ? 1
-                                            : 0;
-                        }
+                        res_A[k] += (rocsparse::abs(A[safe_row + (col + j) * lda])
+                                     > threshold)
+                                        ? 1
+                                        : 0;
                     }
                 }
             }
