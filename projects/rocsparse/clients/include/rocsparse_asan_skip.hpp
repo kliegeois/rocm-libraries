@@ -137,6 +137,20 @@ inline const char* rocsparse_asan_skip_reason(const Arguments& arg)
             return "ASAN false positive: HIP memory pool page recycling (complex type kernel)";
     }
 
+    // spmm_csr / spmm_csc / spmm_bsr with f16_r or bf16_r: HIP runtime 2MB pool page
+    // recycling within the repeated iterations of a single test.  The csrmmnn_row_split
+    // kernel's dense_C or dense_B buffer lands in a HIP-internal pool page that was
+    // freed after the previous iteration and whose GPU ASAN shadow is still poisoned.
+    // Crashes in isolation; root cause is in HIP's pool allocator (libamdhip64.so),
+    // not in rocsparse.  f32_r / f64_r / i8_r are unaffected and run normally.
+    if(arg.a_type == rocsparse_datatype_f16_r || arg.b_type == rocsparse_datatype_f16_r
+       || arg.a_type == rocsparse_datatype_bf16_r || arg.b_type == rocsparse_datatype_bf16_r)
+    {
+        if(std::strcmp(func, "spmm_csr") == 0 || std::strcmp(func, "spmm_csc") == 0
+           || std::strcmp(func, "spmm_bsr") == 0)
+            return "ASAN false positive: HIP memory pool page recycling (f16/bf16 half-precision kernel)";
+    }
+
     // csrgemm / spgemm_csr f64 with 1-based indexing and random matrix: GPU hard fault
     // (Memory Fault Error from rocdevice.cpp, not an ASAN report).  Crashes in isolation
     // and in the baseline without our ASAN fixes — pre-existing kernel bug in the csrgemm
