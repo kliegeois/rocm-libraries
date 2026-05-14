@@ -31,7 +31,7 @@
 namespace rocsparse
 {
     template <uint32_t BLOCKSIZE, typename I, typename J>
-    ROCSPARSE_KERNEL_NO_ASAN(BLOCKSIZE)
+    ROCSPARSE_KERNEL(BLOCKSIZE)
     void kernel_count_missing_diagonal(J m,
                                        const I* __restrict__ ptr_diag_,
                                        J ptr_shift_,
@@ -40,10 +40,12 @@ namespace rocsparse
                                        J* __restrict__ count,
                                        J* __restrict__ position)
     {
-        const J tid = BLOCKSIZE * hipBlockIdx_x + hipThreadIdx_x;
-        if(tid < m)
+        const J    tid      = BLOCKSIZE * hipBlockIdx_x + hipThreadIdx_x;
+        const bool tid_valid = (tid < m);
+        const J    safe_tid = tid_valid ? tid : static_cast<J>(0);
+        if(tid_valid)
         {
-            const J c = (((ind_[ptr_diag_[tid] - base_ + ptr_shift_] - base_) != tid) ? 1 : 0);
+            const J c = (((ind_[ptr_diag_[safe_tid] - base_ + ptr_shift_] - base_) != tid) ? 1 : 0);
             if(c > 0)
             {
                 const J p = (tid + base_);
@@ -54,7 +56,7 @@ namespace rocsparse
     }
 
     template <rocsparse_fill_mode FILL_MODE, uint32_t BLOCKSIZE, typename I, typename J>
-    ROCSPARSE_KERNEL_NO_ASAN(BLOCKSIZE)
+    ROCSPARSE_KERNEL(BLOCKSIZE)
     void kernel_count_missing_diagonal2(J m,
                                         const I* __restrict__ ptr_,
                                         const J* __restrict__ ind_,
@@ -62,11 +64,13 @@ namespace rocsparse
                                         J* __restrict__ count,
                                         J* __restrict__ position)
     {
-        const J tid = BLOCKSIZE * hipBlockIdx_x + hipThreadIdx_x;
-        if(tid < m)
+        const J    tid       = BLOCKSIZE * hipBlockIdx_x + hipThreadIdx_x;
+        const bool tid_valid = (tid < m);
+        const J    safe_tid  = tid_valid ? tid : static_cast<J>(0);
+        if(tid_valid)
         {
             static constexpr int shift = (FILL_MODE == rocsparse_fill_mode_lower) ? 1 : 0;
-            const J c = (((ind_[ptr_[tid + shift] - shift - base_] - base_) != tid) ? 1 : 0);
+            const J c = (((ind_[ptr_[safe_tid + shift] - shift - base_] - base_) != tid) ? 1 : 0);
             if(c > 0)
             {
                 const J p = (tid + base_);
@@ -77,18 +81,20 @@ namespace rocsparse
     }
 
     template <rocsparse_fill_mode FILL_MODE, uint32_t BLOCKSIZE, typename I, typename J>
-    ROCSPARSE_KERNEL_NO_ASAN(BLOCKSIZE)
+    ROCSPARSE_KERNEL(BLOCKSIZE)
     void kernel_count_diagonal_triangular(J m,
                                           const I* __restrict__ ptr_,
                                           const J* __restrict__ ind_,
                                           rocsparse_index_base base_,
                                           J* __restrict__ count)
     {
-        const J tid = BLOCKSIZE * hipBlockIdx_x + hipThreadIdx_x;
-        if(tid < m)
+        const J    tid       = BLOCKSIZE * hipBlockIdx_x + hipThreadIdx_x;
+        const bool tid_valid = (tid < m);
+        const J    safe_tid  = tid_valid ? tid : static_cast<J>(0);
+        if(tid_valid)
         {
             static constexpr int shift = (FILL_MODE == rocsparse_fill_mode_lower) ? 1 : 0;
-            const J c = (((ind_[ptr_[tid + shift] - shift - base_] - base_) == tid) ? 1 : 0);
+            const J c = (((ind_[ptr_[safe_tid + shift] - shift - base_] - base_) == tid) ? 1 : 0);
             if(c > 0)
             {
                 rocsparse::atomic_add(count, c);
@@ -97,18 +103,20 @@ namespace rocsparse
     }
 
     template <uint32_t BLOCKSIZE, typename I, typename J>
-    ROCSPARSE_KERNEL_NO_ASAN(BLOCKSIZE)
+    ROCSPARSE_KERNEL(BLOCKSIZE)
     void kernel_ptr_end_unit(J m,
                              const I* __restrict__ ptr_,
                              const J* __restrict__ ind_,
                              I* __restrict__ ptr_end,
                              rocsparse_index_base base)
     {
-        const J tid = BLOCKSIZE * hipBlockIdx_x + hipThreadIdx_x;
-        if(tid < m)
+        const J    tid       = BLOCKSIZE * hipBlockIdx_x + hipThreadIdx_x;
+        const bool tid_valid = (tid < m);
+        const J    safe_tid  = tid_valid ? tid : static_cast<J>(0);
+        if(tid_valid)
         {
-            ptr_end[tid] = ptr_[tid + 1];
-            for(I k = ptr_[tid] - base; k < ptr_[tid + 1] - base; ++k)
+            ptr_end[tid] = ptr_[safe_tid + 1];
+            for(I k = ptr_[safe_tid] - base; k < ptr_[safe_tid + 1] - base; ++k)
             {
                 if(ind_[k] - base >= tid)
                 {
@@ -120,18 +128,20 @@ namespace rocsparse
     }
 
     template <uint32_t BLOCKSIZE, typename I, typename J>
-    ROCSPARSE_KERNEL_NO_ASAN(BLOCKSIZE)
+    ROCSPARSE_KERNEL(BLOCKSIZE)
     void kernel_ptr_end_non_unit(J m,
                                  const I* __restrict__ ptr_,
                                  const J* __restrict__ ind_,
                                  I* __restrict__ ptr_end,
                                  rocsparse_index_base base)
     {
-        uint32_t tid = BLOCKSIZE * hipBlockIdx_x + hipThreadIdx_x;
-        if(tid < m)
+        const uint32_t tid       = BLOCKSIZE * hipBlockIdx_x + hipThreadIdx_x;
+        const bool     tid_valid = (tid < static_cast<uint32_t>(m));
+        const uint32_t safe_tid  = tid_valid ? tid : 0u;
+        if(tid_valid)
         {
-            ptr_end[tid] = ptr_[tid + 1];
-            for(I k = ptr_[tid] - base; k < ptr_[tid + 1] - base; ++k)
+            ptr_end[tid] = ptr_[safe_tid + 1];
+            for(I k = ptr_[safe_tid] - base; k < ptr_[safe_tid + 1] - base; ++k)
             {
                 if(ind_[k] - base > tid)
                 {
