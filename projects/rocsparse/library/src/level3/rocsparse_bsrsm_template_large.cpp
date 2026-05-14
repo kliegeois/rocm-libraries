@@ -63,7 +63,7 @@ namespace rocsparse
     }
 
     template <uint32_t BLOCKSIZE, typename T>
-    ROCSPARSE_KERNEL_NO_ASAN(BLOCKSIZE)
+    ROCSPARSE_KERNEL(BLOCKSIZE)
     void bsrsm_copy_scale(rocsparse_int m,
                           rocsparse_int n,
                           ROCSPARSE_DEVICE_HOST_SCALAR_PARAMS(T, alpha),
