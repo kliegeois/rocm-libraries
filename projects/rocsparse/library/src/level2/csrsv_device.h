@@ -89,7 +89,11 @@ namespace rocsparse
             // non-zero values. We must then ensure that the output from the row
             // associated with the local_col is complete to ensure that we can
             // calculate the right answer.
-            local_col = rocsparse::nontemporal_load(csr_col_ind + j) - idx_base;
+
+            // Clamp j for predicated-off lanes: when row_end-row_begin < WF_SIZE,
+            // inactive lanes still execute this body with j >= row_end.
+            const I safe_j = rocsparse::min(j, row_end - 1);
+            local_col = rocsparse::nontemporal_load(csr_col_ind + safe_j) - idx_base;
 
             // Skip all columns where corresponding row belongs to this block
             if(local_col >= first_row)
@@ -213,7 +217,11 @@ namespace rocsparse
             // non-zero values. We must then ensure that the output from the row
             // associated with the local_col is complete to ensure that we can
             // calculate the right answer.
-            local_col = rocsparse::nontemporal_load(csr_col_ind + j) - idx_base;
+
+            // Clamp j for predicated-off lanes: inactive lanes still execute this
+            // body with j < row_begin (possibly negative for signed I).
+            const I safe_j = rocsparse::max(j, row_begin);
+            local_col = rocsparse::nontemporal_load(csr_col_ind + safe_j) - idx_base;
 
             // Skip all columns where corresponding row belongs to this block
             if(local_col <= last_row)
@@ -332,11 +340,15 @@ namespace rocsparse
 
         for(I j = row_begin + lid; j < row_end; j += WF_SIZE)
         {
+            // Clamp j for predicated-off lanes: when row_end-row_begin < WF_SIZE,
+            // inactive lanes still execute this body with j >= row_end.
+            const I safe_j = rocsparse::min(j, row_end - 1);
+
             // Current column this lane operates on
-            const J local_col = rocsparse::nontemporal_load(csr_col_ind + j) - idx_base;
+            const J local_col = rocsparse::nontemporal_load(csr_col_ind + safe_j) - idx_base;
 
             // Local value this lane operates with
-            T local_val = rocsparse::nontemporal_load(csr_val + j * csr_val_inc);
+            T local_val = rocsparse::nontemporal_load(csr_val + safe_j * csr_val_inc);
 
             // Check for numerical zero
             if(local_val == static_cast<T>(0) && local_col == row
