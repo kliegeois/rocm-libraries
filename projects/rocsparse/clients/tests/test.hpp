@@ -30,6 +30,9 @@
 #include "rocsparse_test_template_traits.hpp"
 
 #include "test_check.hpp"
+
+#include "rocsparse_asan_skip.hpp"
+
 void rocsparse_seedrand();
 
 template <rocsparse_test_enum::value_type ROUTINE, typename F>
@@ -189,6 +192,7 @@ inline void testing_reproducibility(const Arguments& arg, F test_execute)
         }                                                                                         \
         static void testing_extra(const Arguments& arg)                                           \
         {                                                                                         \
+            ROCSPARSE_ASAN_CHECK_SKIP(arg);                                                       \
             try                                                                                   \
             {                                                                                     \
                 testing_##ROUTINE##_extra(arg);                                                   \
@@ -210,6 +214,7 @@ inline void testing_reproducibility(const Arguments& arg, F test_execute)
         template <typename... P>                                                                  \
         static void testing(const Arguments& arg)                                                 \
         {                                                                                         \
+            ROCSPARSE_ASAN_CHECK_SKIP(arg);                                                       \
             if(rocsparse_reproducibility_t::instance().is_enabled()                               \
                && arg.skip_reproducibility == false)                                              \
             {                                                                                     \

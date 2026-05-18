@@ -538,9 +538,12 @@ hipError_t memstat_allocator<MODE>::malloc_async(void** mem, size_t nbytes_, hip
     }
     case memstat_mode::device:
     {
-#if HIP_VERSION >= 50300000
+#if HIP_VERSION >= 50300000 && !defined(ROCSPARSE_WITH_ASAN)
         err = hipMallocAsync(mem, nbytes, stream);
 #else
+        // Under ASAN, pool-allocated pages are recycled without un-poisoning
+        // the GPU shadow, causing false-positive GPU Memory Faults. Fall back
+        // to hipMalloc which is outside the HIP memory pool.
         err = hipMalloc(mem, nbytes);
 #endif
         break;

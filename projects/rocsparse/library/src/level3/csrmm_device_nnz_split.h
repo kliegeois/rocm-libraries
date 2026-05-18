@@ -73,16 +73,25 @@ namespace rocsparse
         J col_ind = 0;
         T val     = static_cast<T>(0);
 
-        if((BLOCKSIZE * bid + tid) < nnz)
+        const bool nnz_valid = ((BLOCKSIZE * bid + tid) < nnz);
+        // Use safe index 0 for OOB threads to prevent speculative load from invalid addresses
+        const I safe_nnz_idx = nnz_valid ? (BLOCKSIZE * bid + tid) : 0;
+
+        if(nnz_valid)
         {
             row_ind = dichotomic_search<I, J>(row_limits[bid],
                                               row_limits[bid + 1],
                                               BLOCKSIZE * bid + tid + idx_base,
                                               nnz + idx_base,
                                               csr_row_ptr);
-            col_ind = rocsparse::nontemporal_load(&csr_col_ind[BLOCKSIZE * bid + tid]) - idx_base;
-            val     = alpha
-                  * conj_val(rocsparse::nontemporal_load(&csr_val[BLOCKSIZE * bid + tid]), conj_A);
+        }
+        col_ind = rocsparse::nontemporal_load(&csr_col_ind[safe_nnz_idx]) - idx_base;
+        val     = alpha
+              * conj_val(rocsparse::nontemporal_load(&csr_val[safe_nnz_idx]), conj_A);
+        if(!nnz_valid)
+        {
+            col_ind = 0;
+            val     = static_cast<T>(0);
         }
 
         shared_row[tid] = row_ind;
@@ -210,16 +219,24 @@ namespace rocsparse
         J col_ind = 0;
         T val     = static_cast<T>(0);
 
-        if(BLOCKSIZE * bid + tid < nnz)
+        const bool nnz_valid = (BLOCKSIZE * bid + tid < nnz);
+        const I safe_nnz_idx = nnz_valid ? (BLOCKSIZE * bid + tid) : 0;
+
+        if(nnz_valid)
         {
             row_ind = dichotomic_search<I, J>(row_limits[bid],
                                               row_limits[bid + 1],
                                               BLOCKSIZE * bid + tid + idx_base,
                                               nnz + idx_base,
                                               csr_row_ptr);
-            col_ind = rocsparse::nontemporal_load(&csr_col_ind[BLOCKSIZE * bid + tid]) - idx_base;
-            val     = alpha
-                  * conj_val(rocsparse::nontemporal_load(&csr_val[BLOCKSIZE * bid + tid]), conj_A);
+        }
+        col_ind = rocsparse::nontemporal_load(&csr_col_ind[safe_nnz_idx]) - idx_base;
+        val     = alpha
+              * conj_val(rocsparse::nontemporal_load(&csr_val[safe_nnz_idx]), conj_A);
+        if(!nnz_valid)
+        {
+            col_ind = 0;
+            val     = static_cast<T>(0);
         }
 
         const J colB = offset;
@@ -473,15 +490,23 @@ namespace rocsparse
         J col = 0;
         T val = static_cast<T>(0);
 
-        if((BLOCKSIZE * bid + tid) < nnz)
+        const bool nnz_valid2 = ((BLOCKSIZE * bid + tid) < nnz);
+        const I safe_nnz_idx2 = nnz_valid2 ? (BLOCKSIZE * bid + tid) : 0;
+
+        if(nnz_valid2)
         {
             row = dichotomic_search<I, J>(row_limits[bid],
                                           row_limits[bid + 1],
                                           BLOCKSIZE * bid + tid + idx_base,
                                           nnz + idx_base,
                                           csr_row_ptr);
-            col = rocsparse::nontemporal_load(&csr_col_ind[BLOCKSIZE * bid + tid]) - idx_base;
-            val = conj_val(rocsparse::nontemporal_load(&csr_val[BLOCKSIZE * bid + tid]), conj_A);
+        }
+        col = rocsparse::nontemporal_load(&csr_col_ind[safe_nnz_idx2]) - idx_base;
+        val = conj_val(rocsparse::nontemporal_load(&csr_val[safe_nnz_idx2]), conj_A);
+        if(!nnz_valid2)
+        {
+            col = 0;
+            val = static_cast<T>(0);
         }
 
         for(J l = 0; l < ncol; l += WF_SIZE * LOOPS)
@@ -601,7 +626,10 @@ namespace rocsparse
         J col = 0;
         T val = static_cast<T>(0);
 
-        if((BLOCKSIZE * bid + tid) < nnz)
+        const bool nnz_valid3 = ((BLOCKSIZE * bid + tid) < nnz);
+        const I safe_nnz_idx3 = nnz_valid3 ? (BLOCKSIZE * bid + tid) : 0;
+
+        if(nnz_valid3)
         {
             // Compute COO row index on the fly
             row = dichotomic_search<I, J>(row_limits[bid],
@@ -609,8 +637,13 @@ namespace rocsparse
                                           BLOCKSIZE * bid + tid + idx_base,
                                           nnz + idx_base,
                                           csr_row_ptr);
-            col = rocsparse::nontemporal_load(&csr_col_ind[BLOCKSIZE * bid + tid]) - idx_base;
-            val = conj_val(rocsparse::nontemporal_load(&csr_val[BLOCKSIZE * bid + tid]), conj_A);
+        }
+        col = rocsparse::nontemporal_load(&csr_col_ind[safe_nnz_idx3]) - idx_base;
+        val = conj_val(rocsparse::nontemporal_load(&csr_val[safe_nnz_idx3]), conj_A);
+        if(!nnz_valid3)
+        {
+            col = 0;
+            val = static_cast<T>(0);
         }
 
         for(J l = ncol_offset; l < N; l += WF_SIZE)

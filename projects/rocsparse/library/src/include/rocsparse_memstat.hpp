@@ -36,13 +36,17 @@
 #define rocsparse_hipFree(p_) hipFree((p_))
 
 // if hip version is atleast 5.3.0 hipMallocAsync and hipFreeAsync are defined
-#if HIP_VERSION >= 50300000
+#if HIP_VERSION >= 50300000 && !defined(ROCSPARSE_WITH_ASAN)
 #define rocsparse_hipMallocAsync(p_, nbytes_, stream_) hipMallocAsync((p_), (nbytes_), (stream_))
 #define rocsparse_hipFreeAsync(p_, stream_) \
     (((p_) != nullptr) ? hipFreeAsync((p_), (stream_)) : hipSuccess)
 #else
+// Under ASAN (or old HIP < 5.3.0), use synchronous hipMalloc/hipFree to keep
+// all allocations outside HIP's memory pool. Pool pages are ASAN-poisoned on
+// free and recycled without un-poisoning the GPU shadow, causing false-positive
+// GPU Memory Faults when a kernel accesses the new (valid) allocation.
 #define rocsparse_hipMallocAsync(p_, nbytes_, stream_) hipMalloc((p_), (nbytes_))
-#define rocsparse_hipFreeAsync(p_, stream_) hipFree((p_))
+#define rocsparse_hipFreeAsync(p_, stream_)            hipFree((p_))
 #endif
 
 #define rocsparse_hipHostMalloc(p_, nbytes_) hipHostMalloc((p_), (nbytes_))

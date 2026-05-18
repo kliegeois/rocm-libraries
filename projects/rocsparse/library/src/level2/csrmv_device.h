@@ -310,6 +310,15 @@ namespace rocsparse
             // Stream all of this row block's matrix values into local memory.
             // Perform the matvec in parallel with this work.
             const I col = row_offset + lid - idx_base;
+#ifdef ROCSPARSE_WITH_ASAN
+            // Under ASAN, always use bounds-checked path to avoid intentional OOB reads
+            // in the fast path below (which are safe on dGPUs but trigger ASAN errors).
+            for(I i = 0; col + i < csr_row_ptr[stop_row] - idx_base; i += WG_SIZE)
+            {
+                partialSums[lid + i] = alpha * rocsparse::conj_val(csr_val[col + i], conj)
+                                       * x[csr_col_ind[col + i] - idx_base];
+            }
+#else
             if(col + BLOCKSIZE - WG_SIZE < nnz)
             {
                 for(J i = 0; i < BLOCKSIZE; i += WG_SIZE)
@@ -333,6 +342,7 @@ namespace rocsparse
                                            * x[csr_col_ind[col + i] - idx_base];
                 }
             }
+#endif
             __syncthreads();
 
             if(numThreadsForRed > 1)
@@ -348,15 +358,16 @@ namespace rocsparse
                 // numThreadsForRed guaranteed to be a power of two, so the clz code below
                 // avoids an integer divide.
                 // size_t st = lid/numThreadsForRed;
-                const I local_row       = row + (lid >> (31 - __clz(numThreadsForRed)));
-                const J local_first_val = csr_row_ptr[local_row] - row_offset;
-                const J local_last_val  = csr_row_ptr[local_row + 1] - row_offset;
-                const J threadInBlock   = lid & (numThreadsForRed - 1);
+                const I local_row     = row + (lid >> (31 - __clz(numThreadsForRed)));
+                const J threadInBlock = lid & (numThreadsForRed - 1);
 
                 // Not all row blocks are full -- they may have an odd number of rows. As such,
                 // we need to ensure that adjacent-groups only work on real data for this rowBlock.
                 if(local_row < stop_row)
                 {
+                    const J local_first_val = csr_row_ptr[local_row] - row_offset;
+                    const J local_last_val  = csr_row_ptr[local_row + 1] - row_offset;
+
                     // This is dangerous -- will infinite loop if your last value is within
                     // numThreadsForRed of MAX_UINT. Noticeable performance gain to avoid a
                     // long induction variable here, though.

@@ -1,6 +1,6 @@
 /*! \file */
 /* ************************************************************************
- * Copyright (C) 2018-2025 Advanced Micro Devices, Inc. All rights Reserved.
+ * Copyright (C) 2018-2026 Advanced Micro Devices, Inc. All rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -89,7 +89,11 @@ namespace rocsparse
             // non-zero values. We must then ensure that the output from the row
             // associated with the local_col is complete to ensure that we can
             // calculate the right answer.
-            local_col = rocsparse::nontemporal_load(csr_col_ind + j) - idx_base;
+
+            // Clamp j for predicated-off lanes: when row_end-row_begin < WF_SIZE,
+            // inactive lanes still execute this body with j >= row_end.
+            const I safe_j = rocsparse::min(j, row_end - 1);
+            local_col = rocsparse::nontemporal_load(csr_col_ind + safe_j) - idx_base;
 
             // Skip all columns where corresponding row belongs to this block
             if(local_col >= first_row)
@@ -119,8 +123,9 @@ namespace rocsparse
             if(local_col < row)
             {
                 // Index into shared memory to query for done flag
-                const int local_done = rocsparse::spin_loop<SLEEP>(
-                    &local_done_array[local_col - first_row], __HIP_MEMORY_SCOPE_WORKGROUP);
+                const int safe_local_idx = (local_col >= first_row) ? local_col - first_row : 0;
+                const int local_done     = rocsparse::spin_loop<SLEEP>(
+                    &local_done_array[safe_local_idx], __HIP_MEMORY_SCOPE_WORKGROUP);
                 local_max = rocsparse::max(local_done, local_max);
             }
         }
@@ -212,7 +217,11 @@ namespace rocsparse
             // non-zero values. We must then ensure that the output from the row
             // associated with the local_col is complete to ensure that we can
             // calculate the right answer.
-            local_col = rocsparse::nontemporal_load(csr_col_ind + j) - idx_base;
+
+            // Clamp j for predicated-off lanes: inactive lanes still execute this
+            // body with j < row_begin (possibly negative for signed I).
+            const I safe_j = rocsparse::max(j, row_begin);
+            local_col = rocsparse::nontemporal_load(csr_col_ind + safe_j) - idx_base;
 
             // Skip all columns where corresponding row belongs to this block
             if(local_col <= last_row)
@@ -331,11 +340,15 @@ namespace rocsparse
 
         for(I j = row_begin + lid; j < row_end; j += WF_SIZE)
         {
+            // Clamp j for predicated-off lanes: when row_end-row_begin < WF_SIZE,
+            // inactive lanes still execute this body with j >= row_end.
+            const I safe_j = rocsparse::min(j, row_end - 1);
+
             // Current column this lane operates on
-            const J local_col = rocsparse::nontemporal_load(csr_col_ind + j) - idx_base;
+            const J local_col = rocsparse::nontemporal_load(csr_col_ind + safe_j) - idx_base;
 
             // Local value this lane operates with
-            T local_val = rocsparse::nontemporal_load(csr_val + j * csr_val_inc);
+            T local_val = rocsparse::nontemporal_load(csr_val + safe_j * csr_val_inc);
 
             // Check for numerical zero
             if(local_val == static_cast<T>(0) && local_col == row

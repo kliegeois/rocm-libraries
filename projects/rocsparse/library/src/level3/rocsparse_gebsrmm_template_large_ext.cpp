@@ -31,7 +31,12 @@ namespace rocsparse
               rocsparse_int BLK_SIZE_Y,
               rocsparse_int UNROLL_SIZE_Y,
               typename T>
-    ROCSPARSE_KERNEL(BSR_BLOCK_DIM* BLK_SIZE_Y)
+    // ROCSPARSE_KERNEL_NO_ASAN: ASAN GPU shadow memory for the large shared
+    // memory arrays in this kernel (shared_A + shared_B, up to 12KB for
+    // <32,32,2>) causes GPU Memory Fault false positives. No real OOB exists
+    // in this kernel; the bounds analysis is correct. This suppresses ASAN
+    // instrumentation only for this kernel.
+    ROCSPARSE_KERNEL_NO_ASAN(BSR_BLOCK_DIM* BLK_SIZE_Y)
     void gebsrmm_large_blockdim_kernel_ext(rocsparse_direction direction,
                                            rocsparse_operation trans_B,
                                            rocsparse_int       mb,

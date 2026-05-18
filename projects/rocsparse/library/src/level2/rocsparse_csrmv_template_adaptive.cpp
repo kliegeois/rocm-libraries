@@ -301,7 +301,7 @@ namespace rocsparse
             *rowBlocks = nRows;
             if((nRows - last_i) > static_cast<I>(ROWS_FOR_VECTOR))
             {
-                *(wgIds - 1) |= numThreadsForReduction(i - last_i);
+                *(wgIds - 1) |= numThreadsForReduction(nRows - last_i);
             }
 
             ++rowBlocks;
@@ -417,17 +417,17 @@ rocsparse_status
         // Allocate memory on device to hold csrmv info, if required
         if(csrmv_info->adaptive.size > 0)
         {
-
-            RETURN_IF_HIP_ERROR(rocsparse_hipMallocAsync(&csrmv_info->adaptive.row_blocks,
-                                                         sizeof(I) * csrmv_info->adaptive.size,
-                                                         handle->stream));
+            // Use hipMalloc (not hipMallocAsync) to keep these buffers outside HIP's
+            // memory pool. Pool-allocated pages are recycled and ASAN-poisoned on free,
+            // causing false-positive GPU Memory Faults when the adaptive info is read
+            // across tests in a suite (csrmv csradaptive).
+            RETURN_IF_HIP_ERROR(rocsparse_hipMalloc(&csrmv_info->adaptive.row_blocks,
+                                                    sizeof(I) * csrmv_info->adaptive.size));
             RETURN_IF_HIP_ERROR(
-                rocsparse_hipMallocAsync(&csrmv_info->adaptive.wg_flags,
-                                         sizeof(uint32_t) * csrmv_info->adaptive.size,
-                                         handle->stream));
-            RETURN_IF_HIP_ERROR(rocsparse_hipMallocAsync(&csrmv_info->adaptive.wg_ids,
-                                                         sizeof(J) * csrmv_info->adaptive.size,
-                                                         handle->stream));
+                rocsparse_hipMalloc(&csrmv_info->adaptive.wg_flags,
+                                    sizeof(uint32_t) * csrmv_info->adaptive.size));
+            RETURN_IF_HIP_ERROR(rocsparse_hipMalloc(&csrmv_info->adaptive.wg_ids,
+                                                    sizeof(J) * csrmv_info->adaptive.size));
 
             // Copy row blocks information to device
             RETURN_IF_HIP_ERROR(hipMemcpyAsync(csrmv_info->adaptive.row_blocks,
