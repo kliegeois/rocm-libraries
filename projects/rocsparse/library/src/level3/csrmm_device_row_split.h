@@ -862,10 +862,11 @@ namespace rocsparse
 
         for(I j = row_start + lid; j < row_end; j += WF_SIZE)
         {
-            const J col = csr_col_ind[j + columns_values_batch_stride_A * batch] - idx_base;
+            const I safe_j = min(j, row_end - 1);
+            const J col = csr_col_ind[safe_j + columns_values_batch_stride_A * batch] - idx_base;
             const T val
                 = alpha
-                  * rocsparse::conj_val(csr_val[j + columns_values_batch_stride_A * batch], conj_A);
+                  * rocsparse::conj_val(csr_val[safe_j + columns_values_batch_stride_A * batch], conj_A);
 
             if(order_C == rocsparse_order_column)
             {
@@ -950,10 +951,11 @@ namespace rocsparse
 
         for(I j = row_start + lid; j < row_end; j += WF_SIZE)
         {
-            const J col = csr_col_ind[j + columns_values_batch_stride_A * batch] - idx_base;
+            const I safe_j = min(j, row_end - 1);
+            const J col = csr_col_ind[safe_j + columns_values_batch_stride_A * batch] - idx_base;
             const T val
                 = alpha
-                  * rocsparse::conj_val(csr_val[j + columns_values_batch_stride_A * batch], conj_A);
+                  * rocsparse::conj_val(csr_val[safe_j + columns_values_batch_stride_A * batch], conj_A);
 
             if(order_C == rocsparse_order_column)
             {
