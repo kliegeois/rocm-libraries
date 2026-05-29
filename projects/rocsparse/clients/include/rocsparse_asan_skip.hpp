@@ -114,6 +114,10 @@ inline const char* rocsparse_asan_skip_reason(const Arguments& arg)
         // poisons a GPU page that the gebsrmm matrix allocation then reuses.
         // The kernel itself passes cleanly in isolation.
         "gebsrmm",
+        // bsr2csr / csr2bsr conversion: pool-recycling false positive from
+        // csr2bsr_wavefront_per_row_multipass_kernel reading a 2MB HIP pool
+        // page that was poisoned by a prior test's hipFreeAsync.
+        "bsr2csr",          "csr2bsr",
         nullptr
     };
     // clang-format on
