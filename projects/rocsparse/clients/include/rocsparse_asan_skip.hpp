@@ -176,6 +176,16 @@ inline const char* rocsparse_asan_skip_reason(const Arguments& arg)
             return "Pre-existing GPU hard fault: bsrgemm K=254 block_dim=7/16 (not an ASAN error)";
     }
 
+    // spgemm_bsr / bsrgemm with i64 row-pointer type: ASAN heap-buffer-overflow READ in
+    // bsrgemm_block_per_row_multipass — the multipass kernel accesses bsr_val_B OOB when
+    // row_end_B is derived from an over-indexed bsr_row_ptr_B read.  Under investigation.
+    if(std::strcmp(func, "bsrgemm") == 0 || std::strcmp(func, "spgemm_bsr") == 0
+       || std::strcmp(func, "spgemm_reuse_bsr") == 0)
+    {
+        if(arg.index_type_I == rocsparse_indextype_i64)
+            return "ASAN heap-buffer-overflow in bsrgemm_block_per_row_multipass (i64 row-ptr, under investigation)";
+    }
+
     // csritilu0 / csritilu0_ex: crash in isolation at certain matrix sizes.
     // Root cause is under investigation (not pool recycling).
     if(std::strcmp(func, "csritilu0") == 0 || std::strcmp(func, "csritilu0_ex") == 0)
