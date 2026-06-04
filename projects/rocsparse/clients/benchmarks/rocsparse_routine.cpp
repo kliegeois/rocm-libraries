@@ -255,6 +255,7 @@ constexpr const char* rocsparse_routine::to_string() const
 #include "testing_spmm_csr.hpp"
 #include "testing_spsm_coo.hpp"
 #include "testing_spsm_csr.hpp"
+#include "testing_spsm_csc.hpp"
 
 // Extra
 #include "testing_bsrgeam.hpp"
@@ -553,6 +554,7 @@ rocsparse_status rocsparse_routine::dispatch_call(const Arguments& arg)
         DEFINE_CASE_IJABCT_X(cscmm, testing_spmm_csc);
         DEFINE_CASE_IJABCT_X(cscmm_batched, testing_spmm_batched_csc);
         DEFINE_CASE_IJT_X(csrsm, testing_spsm_csr);
+        DEFINE_CASE_IJT_X(cscsm, testing_spsm_csc);
         DEFINE_CASE_T_FLOAT_ONLY(csrsort);
         DEFINE_CASE_IJT_X(csrsv, testing_spsv_csr);
         DEFINE_CASE_IJT_X(spitsv_csr, testing_spitsv_csr);
