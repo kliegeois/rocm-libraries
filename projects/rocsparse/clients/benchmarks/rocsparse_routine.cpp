@@ -254,8 +254,8 @@ constexpr const char* rocsparse_routine::to_string() const
 #include "testing_spmm_csc.hpp"
 #include "testing_spmm_csr.hpp"
 #include "testing_spsm_coo.hpp"
-#include "testing_spsm_csr.hpp"
 #include "testing_spsm_csc.hpp"
+#include "testing_spsm_csr.hpp"
 
 // Extra
 #include "testing_bsrgeam.hpp"
