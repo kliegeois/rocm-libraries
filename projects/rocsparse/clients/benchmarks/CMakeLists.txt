@@ -187,6 +187,7 @@ set(ROCSPARSE_CLIENTS_TESTINGS
 ../testings/testing_spsm_csr.cpp
 ../testings/testing_spsm_coo.cpp
 ../testings/testing_sptrsm_csr.cpp
+../testings/testing_sptrsm_csc.cpp
 ../testings/testing_sptrsm_coo.cpp
 ../testings/testing_sparse_to_dense_coo.cpp
 ../testings/testing_sparse_to_dense_csr.cpp
