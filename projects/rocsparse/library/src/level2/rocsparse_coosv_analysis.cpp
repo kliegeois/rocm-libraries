@@ -32,7 +32,8 @@ rocsparse_status rocsparse::coosv_analysis(rocsparse_handle            handle, /
                                            rocsparse_analysis_policy   analysis, // 3
                                            rocsparse_solve_policy      solve, // 4
                                            rocsparse_csrsv_info*       p_csrsv_info, // 5
-                                           void*                       buffer) // 6
+                                           int64_t                     batch_count, // 6
+                                           void*                       buffer) // 7
 {
     ROCSPARSE_ROUTINE_TRACE;
     ROCSPARSE_CHECKARG_HANDLE(0, handle);
@@ -114,8 +115,8 @@ rocsparse_status rocsparse::coosv_analysis(rocsparse_handle            handle, /
                                A->descr,
                                A->info);
 
-    RETURN_IF_ROCSPARSE_ERROR(
-        (rocsparse::csrsv_analysis(handle, trans, &csr, analysis, solve, p_csrsv_info, buffer)));
+    RETURN_IF_ROCSPARSE_ERROR((rocsparse::csrsv_analysis(
+        handle, trans, &csr, analysis, solve, p_csrsv_info, batch_count, buffer)));
 
     return rocsparse_status_success;
 }

@@ -132,6 +132,10 @@ namespace rocsparse
                 if(mat->analysed == false)
                 {
                     rocsparse_csrsv_info csrsv_info = mat->info->get_csrsv_info();
+                    // spsv is always non-batched, so the right-hand-side batch_count is
+                    // 1. csrsv_analysis pre-allocates the numeric singular-pivot buffer
+                    // (sized for batch_count) during this analysis phase so the solve can
+                    // run inside a HIP graph capture region without device allocations.
                     RETURN_IF_ROCSPARSE_ERROR(
                         (rocsparse::csrsv_analysis(handle,
                                                    trans,
@@ -139,16 +143,8 @@ namespace rocsparse
                                                    rocsparse_analysis_policy_force,
                                                    rocsparse_solve_policy_auto,
                                                    &csrsv_info,
+                                                   1,
                                                    temp_buffer)));
-                    // Pre-allocate the numeric singular-pivot buffer (spsv is always
-                    // non-batched, so batch_count is 1) so solves inside a HIP graph
-                    // capture region do not perform device allocations.
-                    if(csrsv_info != nullptr)
-                    {
-                        csrsv_info->create_singularity_numeric_exact(
-                            1, mat->col_type, handle->stream);
-                        RETURN_IF_HIP_ERROR(hipStreamSynchronize(handle->stream));
-                    }
                     mat->analysed = true;
                 }
 
@@ -199,6 +195,10 @@ namespace rocsparse
                 if(mat->analysed == false)
                 {
                     rocsparse_csrsv_info csrsv_info = mat->info->get_csrsv_info();
+                    // coosv_analysis pre-allocates the numeric singular-pivot buffer (via
+                    // csrsv_analysis, batch_count 1) during this analysis phase so the
+                    // solve can run inside a HIP graph capture region without device
+                    // allocations.
                     RETURN_IF_ROCSPARSE_ERROR(
                         (rocsparse::coosv_analysis(handle,
                                                    trans,
@@ -206,16 +206,8 @@ namespace rocsparse
                                                    rocsparse_analysis_policy_force,
                                                    rocsparse_solve_policy_auto,
                                                    &csrsv_info,
+                                                   1,
                                                    temp_buffer)));
-                    // Pre-allocate the numeric singular-pivot buffer (spsv is always
-                    // non-batched, so batch_count is 1) so solves inside a HIP graph
-                    // capture region do not perform device allocations.
-                    if(csrsv_info != nullptr)
-                    {
-                        csrsv_info->create_singularity_numeric_exact(
-                            1, mat->col_type, handle->stream);
-                        RETURN_IF_HIP_ERROR(hipStreamSynchronize(handle->stream));
-                    }
                     mat->analysed = true;
                 }
                 return rocsparse_status_success;

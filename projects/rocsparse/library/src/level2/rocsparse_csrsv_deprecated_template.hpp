@@ -122,7 +122,7 @@ namespace rocsparse
                                    info);
 
         RETURN_IF_ROCSPARSE_ERROR(
-            rocsparse::csrsv_analysis(handle, op, &csr, analysis, solve, p_csrsv_info, buffer));
+            rocsparse::csrsv_analysis(handle, op, &csr, analysis, solve, p_csrsv_info, 1, buffer));
         return rocsparse_status_success;
     }
 

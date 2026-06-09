@@ -122,17 +122,12 @@ namespace rocsparse
                                    descr->base,
                                    descr,
                                    info);
+        // The legacy csrsv API is always non-batched, so the right-hand-side
+        // batch_count is 1. csrsv_analysis pre-allocates the numeric singular-pivot
+        // buffer (sized for batch_count) during this analysis phase so a subsequent
+        // solve can run inside a HIP graph capture region without device allocations.
         RETURN_IF_ROCSPARSE_ERROR(rocsparse::csrsv_analysis(
-            handle, trans, &csr, analysis, solve, &csrsv_info, temp_buffer));
-
-        // Pre-allocate the numeric singular-pivot buffer here (analysis phase, outside
-        // any HIP graph capture) so the solve can run safely inside a captured graph.
-        // The legacy csrsv API is always non-batched, so batch_count is 1.
-        if(csrsv_info != nullptr)
-        {
-            csrsv_info->create_singularity_numeric_exact(1, csr.col_type, handle->stream);
-            RETURN_IF_HIP_ERROR(hipStreamSynchronize(handle->stream));
-        }
+            handle, trans, &csr, analysis, solve, &csrsv_info, 1, temp_buffer));
 
         return rocsparse_status_success;
     }

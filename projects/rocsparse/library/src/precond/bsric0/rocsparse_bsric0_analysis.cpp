@@ -86,7 +86,6 @@ rocsparse_status rocsparse::bsric0_analysis(rocsparse_handle          handle,
             //
             bsric0_info->create_singularity_numeric_exact(
                 A->batch_count, A->col_type, handle->stream);
-            RETURN_IF_HIP_ERROR(hipStreamSynchronize(handle->stream));
             return rocsparse_status_success;
         }
         break;
@@ -125,7 +124,6 @@ rocsparse_status rocsparse::bsric0_analysis(rocsparse_handle          handle,
     // See rocsparse_csrsv_analysis.cpp for the detailed rationale.
     //
     bsric0_info->create_singularity_numeric_exact(A->batch_count, A->col_type, handle->stream);
-    RETURN_IF_HIP_ERROR(hipStreamSynchronize(handle->stream));
 
     return rocsparse_status_success;
 }

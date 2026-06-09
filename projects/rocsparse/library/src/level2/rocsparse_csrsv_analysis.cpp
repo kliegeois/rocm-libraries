@@ -447,17 +447,29 @@ rocsparse_status rocsparse::csrsv_analysis(rocsparse_handle            handle,
                                            rocsparse_analysis_policy   analysis_policy,
                                            rocsparse_solve_policy      solve_policy,
                                            rocsparse_csrsv_info*       p_csrsv_info,
+                                           int64_t                     batch_count,
                                            void*                       temp_buffer)
 {
     ROCSPARSE_ROUTINE_TRACE;
+
+    auto csrsv_info = p_csrsv_info[0];
+
+    // Ensure the csrsv info object exists before any return path (including the quick
+    // return below), so that csrsv_info existence is never ambiguous for callers. This
+    // object owns the numeric singular-pivot buffer.
+    if(csrsv_info == nullptr)
+    {
+        csrsv_info      = new _rocsparse_csrsv_info();
+        p_csrsv_info[0] = csrsv_info;
+    }
+
     // Quick return if possible
     if(A->rows == 0)
     {
         return rocsparse_status_success;
     }
 
-    auto csrsv_info = p_csrsv_info[0];
-    auto descr      = A->descr;
+    auto descr = A->descr;
     // Check matrix type
     ROCSPARSE_CHECKARG(2,
                        A,
@@ -472,7 +484,9 @@ rocsparse_status rocsparse::csrsv_analysis(rocsparse_handle            handle,
                        rocsparse_status_requires_sorted_storage);
 
     auto info = A->info;
+
     // Differentiate the analysis policies
+    bool reused = false;
     if(analysis_policy == rocsparse_analysis_policy_reuse)
     {
         rocsparse::trm_info_t* p = nullptr;
@@ -488,30 +502,35 @@ rocsparse_status rocsparse::csrsv_analysis(rocsparse_handle            handle,
         if(p != nullptr)
         {
             info->set_csrsv_info(trans, descr->fill_mode, p);
-            return rocsparse_status_success;
+            reused = true;
         }
     }
 
-    if(csrsv_info == nullptr)
+    if(!reused)
     {
-        csrsv_info      = new _rocsparse_csrsv_info();
-        p_csrsv_info[0] = csrsv_info;
+        // Perform analysis
+        RETURN_IF_ROCSPARSE_ERROR(csrsv_info->recreate(handle,
+                                                       trans,
+                                                       A->rows,
+                                                       A->nnz,
+                                                       A->descr,
+                                                       A->data_type,
+                                                       A->const_val_data,
+                                                       // csr_val_stride,
+                                                       A->row_type,
+                                                       A->const_row_data,
+                                                       A->col_type,
+                                                       A->const_col_data,
+                                                       temp_buffer));
     }
 
-    // Perform analysis
-    RETURN_IF_ROCSPARSE_ERROR(csrsv_info->recreate(handle,
-                                                   trans,
-                                                   A->rows,
-                                                   A->nnz,
-                                                   A->descr,
-                                                   A->data_type,
-                                                   A->const_val_data,
-                                                   // csr_val_stride,
-                                                   A->row_type,
-                                                   A->const_row_data,
-                                                   A->col_type,
-                                                   A->const_col_data,
-                                                   temp_buffer));
+    // Pre-allocate the numeric singular-pivot buffer here, during the (non-captured)
+    // analysis phase, so that a solve submitted later inside a HIP graph capture region
+    // only re-initializes existing device memory instead of performing a graph-owned
+    // stream-ordered allocation. The buffer is sized for the right-hand-side
+    // batch_count. All work is stream-ordered on handle->stream (the same stream the
+    // solve runs on), so no host synchronization is required.
+    csrsv_info->create_singularity_numeric_exact(batch_count, A->col_type, handle->stream);
 
     return rocsparse_status_success;
 }

@@ -70,6 +70,7 @@ namespace rocsparse
                                     rocsparse_analysis_policy   analysis_policy,
                                     rocsparse_solve_policy      solve_policy,
                                     rocsparse_csrsv_info*       p_csrsv_info,
+                                    int64_t                     batch_count,
                                     void*                       temp_buffer);
 
     rocsparse_status csrsv_solve(rocsparse_handle            handle,

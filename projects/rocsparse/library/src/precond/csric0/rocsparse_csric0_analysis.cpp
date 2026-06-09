@@ -89,7 +89,6 @@ rocsparse_status rocsparse::csric0_analysis(rocsparse_handle          handle,
                 A->batch_count, A->col_type, handle->stream);
             csric0_info->create_singularity_numeric_exact(
                 A->batch_count, A->col_type, handle->stream);
-            RETURN_IF_HIP_ERROR(hipStreamSynchronize(handle->stream));
             return rocsparse_status_success;
         }
     }
@@ -122,7 +121,6 @@ rocsparse_status rocsparse::csric0_analysis(rocsparse_handle          handle,
     //
     csric0_info->create_singularity_numeric_near(A->batch_count, A->col_type, handle->stream);
     csric0_info->create_singularity_numeric_exact(A->batch_count, A->col_type, handle->stream);
-    RETURN_IF_HIP_ERROR(hipStreamSynchronize(handle->stream));
 
     return rocsparse_status_success;
 }
