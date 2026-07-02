@@ -146,8 +146,20 @@ namespace rocsparse
                 {
                     y[row * block_dim + bj] -= val * bsr_val[BSR_IND(j, bj, bi, dir)];
                 }
+
+                // The diagonal solve runs redundantly on every lane, but the off-diagonal
+                // updates above are written per-lane to global y and re-read by all lanes in
+                // the following iteration. Without ordering, a lane can read a stale
+                // y[row*block_dim+bj] and drop the update term (observed as a small nondet
+                // mismatch). Order the cross-lane writes before the subsequent reads.
+                __builtin_amdgcn_fence(__ATOMIC_ACQ_REL, "agent");
             }
         }
+
+        // The row's block result is written to y by lanes 0..block_dim-1, but only lane 0 publishes
+        // the done flag below. A release on lane 0 alone does not order the OTHER lanes' y stores, so
+        // all lanes must issue an agent-scope release fence before the flag is made visible.
+        __builtin_amdgcn_fence(__ATOMIC_RELEASE, "agent");
 
         // Write "row is done" flag
         if(lid == 0)
@@ -279,8 +291,18 @@ namespace rocsparse
                 {
                     y[row * block_dim + bj] -= val * bsr_val[BSR_IND(j, bj, bi, dir)];
                 }
+
+                // See the lower-triangular kernel: the redundant per-lane diagonal solve
+                // re-reads per-lane global y writes on the next iteration, so order the
+                // cross-lane writes before the subsequent reads to avoid dropping a term.
+                __builtin_amdgcn_fence(__ATOMIC_ACQ_REL, "agent");
             }
         }
+
+        // The row's block result is written to y by lanes 0..block_dim-1, but only lane 0 publishes
+        // the done flag below. A release on lane 0 alone does not order the OTHER lanes' y stores, so
+        // all lanes must issue an agent-scope release fence before the flag is made visible.
+        __builtin_amdgcn_fence(__ATOMIC_RELEASE, "agent");
 
         // Write "row is done" flag
         if(lid == 0)
@@ -450,6 +472,11 @@ namespace rocsparse
             y[row * block_dim + lid] = local_sum;
         }
 
+        // The row's block result is written to y by lanes 0..block_dim-1, but only lane 0 publishes
+        // the done flag below. A release on lane 0 alone does not order the OTHER lanes' y stores, so
+        // all lanes must issue an agent-scope release fence before the flag is made visible.
+        __builtin_amdgcn_fence(__ATOMIC_RELEASE, "agent");
+
         if(lid == 0)
         {
             // Write "row is done" flag
@@ -618,6 +645,11 @@ namespace rocsparse
             // Store the rows results in y
             y[row * block_dim + lid] = local_sum;
         }
+
+        // The row's block result is written to y by lanes 0..block_dim-1, but only lane 0 publishes
+        // the done flag below. A release on lane 0 alone does not order the OTHER lanes' y stores, so
+        // all lanes must issue an agent-scope release fence before the flag is made visible.
+        __builtin_amdgcn_fence(__ATOMIC_RELEASE, "agent");
 
         if(lid == 0)
         {
