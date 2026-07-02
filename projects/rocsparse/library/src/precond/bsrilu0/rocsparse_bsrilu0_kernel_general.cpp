@@ -79,6 +79,11 @@ namespace rocsparse
             // Process lower diagonal
             for(I j = row_begin; j < row_diag; ++j)
             {
+                // A previous iteration's fill-in update writes bsr_val blocks (per-lane) that this
+                // iteration may re-read with a different lane->element mapping. Order the prior
+                // iteration's cross-lane global writes before this iteration's reads.
+                __builtin_amdgcn_fence(__ATOMIC_ACQ_REL, "agent");
+
                 // Column index of current BSR block
                 J bsr_col = bsr_col_ind[j] - idx_base;
 
@@ -183,6 +188,11 @@ namespace rocsparse
             {
                 for(J bi = 0; bi < block_dim; ++bi)
                 {
+                    // The diagonal block is factorized in place: entries updated by one lane in a
+                    // previous bi-iteration (and the preceding lower-phase writes) are re-read here
+                    // by all lanes. Order those cross-lane global bsr_val writes before this read.
+                    __builtin_amdgcn_fence(__ATOMIC_ACQ_REL, "agent");
+
                     // Load diagonal matrix entry
                     T diag = bsr_val[BSR_IND(row_diag, bi, bi, dir)];
 
@@ -229,6 +239,11 @@ namespace rocsparse
                 }
             }
 
+            // The upper-phase below reads the diagonal block factors just computed above, which
+            // were written per-lane to global bsr_val. Order those writes before the cross-lane
+            // reads in the upper phase.
+            __builtin_amdgcn_fence(__ATOMIC_ACQ_REL, "agent");
+
             // Process upper diagonal BSR blocks
             for(I j = row_diag + 1; j < row_end; ++j)
             {
@@ -252,6 +267,12 @@ namespace rocsparse
             // Structural pivot found
             pivot = true;
         }
+
+        // The row's block was factorized in place by lanes 0..block_dim-1, but only lane 0
+        // publishes the done flag below. A release on lane 0 alone does not order the OTHER lanes'
+        // bsr_val stores, so all lanes must issue an agent-scope release fence before the flag is
+        // made visible to consumer wavefronts.
+        __builtin_amdgcn_fence(__ATOMIC_RELEASE, "agent");
 
         if(lid == 0)
         {
