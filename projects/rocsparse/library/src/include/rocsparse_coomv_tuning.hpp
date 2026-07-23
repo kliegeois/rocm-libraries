@@ -77,4 +77,34 @@ namespace rocsparse
 
         return p;
     }
+
+    // Runtime matrix signals that drive coomv_aos's block-size choice.
+    struct coomv_aos_signals
+    {
+        int64_t nnz;
+    };
+
+    // Resolved launch knobs for the coomv_aos segmented default path.
+    struct coomv_aos_params
+    {
+        uint32_t block_threads;
+    };
+
+    // Same shape as coomv_params_for, with the coomv_aos-specific crossover. The
+    // AOS layout reaches its 128-thread knee slightly earlier (38x resident-thread
+    // capacity, ~2.2M nnz on gfx1201) than the SOA coomv path (52x). Demonstrates
+    // the substrate carrying per-kernel thresholds through the same helpers.
+    inline coomv_aos_params coomv_aos_params_for(const arch_traits& a, const coomv_aos_signals& s)
+    {
+        static constexpr double coomv_aos_segmented_saturation_factor = 38.0;
+
+        coomv_aos_params p{256u};
+
+        if(a.is_wave32() && launch::saturates(a, s.nnz, coomv_aos_segmented_saturation_factor))
+        {
+            p.block_threads = launch::waves(a, 4); // 4 wavefronts == 128 threads on wave32
+        }
+
+        return p;
+    }
 }
