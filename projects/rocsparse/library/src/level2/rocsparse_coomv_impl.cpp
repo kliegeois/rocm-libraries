@@ -27,6 +27,7 @@
 #include "rocsparse_common.h"
 #include "rocsparse_control.hpp"
 #include "rocsparse_coomv.hpp"
+#include "rocsparse_coomv_tuning.hpp"
 #include "rocsparse_utility.hpp"
 
 #include "coomv_device.h"
@@ -512,29 +513,15 @@ namespace rocsparse
             // not by nnz/row density: matrices with the same density but larger
             // nnz benefit while smaller ones do not.
             //
-            // Performance portability:
-            //  - the tuned size is expressed in WAVEFRONTS (4 * wavefront_size ==
-            //    128 threads / 4 wavefronts on wave32) rather than a fixed thread
-            //    count;
-            //  - the crossover is scaled by the device's resident-thread capacity
-            //    (multiProcessorCount * maxThreadsPerMultiProcessor) instead of a
-            //    fixed nnz magic number, so it tracks wave32 GPUs of different
-            //    sizes. The ~52x-capacity knee reproduces the value measured on
-            //    gfx1201 (RX 9070; capacity 57344 -> ~3M nnz);
-            //  - it stays gated to wave32 because the crossover was only
-            //    characterized there, so wave64 keeps the historical 256-thread
-            //    workgroup unconditionally (no risk on an untuned architecture).
-            uint32_t coomvn_dim = 256;
-            if(handle->wavefront_size == 32)
-            {
-                const int64_t device_capacity
-                    = static_cast<int64_t>(handle->properties.multiProcessorCount)
-                      * static_cast<int64_t>(handle->properties.maxThreadsPerMultiProcessor);
-                if(device_capacity > 0 && nnz >= 52 * device_capacity)
-                {
-                    coomvn_dim = 4u * static_cast<uint32_t>(handle->wavefront_size);
-                }
-            }
+            // The tuning (wave-relative block, device-capacity-scaled crossover,
+            // wave32 gating) now lives in the declarative policy header
+            // rocsparse_coomv_tuning.hpp on top of the shared arch/launch
+            // substrate; the value here is byte-identical to the previous
+            // open-coded version.
+            const rocsparse::arch_traits  arch = rocsparse::traits_of(handle);
+            const rocsparse::coomv_params coomv_cfg
+                = rocsparse::coomv_params_for(arch, rocsparse::coomv_signals{nnz});
+            const uint32_t coomvn_dim = coomv_cfg.block_threads;
 
             if(coomvn_dim == 128)
             {
