@@ -30,9 +30,28 @@
 #include "rocsparse_dense_transpose_back.hpp"
 #include "rocsparse_valset.hpp"
 
+#include <cstdint>
+
 //
 namespace rocsparse
 {
+    // Maximum extent supported by the y/z grid dimensions on all supported
+    // architectures. Batched launches map the batch onto grid.y (and, where
+    // applicable, grid.z), so the requested batch_count can exceed this value.
+    static constexpr int64_t max_batch_grid_size = 65535;
+
+    // Clamp a batch/grid dimension to the hardware maximum grid.y/z extent so a
+    // launch can never fail with hipErrorInvalidConfiguration for large batches.
+    // Any kernel launched with the clamped extent MUST grid-stride over the full
+    // count, e.g. for(int64_t b = hipBlockIdx_y; b < count; b += hipGridDim_y).
+    template <typename J>
+    static inline uint32_t get_batch_grid_size(J batch_count)
+    {
+        return (batch_count > max_batch_grid_size)
+                   ? static_cast<uint32_t>(max_batch_grid_size)
+                   : static_cast<uint32_t>(batch_count);
+    }
+
     template <typename I, typename T>
     rocsparse_status valset(rocsparse_handle handle, I length, T value, T* array);
 
