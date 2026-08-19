@@ -34,7 +34,9 @@ namespace rocsparse
 #define LAUNCH_COOMMNN_SEGMENTED_ATOMIC_MAIN_KERNEL(WF_SIZE, LOOPS, COLS, NT)        \
     RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(                                              \
         (rocsparse::coommnn_segmented_atomic<WF_SIZE, LOOPS, COLS, NT, T>),          \
-        dim3(nblocks, (main - 1) / COLS + 1, get_batch_grid_size<I>(batch_count_C)), \
+        dim3(nblocks,                                                                \
+             get_grid_size_y<I>((main - 1) / COLS + 1),                              \
+             get_batch_grid_size<I>(batch_count_C)),                                 \
         dim3(WF_SIZE),                                                               \
         0,                                                                           \
         stream,                                                                      \

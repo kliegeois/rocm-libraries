@@ -66,6 +66,16 @@ namespace rocsparse
         return (batch_count > 65535) ? 65535 : batch_count;
     }
 
+    // Clamp a dense-column panel count placed on grid.y to the HIP 65535 cap.
+    // Kernels pair this with a grid.y-stride loop (base hipBlockIdx_y, stride
+    // hipGridDim_y) so all column panels are still processed when the panel
+    // count exceeds the cap.
+    template <typename J>
+    static uint16_t get_grid_size_y(J panel_count)
+    {
+        return (panel_count > 65535) ? 65535 : panel_count;
+    }
+
     // Compile-time log2 for power-of-2 (e.g. log2_pow2<32>::value == 5). Use for WF_SIZE, etc.
     template <uint32_t N>
     struct log2_pow2
