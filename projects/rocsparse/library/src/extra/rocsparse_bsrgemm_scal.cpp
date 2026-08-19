@@ -102,7 +102,8 @@ rocsparse_status rocsparse::bsrgemm_scal_core(rocsparse_handle          handle,
     if(bsr_col_ind_C != bsr_col_ind_D)
     {
         RETURN_IF_HIPLAUNCHKERNELGGL_ERROR((rocsparse::bsrgemm_copy<BSRGEMM_DIM>),
-                                           dim3((nnzb_D - 1) / BSRGEMM_DIM + 1),
+                                           rocsparse::csrgemm_scal_copy_blocks<BSRGEMM_DIM>(handle,
+                                                                                            nnzb_D),
                                            dim3(BSRGEMM_DIM),
                                            0,
                                            stream,
