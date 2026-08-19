@@ -23,6 +23,7 @@
 #include "rocsparse_gcoo2csr.hpp"
 #include "rocsparse_convert_array.hpp"
 #include "rocsparse_coo2csr.hpp"
+#include "rocsparse_internal_convert_scalar.hpp"
 #include "rocsparse_utility.hpp"
 
 rocsparse_status rocsparse::gcoo2csr(rocsparse_handle     handle_,
@@ -36,14 +37,22 @@ rocsparse_status rocsparse::gcoo2csr(rocsparse_handle     handle_,
 {
     ROCSPARSE_ROUTINE_TRACE;
 
+    // coo2csr_template<TROW, SROW> takes nnz as TROW (csr row pointer type) and
+    // m as SROW (coo row index type). The public dimensions arrive as int64_t,
+    // so guard the narrowing to the requested (possibly 32-bit) index types
+    // instead of silently truncating.
 #define DO(SROW, TROW)                                                          \
     do                                                                          \
     {                                                                           \
+        TROW local_nnz;                                                         \
+        SROW local_m;                                                           \
+        RETURN_IF_ROCSPARSE_ERROR(rocsparse::internal_convert_scalar(nnz_, local_nnz)); \
+        RETURN_IF_ROCSPARSE_ERROR(rocsparse::internal_convert_scalar(m_, local_m));     \
         RETURN_IF_ROCSPARSE_ERROR(                                              \
             (rocsparse::coo2csr_template<TROW, SROW>)(handle_,                  \
                                                       (const SROW*)source_row_, \
-                                                      nnz_,                     \
-                                                      m_,                       \
+                                                      local_nnz,                \
+                                                      local_m,                  \
                                                       (TROW*)target_row_,       \
                                                       idx_base_));              \
         return rocsparse_status_success;                                        \

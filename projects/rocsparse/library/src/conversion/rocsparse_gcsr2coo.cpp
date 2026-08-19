@@ -26,6 +26,7 @@
 #include "rocsparse_convert_array.hpp"
 #include "rocsparse_csr2coo.hpp"
 #include "rocsparse_gcsr2coo.hpp"
+#include "rocsparse_internal_convert_scalar.hpp"
 
 rocsparse_status rocsparse::gcsr2coo(rocsparse_handle     handle_,
                                      rocsparse_indextype  source_row_type_,
@@ -38,14 +39,21 @@ rocsparse_status rocsparse::gcsr2coo(rocsparse_handle     handle_,
 {
     ROCSPARSE_ROUTINE_TRACE;
 
+    // The source row pointer/nnz uses SROW and the target row indices use TROW.
+    // The public dimensions arrive as int64_t, so guard the narrowing to the
+    // requested (possibly 32-bit) index types instead of silently truncating.
 #define DO(SROW, TROW)                                                          \
     do                                                                          \
     {                                                                           \
+        SROW local_nnz;                                                         \
+        TROW local_m;                                                           \
+        RETURN_IF_ROCSPARSE_ERROR(rocsparse::internal_convert_scalar(nnz_, local_nnz)); \
+        RETURN_IF_ROCSPARSE_ERROR(rocsparse::internal_convert_scalar(m_, local_m));     \
         RETURN_IF_ROCSPARSE_ERROR(                                              \
             (rocsparse::csr2coo_template<SROW, TROW>)(handle_,                  \
                                                       (const SROW*)source_row_, \
-                                                      nnz_,                     \
-                                                      m_,                       \
+                                                      local_nnz,                \
+                                                      local_m,                  \
                                                       (TROW*)target_row_,       \
                                                       idx_base_));              \
         return rocsparse_status_success;                                        \
