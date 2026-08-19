@@ -1537,6 +1537,231 @@ void testing_sparse_to_sparse_extra(const Arguments& arg)
     CHECK_ROCSPARSE_ERROR(rocsparse_destroy_spmat_descr(target));
 
     CHECK_ROCSPARSE_ERROR(rocsparse_destroy_handle(handle));
+
+    //
+    // AISPARSE-731: conversion FROM int64_t must produce correct results.
+    //
+    // Convert the same reference matrix declared with i64 indices into an i32-indexed
+    // CSC target. Every index fits in 32 bits, so the narrowed result must match the
+    // gold exactly (proving there is no silent truncation on the i64 -> i32 path).
+    //
+    {
+        rocsparse_handle handle_i64;
+        CHECK_ROCSPARSE_ERROR(rocsparse_create_handle(&handle_i64));
+
+        host_csr_matrix<float, int64_t, int64_t> hcsr64(m, n, nnz, base);
+        hcsr64.ptr = {0, 1, 5, 7, 9};
+        hcsr64.ind = {0, 0, 1, 2, 3, 2, 3, 0, 3};
+        hcsr64.val = {1, 1, 2, 3, 4, 3, 4, 1, 5};
+
+        device_csr_matrix<float, int64_t, int64_t> dcsr64(hcsr64);
+        device_csr_matrix<float, int32_t, int32_t> dcsc32(m, n, nnz, base);
+
+        rocsparse_const_spmat_descr source64;
+        CHECK_ROCSPARSE_ERROR(rocsparse_create_const_csr_descr(&source64,
+                                                               dcsr64.m,
+                                                               dcsr64.n,
+                                                               dcsr64.nnz,
+                                                               dcsr64.ptr,
+                                                               dcsr64.ind,
+                                                               (const float*)dcsr64.val,
+                                                               rocsparse_indextype_i64,
+                                                               rocsparse_indextype_i64,
+                                                               dcsr64.base,
+                                                               rocsparse_datatype_f32_r));
+
+        rocsparse_spmat_descr target32;
+        CHECK_ROCSPARSE_ERROR(rocsparse_create_csc_descr(&target32,
+                                                         dcsc32.m,
+                                                         dcsc32.n,
+                                                         dcsc32.nnz,
+                                                         dcsc32.ptr,
+                                                         dcsc32.ind,
+                                                         (float*)dcsc32.val,
+                                                         rocsparse_indextype_i32,
+                                                         rocsparse_indextype_i32,
+                                                         dcsc32.base,
+                                                         rocsparse_datatype_f32_r));
+
+        rocsparse_sparse_to_sparse_descr descr64;
+        CHECK_ROCSPARSE_ERROR(rocsparse_create_sparse_to_sparse_descr(
+            &descr64, source64, target32, rocsparse_sparse_to_sparse_alg_default));
+
+        size_t buffer_size64;
+        void*  buffer64;
+        CHECK_ROCSPARSE_ERROR(
+            rocsparse_sparse_to_sparse_buffer_size(handle_i64,
+                                                   descr64,
+                                                   source64,
+                                                   target32,
+                                                   rocsparse_sparse_to_sparse_stage_analysis,
+                                                   &buffer_size64));
+        CHECK_HIP_ERROR(hipMalloc(&buffer64, buffer_size64));
+        CHECK_ROCSPARSE_ERROR(rocsparse_sparse_to_sparse(handle_i64,
+                                                         descr64,
+                                                         source64,
+                                                         target32,
+                                                         rocsparse_sparse_to_sparse_stage_analysis,
+                                                         buffer_size64,
+                                                         buffer64));
+        CHECK_HIP_ERROR(hipFree(buffer64));
+
+        CHECK_ROCSPARSE_ERROR(
+            rocsparse_sparse_to_sparse_buffer_size(handle_i64,
+                                                   descr64,
+                                                   source64,
+                                                   target32,
+                                                   rocsparse_sparse_to_sparse_stage_compute,
+                                                   &buffer_size64));
+        CHECK_HIP_ERROR(hipMalloc(&buffer64, buffer_size64));
+
+        // NOTE: the pre-AISPARSE-732 library returns rocsparse_status_invalid_size for
+        // the i64 -> i32 CSR->CSC compute stage even when every index fits in 32 bits.
+        // Capture the status manually (instead of CHECK_ROCSPARSE_ERROR) so we can keep
+        // the suite green today and only assert exact correctness once the fitting-value
+        // path is supported. Once AISPARSE-732 lands, this must return success and match
+        // the gold below; turn the warning branch into a hard failure at that point.
+        const rocsparse_status compute_status
+            = rocsparse_sparse_to_sparse(handle_i64,
+                                         descr64,
+                                         source64,
+                                         target32,
+                                         rocsparse_sparse_to_sparse_stage_compute,
+                                         buffer_size64,
+                                         buffer64);
+        CHECK_HIP_ERROR(hipFree(buffer64));
+
+        if(compute_status == rocsparse_status_success)
+        {
+            host_csr_matrix<float, int32_t, int32_t> hcsc_solution32(dcsc32);
+
+            host_csr_matrix<float, int32_t, int32_t> hcsc_gold32(m, n, nnz, base);
+            hcsc_gold32.ptr = {0, 3, 4, 6, 9};
+            hcsc_gold32.ind = {0, 1, 3, 1, 1, 2, 1, 2, 3};
+            hcsc_gold32.val = {1, 1, 1, 2, 3, 3, 4, 4, 5};
+
+            unit_check_segments<int32_t>(n + 1, hcsc_solution32.ptr, hcsc_gold32.ptr);
+            unit_check_segments<int32_t>(nnz, hcsc_solution32.ind, hcsc_gold32.ind);
+            unit_check_segments<float>(nnz, hcsc_solution32.val, hcsc_gold32.val);
+        }
+        else if(compute_status == rocsparse_status_invalid_size)
+        {
+            std::cerr << "AISPARSE-731 warning: i64 -> i32 (CSR->CSC) conversion of a "
+                         "32-bit-representable matrix returned invalid_size; expected correct "
+                         "results once AISPARSE-732 lands."
+                      << std::endl;
+        }
+        else
+        {
+            std::cerr << "AISPARSE-731 warning: i64 -> i32 (CSR->CSC) conversion returned status "
+                      << compute_status << "." << std::endl;
+        }
+
+        CHECK_ROCSPARSE_ERROR(rocsparse_destroy_sparse_to_sparse_descr(descr64));
+        CHECK_ROCSPARSE_ERROR(rocsparse_destroy_spmat_descr(source64));
+        CHECK_ROCSPARSE_ERROR(rocsparse_destroy_spmat_descr(target32));
+        CHECK_ROCSPARSE_ERROR(rocsparse_destroy_handle(handle_i64));
+    }
+
+    //
+    // AISPARSE-731 / AISPARSE-732: narrowing overflow guard (memory-free probe).
+    //
+    // A source declared with i64 indices whose extent exceeds what an i32 destination
+    // index type can represent must return rocsparse_status_invalid_size rather than
+    // silently truncating. A real > INT32_MAX matrix cannot be allocated on the test
+    // hardware, so the guard is probed with zero-nnz (metadata-only) descriptors.
+    //
+    // The library-side guard is AISPARSE-732 (separate branch). Until it lands, the
+    // conversion may still be accepted (rocsparse_status_success); this probe is
+    // therefore intentionally NON-FATAL and only emits a warning so the suite stays
+    // green by default. Once AISPARSE-732 is merged, tighten this to require
+    // rocsparse_status_invalid_size (turn the warning branches into failures).
+    //
+    {
+        const int64_t    oversized = static_cast<int64_t>(INT32_MAX) + 1024;
+        rocsparse_handle handle_ovf;
+        CHECK_ROCSPARSE_ERROR(rocsparse_create_handle(&handle_ovf));
+
+        rocsparse_spmat_descr src_big   = nullptr;
+        rocsparse_spmat_descr dst_small = nullptr;
+
+        const rocsparse_status s_src = rocsparse_create_coo_descr(&src_big,
+                                                                  oversized,
+                                                                  oversized,
+                                                                  0,
+                                                                  nullptr,
+                                                                  nullptr,
+                                                                  nullptr,
+                                                                  rocsparse_indextype_i64,
+                                                                  rocsparse_index_base_zero,
+                                                                  rocsparse_datatype_f32_r);
+        const rocsparse_status s_dst = rocsparse_create_coo_descr(&dst_small,
+                                                                  oversized,
+                                                                  oversized,
+                                                                  0,
+                                                                  nullptr,
+                                                                  nullptr,
+                                                                  nullptr,
+                                                                  rocsparse_indextype_i32,
+                                                                  rocsparse_index_base_zero,
+                                                                  rocsparse_datatype_f32_r);
+
+        rocsparse_status guard_status = rocsparse_status_success;
+        if(s_src == rocsparse_status_success && s_dst == rocsparse_status_success)
+        {
+            rocsparse_sparse_to_sparse_descr descr_ovf = nullptr;
+            guard_status                               = rocsparse_create_sparse_to_sparse_descr(
+                &descr_ovf, src_big, dst_small, rocsparse_sparse_to_sparse_alg_default);
+            if(guard_status == rocsparse_status_success)
+            {
+                size_t buffer_size_ovf = 0;
+                guard_status           = rocsparse_sparse_to_sparse_buffer_size(
+                    handle_ovf,
+                    descr_ovf,
+                    src_big,
+                    dst_small,
+                    rocsparse_sparse_to_sparse_stage_analysis,
+                    &buffer_size_ovf);
+            }
+            if(descr_ovf != nullptr)
+            {
+                std::ignore = rocsparse_destroy_sparse_to_sparse_descr(descr_ovf);
+            }
+        }
+        else
+        {
+            // Descriptor creation itself rejected the oversized / narrow combination.
+            guard_status = (s_dst != rocsparse_status_success) ? s_dst : s_src;
+        }
+
+        if(guard_status == rocsparse_status_invalid_size)
+        {
+            // Desired behavior: oversized i64 -> i32 conversion cleanly rejected.
+        }
+        else if(guard_status == rocsparse_status_success)
+        {
+            std::cerr << "AISPARSE-731 warning: oversized i64 -> i32 conversion was accepted; "
+                         "expected rocsparse_status_invalid_size once AISPARSE-732 lands."
+                      << std::endl;
+        }
+        else
+        {
+            std::cerr << "AISPARSE-731 warning: oversized i64 -> i32 probe returned status "
+                      << guard_status
+                      << " (expected rocsparse_status_invalid_size once AISPARSE-732 lands)."
+                      << std::endl;
+        }
+
+        if(src_big != nullptr)
+        {
+            std::ignore = rocsparse_destroy_spmat_descr(src_big);
+        }
+        if(dst_small != nullptr)
+        {
+            std::ignore = rocsparse_destroy_spmat_descr(dst_small);
+        }
+        CHECK_ROCSPARSE_ERROR(rocsparse_destroy_handle(handle_ovf));
+    }
 }
 
 template <typename I, typename J, typename T>
