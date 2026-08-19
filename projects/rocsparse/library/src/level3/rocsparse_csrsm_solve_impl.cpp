@@ -216,7 +216,15 @@ namespace rocsparse
             local_csr_val = (const T*)At;
         }
         {
-            const dim3 csrsm_blocks(((nrhs - 1) / blockdim + 1) * m);
+            // Flatten the 2D iteration space (RHS blocks x rows) into grid.x.
+            // Compute the product in 64-bit BEFORE narrowing so it cannot
+            // overflow, then clamp to the device's maximum grid size. The kernel
+            // uses a grid-stride loop to cover any remainder of the flattened
+            // space when the grid is clamped.
+            const int64_t num_csrsm_blocks
+                = static_cast<int64_t>(narrays) * static_cast<int64_t>(m);
+            const dim3 csrsm_blocks(static_cast<uint32_t>(rocsparse::min(
+                num_csrsm_blocks, static_cast<int64_t>(handle->properties.maxGridSize[0]))));
             const dim3 csrsm_threads(blockdim);
 
             // Determine gcnArch and ASIC revision
@@ -511,8 +519,12 @@ namespace rocsparse
     __launch_bounds__(BLOCKSIZE) __global__
         static void csrsm_solve_copy_y_to_B(const int64_t m, T* B, const int64_t ldb, const T* y)
     {
-        const size_t tid = hipBlockIdx_x * BLOCKSIZE + hipThreadIdx_x;
-        if(tid < m)
+        // Cast to 64-bit BEFORE the multiply so the flattened index cannot
+        // overflow, and use a grid-stride loop so a clamped grid still covers
+        // all m rows.
+        const int64_t stride = static_cast<int64_t>(hipGridDim_x) * BLOCKSIZE;
+        for(int64_t tid = static_cast<int64_t>(hipBlockIdx_x) * BLOCKSIZE + hipThreadIdx_x; tid < m;
+            tid += stride)
         {
             B[tid * ldb] = y[tid];
         }
@@ -615,8 +627,11 @@ rocsparse_status rocsparse::csrsm_solve_core(rocsparse_handle          handle,
         else
         {
             static constexpr uint32_t BLOCKSIZE = 1024;
+            const int64_t             copy_blocks
+                = rocsparse::min((static_cast<int64_t>(m) - 1) / BLOCKSIZE + 1,
+                                 static_cast<int64_t>(handle->properties.maxGridSize[0]));
             RETURN_IF_HIPLAUNCHKERNELGGL_ERROR((csrsm_solve_copy_y_to_B<BLOCKSIZE, T>),
-                                               dim3((m - 1) / BLOCKSIZE + 1),
+                                               dim3(static_cast<uint32_t>(copy_blocks)),
                                                dim3(BLOCKSIZE),
                                                0,
                                                handle->stream,
