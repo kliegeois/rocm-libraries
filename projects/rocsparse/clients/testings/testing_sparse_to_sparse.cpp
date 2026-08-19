@@ -1667,15 +1667,20 @@ void testing_sparse_to_sparse_extra(const Arguments& arg)
     // AISPARSE-731 / AISPARSE-732: narrowing overflow guard (memory-free probe).
     //
     // A source declared with i64 indices whose extent exceeds what an i32 destination
-    // index type can represent must return rocsparse_status_invalid_size rather than
+    // index type can represent must return rocsparse_status_type_mismatch rather than
     // silently truncating. A real > INT32_MAX matrix cannot be allocated on the test
     // hardware, so the guard is probed with zero-nnz (metadata-only) descriptors.
+    //
+    // rocsparse_status_type_mismatch is the canonical status for "a 64-bit index/size
+    // value cannot be represented in the narrower i32 target type": it is what the
+    // AISPARSE-732 library guard returns (via internal_convert_scalar) and matches the
+    // existing gcsr2csc / gcsc2csr convention.
     //
     // The library-side guard is AISPARSE-732 (separate branch). Until it lands, the
     // conversion may still be accepted (rocsparse_status_success); this probe is
     // therefore intentionally NON-FATAL and only emits a warning so the suite stays
     // green by default. Once AISPARSE-732 is merged, tighten this to require
-    // rocsparse_status_invalid_size (turn the warning branches into failures).
+    // rocsparse_status_type_mismatch (turn the warning branches into failures).
     //
     {
         const int64_t    oversized = static_cast<int64_t>(INT32_MAX) + 1024;
@@ -1734,21 +1739,22 @@ void testing_sparse_to_sparse_extra(const Arguments& arg)
             guard_status = (s_dst != rocsparse_status_success) ? s_dst : s_src;
         }
 
-        if(guard_status == rocsparse_status_invalid_size)
+        const rocsparse_status expected_guard_status = rocsparse_status_type_mismatch;
+        if(guard_status == expected_guard_status)
         {
             // Desired behavior: oversized i64 -> i32 conversion cleanly rejected.
         }
         else if(guard_status == rocsparse_status_success)
         {
             std::cerr << "AISPARSE-731 warning: oversized i64 -> i32 conversion was accepted; "
-                         "expected rocsparse_status_invalid_size once AISPARSE-732 lands."
+                         "expected rocsparse_status_type_mismatch once AISPARSE-732 lands."
                       << std::endl;
         }
         else
         {
             std::cerr << "AISPARSE-731 warning: oversized i64 -> i32 probe returned status "
                       << guard_status
-                      << " (expected rocsparse_status_invalid_size once AISPARSE-732 lands)."
+                      << " (expected rocsparse_status_type_mismatch once AISPARSE-732 lands)."
                       << std::endl;
         }
 

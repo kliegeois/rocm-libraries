@@ -70,10 +70,11 @@ Tests:
 # controlled, non-aborting way by sparse_to_sparse_extra rather than here. Driving the
 # parameterized sweep with an i64 source and an i32 destination currently aborts the
 # whole test binary for some target formats (e.g. csr->csc), because the pre-AISPARSE-732
-# library returns rocsparse_status_invalid_size at the compute stage and the generic
-# harness then faults in rocsparse_check_spmat over the unfilled destination. Once
-# AISPARSE-732 lands (correct i64->i32 conversion + a proper invalid_size guard on real
-# overflow), these narrowing variants can be promoted to parameterized quick cases here.
+# library rejects the compute stage and the generic harness then faults in
+# rocsparse_check_spmat over the unfilled destination. Once AISPARSE-732 lands (correct
+# i64->i32 conversion + a rocsparse_status_type_mismatch guard on real overflow, the
+# canonical status for a 64-bit value that cannot be represented in the narrower i32
+# type), these narrowing variants can be promoted to parameterized quick cases here.
 - name: sparse_to_sparse
   category: quick
   function: sparse_to_sparse
