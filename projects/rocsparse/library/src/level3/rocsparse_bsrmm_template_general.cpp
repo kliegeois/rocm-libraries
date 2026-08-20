@@ -125,7 +125,9 @@ namespace rocsparse
         hipStream_t stream = handle->stream;
         rocsparse_host_assert(block_dim > 32, "This function is designed for block_dim > 32.");
 
-        const dim3 bsrmm_blocks((mb - 1) / 1 + 1, (n - 1) / 32 + 1);
+        const int64_t bsrmm_grid_x = rocsparse::min(
+            static_cast<int64_t>(mb), static_cast<int64_t>(handle->properties.maxGridSize[0]));
+        const dim3 bsrmm_blocks(bsrmm_grid_x, (n - 1) / 32 + 1);
         const dim3 bsrmm_threads(32, 32, 1);
         RETURN_IF_HIPLAUNCHKERNELGGL_ERROR((rocsparse::bsrmm_general_blockdim_kernel<32, 32>),
                                            bsrmm_blocks,

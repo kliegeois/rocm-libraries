@@ -60,8 +60,6 @@ namespace rocsparse
     {
         const int32_t tidx = hipThreadIdx_x, tidy = hipThreadIdx_y;
 
-        const J global_row = tidx + hipBlockIdx_x * block_dim;
-
         __shared__ T shared_B[BSR_BLOCK_DIM * (BLK_SIZE_Y * UNROLL_SIZE_Y)];
         __shared__ T shared_A[BSR_BLOCK_DIM * BSR_BLOCK_DIM];
 
@@ -72,107 +70,112 @@ namespace rocsparse
             cols[l] = (tidy + BLK_SIZE_Y * l) + hipBlockIdx_y * (BLK_SIZE_Y * UNROLL_SIZE_Y);
         }
 
-        const int block_row       = hipBlockIdx_x;
-        const I   block_row_start = (block_row < Mb) ? (bsr_row_ptr[block_row] - idx_base) : 0;
-        const I   block_row_end   = (block_row < Mb) ? (bsr_row_ptr[block_row + 1] - idx_base) : 0;
-
-        for(uint32_t l = 0; l < UNROLL_SIZE_Y; ++l)
-        {
-            sum[l] = static_cast<T>(0);
-        }
-
         const J    block_dim_sqr = block_dim * block_dim;
         const bool is_tidx       = tidx < block_dim;
         const bool is_tidy       = tidy < block_dim;
         const bool is_tidx_tidy  = is_tidx && is_tidy;
 
-        for(I k = block_row_start; k < block_row_end; k++)
+        // Grid-stride loop over the block-row dimension (grid x) so a clamped
+        // grid still covers all Mb block rows.
+        for(J block_row = hipBlockIdx_x; block_row < Mb; block_row += hipGridDim_x)
         {
-            const J block_col = (bsr_col_ind[k] - idx_base);
-            if(is_tidx)
-            {
-                for(uint32_t l = 0; l < UNROLL_SIZE_Y; ++l)
-                {
-                    if(cols[l] < N)
-                    {
-                        if(nn)
-                        {
-                            shared_B[BSR_BLOCK_DIM * (BLK_SIZE_Y * l + tidy) + tidx]
-                                = dense_B[block_dim * block_col + tidx + cols[l] * ldb];
-                        }
-                        else
-                        {
-                            shared_B[BSR_BLOCK_DIM * (BLK_SIZE_Y * l + tidy) + tidx]
-                                = dense_B[cols[l] + ldb * (block_dim * block_col + tidx)];
-                        }
-                    }
-                }
-            }
+            const J global_row      = tidx + block_row * block_dim;
+            const I block_row_start = bsr_row_ptr[block_row] - idx_base;
+            const I block_row_end   = bsr_row_ptr[block_row + 1] - idx_base;
 
-            if(is_tidx_tidy)
-            {
-                if(direction == rocsparse_direction_row)
-                {
-                    shared_A[BSR_BLOCK_DIM * tidx + tidy]
-                        = bsr_val[block_dim_sqr * k + block_dim * tidx + tidy];
-                }
-                else
-                {
-                    shared_A[BSR_BLOCK_DIM * tidx + tidy]
-                        = bsr_val[block_dim_sqr * k + block_dim * tidy + tidx];
-                }
-            }
-
-            __syncthreads();
-
-            if(is_tidx)
-            {
-                for(uint32_t l = 0; l < UNROLL_SIZE_Y; ++l)
-                {
-                    if(cols[l] < N)
-                    {
-                        for(J j = 0; j < block_dim; j++)
-                        {
-                            sum[l] = rocsparse::fma(
-                                shared_A[BSR_BLOCK_DIM * tidx + j],
-                                shared_B[BSR_BLOCK_DIM * (BLK_SIZE_Y * l + tidy) + j],
-                                sum[l]);
-                        }
-                    }
-                }
-            }
-
-            __syncthreads();
-        }
-
-        if(block_row < Mb && is_tidx)
-        {
             for(uint32_t l = 0; l < UNROLL_SIZE_Y; ++l)
             {
-                if(cols[l] < N)
+                sum[l] = static_cast<T>(0);
+            }
+
+            for(I k = block_row_start; k < block_row_end; k++)
+            {
+                const J block_col = (bsr_col_ind[k] - idx_base);
+                if(is_tidx)
                 {
-                    if(beta == static_cast<T>(0))
+                    for(uint32_t l = 0; l < UNROLL_SIZE_Y; ++l)
                     {
-                        if(order_C == rocsparse_order_column)
+                        if(cols[l] < N)
                         {
-                            dense_C[global_row + ldc * cols[l]] = alpha * sum[l];
+                            if(nn)
+                            {
+                                shared_B[BSR_BLOCK_DIM * (BLK_SIZE_Y * l + tidy) + tidx]
+                                    = dense_B[block_dim * block_col + tidx + cols[l] * ldb];
+                            }
+                            else
+                            {
+                                shared_B[BSR_BLOCK_DIM * (BLK_SIZE_Y * l + tidy) + tidx]
+                                    = dense_B[cols[l] + ldb * (block_dim * block_col + tidx)];
+                            }
                         }
-                        else
-                        {
-                            dense_C[global_row * ldc + cols[l]] = alpha * sum[l];
-                        }
+                    }
+                }
+
+                if(is_tidx_tidy)
+                {
+                    if(direction == rocsparse_direction_row)
+                    {
+                        shared_A[BSR_BLOCK_DIM * tidx + tidy]
+                            = bsr_val[block_dim_sqr * k + block_dim * tidx + tidy];
                     }
                     else
                     {
-                        if(order_C == rocsparse_order_column)
+                        shared_A[BSR_BLOCK_DIM * tidx + tidy]
+                            = bsr_val[block_dim_sqr * k + block_dim * tidy + tidx];
+                    }
+                }
+
+                __syncthreads();
+
+                if(is_tidx)
+                {
+                    for(uint32_t l = 0; l < UNROLL_SIZE_Y; ++l)
+                    {
+                        if(cols[l] < N)
                         {
-                            dense_C[global_row + ldc * cols[l]] = rocsparse::fma<T>(
-                                beta, dense_C[global_row + ldc * cols[l]], alpha * sum[l]);
+                            for(J j = 0; j < block_dim; j++)
+                            {
+                                sum[l] = rocsparse::fma(
+                                    shared_A[BSR_BLOCK_DIM * tidx + j],
+                                    shared_B[BSR_BLOCK_DIM * (BLK_SIZE_Y * l + tidy) + j],
+                                    sum[l]);
+                            }
+                        }
+                    }
+                }
+
+                __syncthreads();
+            }
+
+            if(is_tidx)
+            {
+                for(uint32_t l = 0; l < UNROLL_SIZE_Y; ++l)
+                {
+                    if(cols[l] < N)
+                    {
+                        if(beta == static_cast<T>(0))
+                        {
+                            if(order_C == rocsparse_order_column)
+                            {
+                                dense_C[global_row + ldc * cols[l]] = alpha * sum[l];
+                            }
+                            else
+                            {
+                                dense_C[global_row * ldc + cols[l]] = alpha * sum[l];
+                            }
                         }
                         else
                         {
-                            dense_C[global_row * ldc + cols[l]] = rocsparse::fma<T>(
-                                beta, dense_C[global_row * ldc + cols[l]], alpha * sum[l]);
+                            if(order_C == rocsparse_order_column)
+                            {
+                                dense_C[global_row + ldc * cols[l]] = rocsparse::fma<T>(
+                                    beta, dense_C[global_row + ldc * cols[l]], alpha * sum[l]);
+                            }
+                            else
+                            {
+                                dense_C[global_row * ldc + cols[l]] = rocsparse::fma<T>(
+                                    beta, dense_C[global_row * ldc + cols[l]], alpha * sum[l]);
+                            }
                         }
                     }
                 }

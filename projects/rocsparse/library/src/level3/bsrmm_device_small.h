@@ -69,14 +69,15 @@ namespace rocsparse
 
         const int64_t colB = col * ldb;
 
-        // global row
-        const J global_row = (gid / WF_SIZE);
-
-        // local row within block row
+        // local row within block row (fixed per thread)
         const J local_row = (gid / WF_SIZE) % BSR_BLOCK_DIM;
 
         for(J block_row = gid / (WF_SIZE * BSR_BLOCK_DIM); block_row < Mb; block_row += nwfb)
         {
+            // global row must track the strided block_row so a clamped grid still
+            // writes the correct output rows.
+            const J global_row = block_row * BSR_BLOCK_DIM + local_row;
+
             const I block_row_start = bsr_row_ptr[block_row] - idx_base;
             const I block_row_end   = bsr_row_ptr[block_row + 1] - idx_base;
 
