@@ -38,6 +38,7 @@
 #include "csrsv_device.h"
 #include "rocsparse_assign_async.hpp"
 #include "rocsparse_common.h"
+#include "rocsparse_common.hpp"
 
 #include "rocsparse_csrsv_solve_kernel.hpp"
 #include "rocsparse_determine_indextype.hpp"
@@ -46,7 +47,8 @@ namespace rocsparse
 {
     template <uint32_t BLOCKSIZE, uint32_t WF_SIZE, bool SLEEP, typename I, typename J, typename T>
     ROCSPARSE_KERNEL(BLOCKSIZE)
-    void csrsv_kernel(J m,
+    void csrsv_kernel(J       m,
+                      int64_t batch_count,
                       ROCSPARSE_DEVICE_HOST_SCALAR_PARAMS(T, alpha),
                       int64_t alpha_stride,
                       const I* __restrict__ csr_row_ptr,
@@ -70,26 +72,29 @@ namespace rocsparse
                       rocsparse_diag_type  diag_type,
                       bool                 is_host_mode)
     {
-        const uint32_t batch_index = blockIdx.y;
         ROCSPARSE_DEVICE_HOST_SCALAR_GET(alpha);
-        rocsparse::csrsv_device<BLOCKSIZE, WF_SIZE, SLEEP>(m,
-                                                           alpha,
-                                                           csr_row_ptr,
-                                                           csr_col_ind,
-                                                           csr_val + batch_index * csr_val_stride,
-                                                           csr_val_inc,
-                                                           x + batch_index * x_stride,
-                                                           x_inc,
-                                                           y + batch_index * y_stride,
-                                                           y_inc,
-                                                           done_array + batch_index * m,
-                                                           map,
-                                                           offset,
-                                                           zero_pivot
-                                                               + batch_index * zero_pivot_stride,
-                                                           idx_base,
-                                                           fill_mode,
-                                                           diag_type);
+        for(int64_t batch_index = hipBlockIdx_y; batch_index < batch_count;
+            batch_index += hipGridDim_y)
+        {
+            rocsparse::csrsv_device<BLOCKSIZE, WF_SIZE, SLEEP>(
+                m,
+                alpha,
+                csr_row_ptr,
+                csr_col_ind,
+                csr_val + batch_index * csr_val_stride,
+                csr_val_inc,
+                x + batch_index * x_stride,
+                x_inc,
+                y + batch_index * y_stride,
+                y_inc,
+                done_array + batch_index * m,
+                map,
+                offset,
+                zero_pivot + batch_index * zero_pivot_stride,
+                idx_base,
+                fill_mode,
+                diag_type);
+        }
     }
 
     template <uint32_t BLOCKSIZE, uint32_t WF_SIZE, bool SLEEP, typename I, typename J, typename T>
@@ -120,7 +125,10 @@ namespace rocsparse
                                                 bool                 is_host_mode)
     {
         auto alpha = reinterpret_cast<const T*>(alpha_);
-        dim3 csrsv_blocks((m * handle->wavefront_size - 1) / BLOCKSIZE + 1, batch_count);
+        dim3 csrsv_blocks(
+            rocsparse::min((m * handle->wavefront_size - 1) / BLOCKSIZE + 1,
+                           static_cast<int64_t>(handle->properties.maxGridSize[0])),
+            rocsparse::min(batch_count, static_cast<int64_t>(handle->properties.maxGridSize[1])));
         dim3 csrsv_threads(BLOCKSIZE);
         RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
             (rocsparse::csrsv_kernel<BLOCKSIZE, WF_SIZE, SLEEP, I, J, T>),
@@ -129,6 +137,7 @@ namespace rocsparse
             0,
             handle->stream,
             static_cast<J>(m),
+            batch_count,
             ROCSPARSE_DEVICE_HOST_SCALAR_ARGS(handle, alpha),
             alpha_stride,
             reinterpret_cast<const I* __restrict__>(csr_row_ptr),
@@ -171,8 +180,11 @@ namespace rocsparse
                                                 int64_t zero_pivot_stride,
                                                 bool    is_host_mode)
     {
-        auto          alpha = reinterpret_cast<const T*>(alpha_);
-        dim3          csrsv_blocks((m * handle->wavefront_size - 1) / BLOCKSIZE + 1, batch_count);
+        auto alpha = reinterpret_cast<const T*>(alpha_);
+        dim3 csrsv_blocks(
+            rocsparse::min((m * handle->wavefront_size - 1) / BLOCKSIZE + 1,
+                           static_cast<int64_t>(handle->properties.maxGridSize[0])),
+            rocsparse::min(batch_count, static_cast<int64_t>(handle->properties.maxGridSize[1])));
         dim3          csrsv_threads(BLOCKSIZE);
         const int64_t csr_val_inc = static_cast<int64_t>(1);
         RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
@@ -182,6 +194,7 @@ namespace rocsparse
             0,
             handle->stream,
             static_cast<J>(m),
+            batch_count,
             ROCSPARSE_DEVICE_HOST_SCALAR_ARGS(handle, alpha),
             alpha_stride,
             A->const_row_data,

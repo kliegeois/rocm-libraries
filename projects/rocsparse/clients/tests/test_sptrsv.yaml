@@ -82,6 +82,33 @@ Tests:
   precision: *single_double_precisions_complex_real
   formatA: [rocsparse_format_csr]
 
+# AISPARSE-655 regression: batch_count above the 65535 grid.y hardware cap used
+# to trigger a hard hipErrorInvalidConfiguration launch failure in the batched
+# triangular solve (csrsv). The launch now clamps grid.y to the device
+# maxGridSize and the kernel grid-strides over batch_count. The matrix is tiny
+# (M = 4) and shared across batches (batch_count_A = 0) so the test stays cheap
+# while still exceeding the cap. Covers all three formats (CSR, COO, CSC) that
+# reach the shared csrsv launch through the generic sptrsv entry point.
+- name: sptrsv_large_batch_count
+  category: quick
+  function: sptrsv
+  indextype: *i32
+  precision: *single_precision
+  M_N:
+    - { M: 4, N: 4 }
+  alpha_alphai:
+    - { alpha: 1.0, alphai: 0.0 }
+  transA: [rocsparse_operation_none]
+  diag: [rocsparse_diag_type_non_unit]
+  uplo: [rocsparse_fill_mode_lower]
+  baseA: [rocsparse_index_base_zero]
+  sptrsv_alg: [rocsparse_sptrsv_alg_default]
+  matrix: [rocsparse_matrix_random]
+  matrix_type: [rocsparse_matrix_type_general]
+  formatA: [rocsparse_format_csr, rocsparse_format_coo, rocsparse_format_csc]
+  batch_count: [65536, 70000]
+  batch_count_A: [0]
+
 - name: sptrsv
   category: pre_checkin
   function: sptrsv
