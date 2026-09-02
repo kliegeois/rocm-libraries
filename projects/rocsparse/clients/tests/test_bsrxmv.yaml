@@ -48,6 +48,16 @@ Tests:
   function: bsrxmv_bad_arg
   precision: *single_double_precisions_complex_real
 
+# AISPARSE-659: signed 32-bit overflow in the beta-scaling grid.
+# Needs block_dim * mb == 2^31 (~8 GiB of y), so it is gated to nightly on
+# large-memory GPUs and auto-skips elsewhere via the memory guard.
+- name: bsrxmv_extra
+  category: nightly
+  hardware: [gfx908, gfx90a]
+  function: bsrxmv_extra
+  host_memory_gb: 16
+  device_memory_gb: 9
+
 - name: bsrxmv
   category: pre_checkin
   function: bsrxmv

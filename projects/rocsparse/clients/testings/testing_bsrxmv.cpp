@@ -369,4 +369,97 @@ INSTANTIATE(double);
 INSTANTIATE(rocsparse_float_complex);
 INSTANTIATE(rocsparse_double_complex);
 #undef INSTANTIATE
-void testing_bsrxmv_extra(const Arguments& arg) {}
+
+//
+// AISPARSE-659 regression test.
+//
+// The beta-scaling quick-return path of rocsparse_bsrxmv (taken when
+// mb == 0 || nb == 0) computed the output size as
+//     rocsparse_int ysize = block_dim * mb;
+// in signed 32-bit arithmetic. With block_dim = 32 and mb = 2^26 the product
+// reaches 2^31, which overflows a signed 32-bit integer to a negative value,
+// so the "ysize > 0" guard flips and beta scaling is silently skipped (in
+// addition to the launch grid overflowing). Widening the computation to
+// int64_t, clamping the grid against maxGridSize[0] and grid-striding the
+// scale kernel fixes it.
+//
+// This exercises the nb == 0 branch, which never touches the matrix arrays,
+// so only the y vector needs to be allocated (~8 GiB for 2^31 floats). The
+// test is gated to nightly with a large host/device memory guard so it is
+// auto-skipped on memory-constrained GPUs.
+//
+void testing_bsrxmv_extra_659(const Arguments& arg)
+{
+    const rocsparse_direction  dir          = rocsparse_direction_column;
+    const rocsparse_operation  trans        = rocsparse_operation_none;
+    const rocsparse_index_base base         = rocsparse_index_base_zero;
+    const rocsparse_int        block_dim    = 32;
+    const rocsparse_int        mb           = 67108864; // 2^26 -> block_dim * mb == 2^31
+    const rocsparse_int        nb           = 0; // triggers the beta-scaling quick return
+    const rocsparse_int        nnzb         = 0;
+    const rocsparse_int        size_of_mask = 0;
+
+    // Total number of scaled entries (would-be block_dim * mb without overflow).
+    const int64_t ysize = static_cast<int64_t>(block_dim) * mb;
+
+    const float y_init = 1.0f;
+
+    host_scalar<float>   h_alpha(1.0f);
+    host_scalar<float>   h_beta(2.0f);
+    device_scalar<float> d_alpha(h_alpha);
+    device_scalar<float> d_beta(h_beta);
+
+    // Create rocsparse handle and matrix descriptor
+    rocsparse_local_handle    handle;
+    rocsparse_local_mat_descr descr;
+    CHECK_ROCSPARSE_ERROR(rocsparse_set_mat_index_base(descr, base));
+
+    // Allocate y and initialize it to a known constant on the device.
+    std::vector<float> hy(ysize, y_init);
+
+    float* dy = nullptr;
+    CHECK_HIP_ERROR(rocsparse_hipMalloc((void**)&dy, sizeof(float) * ysize));
+    CHECK_HIP_ERROR(hipMemcpy(dy, hy.data(), sizeof(float) * ysize, hipMemcpyHostToDevice));
+
+    if(arg.unit_check)
+    {
+        // The quick-return path launches the scale kernel with the beta pointer
+        // directly on the device, so a device pointer must be used.
+        CHECK_ROCSPARSE_ERROR(rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_device));
+        CHECK_ROCSPARSE_ERROR(rocsparse_bsrxmv<float>(handle,
+                                                      dir,
+                                                      trans,
+                                                      size_of_mask,
+                                                      mb,
+                                                      nb,
+                                                      nnzb,
+                                                      d_alpha,
+                                                      descr,
+                                                      nullptr,
+                                                      nullptr,
+                                                      nullptr,
+                                                      nullptr,
+                                                      nullptr,
+                                                      block_dim,
+                                                      nullptr,
+                                                      d_beta,
+                                                      dy));
+
+        CHECK_HIP_ERROR(hipMemcpy(hy.data(), dy, sizeof(float) * ysize, hipMemcpyDeviceToHost));
+
+        // Every entry must have been scaled by beta. Sampling the first, a
+        // middle and the last element detects both the overflow guard flip
+        // (nothing scaled) and an undersized/clamped grid (tail not scaled).
+        const float expected = y_init * (*h_beta);
+        unit_check_scalar<float>(expected, hy[0]);
+        unit_check_scalar<float>(expected, hy[ysize / 2]);
+        unit_check_scalar<float>(expected, hy[ysize - 1]);
+    }
+
+    CHECK_HIP_ERROR(rocsparse_hipFree(dy));
+}
+
+void testing_bsrxmv_extra(const Arguments& arg)
+{
+    testing_bsrxmv_extra_659(arg);
+}
