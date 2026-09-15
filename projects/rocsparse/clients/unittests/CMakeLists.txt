@@ -201,6 +201,11 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_SOURCES
   # (compiled in via rocsparse_assign_async.cpp below) and the get_grid_size /
   # get_batch_grid_size / ceil_div helpers in rocsparse_common.hpp.
   unit_test_internal_assign_async.cpp
+  # --- Blocked-ELL SpMM grid.y clamp + column-panel stride [AISPARSE-667] ---
+  # Appended at the end (distinct anchor) so this leaf does not conflict with the
+  # sibling large-grid branches. Drives rocsparse_spmm through the public API;
+  # no compile-in library TUs needed.
+  unit_test_internal_level3_bellmm.cpp
 )
 
 # Host building-block library translation units under test by the
