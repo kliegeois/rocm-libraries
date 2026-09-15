@@ -34,7 +34,10 @@ namespace rocsparse
     {
         if(hipThreadIdx_x == 0)
         {
+            // Grid-stride over the batch dimension so batch counts above the
+            // grid-y limit (65535) are handled correctly.
             for(int64_t batch_index = hipBlockIdx_y; batch_index < n; batch_index += hipGridDim_y)
+            for(int64_t batch_index = blockIdx.y; batch_index < n; batch_index += gridDim.y)
             {
                 dest[batch_index] = value;
             }
@@ -48,6 +51,7 @@ namespace rocsparse
         if(hipThreadIdx_x == 0)
         {
             for(int64_t batch_index = hipBlockIdx_y; batch_index < n; batch_index += hipGridDim_y)
+            for(int64_t batch_index = blockIdx.y; batch_index < n; batch_index += gridDim.y)
             {
                 dest[batch_index] = value[0];
             }
