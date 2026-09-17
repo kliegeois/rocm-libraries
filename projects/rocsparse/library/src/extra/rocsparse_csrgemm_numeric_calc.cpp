@@ -85,9 +85,24 @@ namespace rocsparse
     {
         ROCSPARSE_DEVICE_HOST_SCALAR_GET_IF(mul, alpha);
         ROCSPARSE_DEVICE_HOST_SCALAR_GET_IF(add, beta);
-        // Grid-stride over the (sub)wavefront rows so a grid clamped to maxGridSize[0] covers all
-        for(int64_t block_offset = static_cast<int64_t>(hipBlockIdx_x) * (BLOCKSIZE / WFSIZE); block_offset < m;
-            block_offset += static_cast<int64_t>(hipGridDim_x) * (BLOCKSIZE / WFSIZE))
+        // Grid-stride over the (sub)wavefront rows so a grid clamped to the device
+        // maximum still covers every row. Start and stride are computed in 64-bit,
+        // because hipGridDim_x * (BLOCKSIZE / WFSIZE) wraps a 32-bit J at a clamped
+        // maximum grid, then narrowed: both are bounded by m and so fit in J.
+        // The induction variable stays in J to avoid holding two VGPRs across the
+        // whole kernel body. The increment advances only while the remaining
+        // distance exceeds the stride, so it cannot overflow J on the last step.
+        const int64_t lg_start = static_cast<int64_t>(hipBlockIdx_x) * (BLOCKSIZE / WFSIZE);
+        if(lg_start >= m)
+        {
+            return;
+        }
+        const J lg_stride = static_cast<J>(
+            rocsparse::min(static_cast<int64_t>(hipGridDim_x) * (BLOCKSIZE / WFSIZE),
+                           static_cast<int64_t>(m)));
+        for(J block_offset = static_cast<J>(lg_start); block_offset < m;
+            block_offset = (m - block_offset > lg_stride) ? (block_offset + lg_stride)
+                                                                : m)
         {
             rocsparse::csrgemm_numeric_fill_wf_per_row_device<BLOCKSIZE, WFSIZE, HASHSIZE, HASHVAL>(
                 static_cast<J>(block_offset),
