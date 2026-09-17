@@ -36,6 +36,9 @@
 // grid sizing helpers live in csrsm_device.h so clients/unittests can launch the
 // kernel with a deliberately undersized grid.
 #include "csrsm_device.h"
+
+#include <limits>
+
 namespace rocsparse
 {
     template <typename I, typename J, typename T>
@@ -184,8 +187,17 @@ namespace rocsparse
             // One block per (RHS panel, row) pair, flattened onto grid.x. The count
             // is formed in 64 bit and clamped to the device grid limit before it is
             // narrowed; the kernel grid-strides over whatever is left over.
-            const dim3 csrsm_blocks(static_cast<uint32_t>(rocsparse::csrsm_solve_grid_size(
-                m, nrhs, blockdim, handle->properties.maxGridSize[0])));
+            //
+            // The helper returns at most maxGridSize[0], except when m alone
+            // exceeds it: then it returns m so the launch fails with
+            // hipErrorInvalidConfiguration instead of running a grid too small to
+            // hold one RHS panel, which the kernel cannot stride. Saturate the
+            // narrowing so that stays true if m also exceeds UINT32_MAX, rather
+            // than wrapping into a legal looking grid.
+            const int64_t csrsm_grid_x = rocsparse::csrsm_solve_grid_size(
+                m, nrhs, blockdim, handle->properties.maxGridSize[0]);
+            const dim3 csrsm_blocks(static_cast<uint32_t>(rocsparse::min(
+                csrsm_grid_x, static_cast<int64_t>(std::numeric_limits<uint32_t>::max()))));
             const dim3 csrsm_threads(blockdim);
 
             // Determine gcnArch and ASIC revision

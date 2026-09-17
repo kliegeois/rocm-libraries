@@ -340,11 +340,37 @@ namespace rocsparse
         // Block uniform: the start, the bound and the stride read only
         // hipBlockIdx_x, hipGridDim_x, m, nrhs and BLOCKSIZE, so every thread of
         // the block runs the same number of iterations and the __syncthreads()
-        // inside csrsm_block_device stay convergent.
-        const int64_t stride
-            = rocsparse::max(static_cast<int64_t>(hipGridDim_x) / m, static_cast<int64_t>(1)) * m;
+        // inside csrsm_block_device stay convergent. The two early returns below
+        // are uniform for the same reason: the whole block takes them or none of
+        // it does, so neither can strand a subset of threads at a barrier.
+        const int64_t panels_per_sweep = static_cast<int64_t>(hipGridDim_x) / m;
 
-        for(int64_t block_id = hipBlockIdx_x; block_id < num_blocks; block_id += stride)
+        // Fewer than m blocks cannot be strided safely: a block would have to
+        // change rows between sweeps, and the done_array flag it then waits on
+        // belongs to a block that has not been dispatched. csrsm_solve_grid_size
+        // never returns less than m (the launch fails with
+        // hipErrorInvalidConfiguration instead), so this is a contract violation;
+        // bail out rather than hang.
+        if(panels_per_sweep == 0)
+        {
+            return;
+        }
+
+        const int64_t stride = panels_per_sweep * m;
+
+        // Blocks past the last whole panel own no (RHS panel, row) pair. The
+        // stride is rounded down to whole panels, so letting them into the loop
+        // would make them repeat pairs a lower numbered block already owns, and
+        // csrsm_block_device is not idempotent: it reads its own B element as the
+        // right hand side and overwrites it, so a second visit corrupts the
+        // result. csrsm_solve_grid_size always returns a multiple of m, so this
+        // only guards direct launches (clients/unittests).
+        if(hipBlockIdx_x >= stride)
+        {
+            return;
+        }
+
+        for(int64_t block_id = hipBlockIdx_x; block_id < num_blocks; block_id += num_blocks)
         {
             rocsparse::csrsm_block_device<BLOCKSIZE, SLEEP>(block_id,
                                                             transB,

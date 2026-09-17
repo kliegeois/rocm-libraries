@@ -293,3 +293,23 @@ TEST(internal_level3_csrsm, solve_undersized_grid_single_panel)
     EXPECT_EQ(pivot, std::numeric_limits<test_J>::max());
     expect_exact_solution(got, grid_x);
 }
+
+// A grid that is NOT a whole number of RHS panels. csrsm_solve_grid_size never
+// produces one, but the kernel is launchable directly (this file does it), so the
+// contract has to hold for any grid.x, and the failure mode is silent: the stride
+// is rounded down to whole panels, so without a guard the ragged blocks past the
+// last whole panel re-run (panel, row) pairs that a lower numbered block already
+// owns. csrsm_block_device is NOT idempotent -- it reads its own B element as the
+// right hand side and overwrites it -- so a second visit corrupts the result.
+TEST(internal_level3_csrsm, solve_ragged_grid_is_not_a_multiple_of_m)
+{
+    const int64_t grid_x = 2 * csrsm_m + 5;
+    ASSERT_LT(grid_x, csrsm_blocks);
+    ASSERT_NE(grid_x % csrsm_m, 0);
+
+    std::vector<test_T> got;
+    test_J              pivot = 0;
+    ASSERT_NO_FATAL_FAILURE(solve_on_grid(grid_x, got, pivot));
+    EXPECT_EQ(pivot, std::numeric_limits<test_J>::max());
+    expect_exact_solution(got, grid_x);
+}
