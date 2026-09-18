@@ -384,3 +384,4 @@ endif()
   # Added at this leaf for unit_test_internal_common_large_grids.cpp
   unit_test_internal_level3_bsrsm.cpp
   unit_test_internal_level3_csrmm_grids.cpp
+  unit_test_internal_level3_sddmm_grid_clamp.cpp
