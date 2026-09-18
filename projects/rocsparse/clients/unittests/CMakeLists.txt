@@ -377,3 +377,7 @@ endif()
   unit_test_internal_util_checkmatrix_csr_large.cpp
   # unit_test_internal_util_checkmatrix_csr_large.cpp to cover the kernel's
   unit_test_internal_level3_csrsm.cpp
+  unit_test_internal_common_dense_grids.cpp
+  unit_test_internal_common_large_grids.cpp
+  # Added at this leaf for unit_test_internal_common_dense_grids.cpp
+  # Added at this leaf for unit_test_internal_common_large_grids.cpp
