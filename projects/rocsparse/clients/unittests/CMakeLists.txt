@@ -204,6 +204,14 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_SOURCES
   # handle->properties.maxGridSize[0] shrunk, so the one-block-per-block-row
   # compute grids are clamped below the block-row count on a tiny matrix.
   unit_test_internal_level2_bsrxmv_grid.cpp
+  unit_test_internal_common_dense_grids.cpp
+  unit_test_internal_common_large_grids.cpp
+  unit_test_internal_conversion_grid_clamp.cpp
+  unit_test_internal_level3_bsrsm.cpp
+  unit_test_internal_level3_csrmm_grids.cpp
+  unit_test_internal_level3_csrsm.cpp
+  unit_test_internal_level3_sddmm_grid_clamp.cpp
+  unit_test_internal_util_checkmatrix_csr_large.cpp
 )
 
 # Host building-block library translation units under test by the
@@ -381,14 +389,3 @@ if(BUILD_CODE_COVERAGE)
     endif()
   endforeach()
 endif()
-  unit_test_internal_util_checkmatrix_csr_large.cpp
-  # unit_test_internal_util_checkmatrix_csr_large.cpp to cover the kernel's
-  unit_test_internal_level3_csrsm.cpp
-  unit_test_internal_common_dense_grids.cpp
-  unit_test_internal_common_large_grids.cpp
-  # Added at this leaf for unit_test_internal_common_dense_grids.cpp
-  # Added at this leaf for unit_test_internal_common_large_grids.cpp
-  unit_test_internal_level3_bsrsm.cpp
-  unit_test_internal_level3_csrmm_grids.cpp
-  unit_test_internal_level3_sddmm_grid_clamp.cpp
-  unit_test_internal_conversion_grid_clamp.cpp
