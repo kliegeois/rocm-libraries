@@ -333,6 +333,10 @@ target_compile_options(rocsparse-unit-test-device PRIVATE
 # library/src/include; the level-1 device kernels live in library/src/level1.
 target_include_directories(rocsparse-unit-test-device PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/include>
+  # AISPARSE-698 launches check_matrix_csr_device.h directly; AISPARSE-699/700
+  # launch the common valset/scale/transpose kernels directly.
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/util>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/common>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/level1>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/level3>
 )
