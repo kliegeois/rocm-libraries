@@ -51,21 +51,12 @@ namespace rocsparse_memory_check
         constexpr size_t GB = 1024ULL * 1024ULL * 1024ULL;
 
 #ifdef __linux__
-        // Use sysinfo to get available memory on Linux
-        struct sysinfo info;
-        if(sysinfo(&info) == 0)
-        {
-            // info.freeram gives free RAM, info.bufferram gives buffer cache
-            // For test filtering, use available memory (free + buffers + cached)
-            // This is a more conservative estimate
-            unsigned long available_bytes = info.freeram * info.mem_unit;
-            size_t        available_gb    = available_bytes / GB;
-
-            // Return at least 1GB even if system reports less
-            return (available_gb > 0) ? available_gb : 1;
-        }
-
-        // Fallback: try to read /proc/meminfo for MemAvailable
+        // Prefer MemAvailable from /proc/meminfo: it is the kernel's own estimate
+        // of what can be allocated without swapping, and it counts reclaimable
+        // page cache. sysinfo's freeram does not, so on a machine that has just
+        // run a test suite it collapses to near zero while tens of GB are in fact
+        // available, and every memory-gated case is dropped at instantiation with
+        // no output at all.
         FILE* meminfo = fopen("/proc/meminfo", "r");
         if(meminfo != nullptr)
         {
@@ -81,6 +72,20 @@ namespace rocsparse_memory_check
                 }
             }
             fclose(meminfo);
+        }
+
+        // Fallback for kernels predating MemAvailable (before 3.14). sysinfo has no
+        // reclaimable-cache field, so free plus buffer cache is the closest it can
+        // get; it still understates, but by far less than freeram alone.
+        struct sysinfo info;
+        if(sysinfo(&info) == 0)
+        {
+            unsigned long available_bytes
+                = (unsigned long)(info.freeram + info.bufferram) * info.mem_unit;
+            size_t available_gb = available_bytes / GB;
+
+            // Return at least 1GB even if system reports less
+            return (available_gb > 0) ? available_gb : 1;
         }
 #elif defined(_WIN32)
         // Use GlobalMemoryStatusEx on Windows
