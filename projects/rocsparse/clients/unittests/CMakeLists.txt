@@ -376,3 +376,4 @@ if(BUILD_CODE_COVERAGE)
 endif()
   unit_test_internal_util_checkmatrix_csr_large.cpp
   # unit_test_internal_util_checkmatrix_csr_large.cpp to cover the kernel's
+  unit_test_internal_level3_csrsm.cpp
