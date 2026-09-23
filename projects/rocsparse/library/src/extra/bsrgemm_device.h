@@ -144,7 +144,7 @@ namespace rocsparse
     }
 
     // Copy an array
-    template <uint32_t BLOCKSIZE, typename I, typename J>
+    template <uint32_t BLOCKSIZE, bool GRID_STRIDE, typename I, typename J>
     ROCSPARSE_KERNEL(BLOCKSIZE)
     void bsrgemm_copy(I size,
                       const J* __restrict__ in,
@@ -156,17 +156,27 @@ namespace rocsparse
             idx += static_cast<I>(hipGridDim_x) * BLOCKSIZE)
         {
             out[idx] = in[idx] - idx_base_in + idx_base_out;
+
+            if constexpr(!GRID_STRIDE)
+            {
+                break;
+            }
         }
     }
 
     // Copy and scale an array
-    template <uint32_t BLOCKSIZE, typename I, typename T>
+    template <uint32_t BLOCKSIZE, bool GRID_STRIDE, typename I, typename T>
     ROCSPARSE_DEVICE_ILF void bsrgemm_copy_scale_device(I size, T beta, const T* in, T* out)
     {
         for(I idx = static_cast<I>(hipBlockIdx_x) * BLOCKSIZE + hipThreadIdx_x; idx < size;
             idx += static_cast<I>(hipGridDim_x) * BLOCKSIZE)
         {
             out[idx] = beta * in[idx];
+
+            if constexpr(!GRID_STRIDE)
+            {
+                break;
+            }
         }
     }
 

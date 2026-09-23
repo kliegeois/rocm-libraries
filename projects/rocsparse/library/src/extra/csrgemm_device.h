@@ -43,6 +43,17 @@ namespace rocsparse
             rocsparse::min(nblocks, static_cast<int64_t>(handle->properties.maxGridSize[0]))));
     }
 
+    // True when the element-parallel scaling-copy grid would exceed maxGridSize[0] and
+    // was clamped (the kernel must grid-stride); false lets the kernel take the
+    // straight-line single-sweep fast path. Shared by the csrgemm/bsrgemm scaling paths.
+    template <uint32_t BLOCKSIZE, typename I>
+    inline bool csrgemm_scal_copy_grid_clamped(rocsparse_handle handle, I size)
+    {
+        const int64_t nblocks = (size > 0) ? ((static_cast<int64_t>(size) - 1) / BLOCKSIZE + 1)
+                                           : static_cast<int64_t>(0);
+        return nblocks > static_cast<int64_t>(handle->properties.maxGridSize[0]);
+    }
+
     // Decrement
     template <uint32_t BLOCKSIZE, typename I>
     ROCSPARSE_KERNEL(BLOCKSIZE)
@@ -52,7 +63,7 @@ namespace rocsparse
     }
 
     // Copy an array
-    template <uint32_t BLOCKSIZE, typename I, typename J>
+    template <uint32_t BLOCKSIZE, bool GRID_STRIDE, typename I, typename J>
     ROCSPARSE_KERNEL(BLOCKSIZE)
     void csrgemm_copy(I size,
                       const J* __restrict__ in,
@@ -64,17 +75,27 @@ namespace rocsparse
             idx += static_cast<I>(hipGridDim_x) * BLOCKSIZE)
         {
             out[idx] = in[idx] - idx_base_in + idx_base_out;
+
+            if constexpr(!GRID_STRIDE)
+            {
+                break;
+            }
         }
     }
 
     // Copy and scale an array
-    template <uint32_t BLOCKSIZE, typename I, typename T>
+    template <uint32_t BLOCKSIZE, bool GRID_STRIDE, typename I, typename T>
     ROCSPARSE_DEVICE_ILF void csrgemm_copy_scale_device(I size, T alpha, const T* in, T* out)
     {
         for(I idx = static_cast<I>(hipBlockIdx_x) * BLOCKSIZE + hipThreadIdx_x; idx < size;
             idx += static_cast<I>(hipGridDim_x) * BLOCKSIZE)
         {
             out[idx] = alpha * in[idx];
+
+            if constexpr(!GRID_STRIDE)
+            {
+                break;
+            }
         }
     }
 

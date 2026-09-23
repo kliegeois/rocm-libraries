@@ -35,7 +35,7 @@
 
 namespace rocsparse
 {
-    template <uint32_t BLOCKSIZE, typename I, typename T>
+    template <uint32_t BLOCKSIZE, bool GRID_STRIDE, typename I, typename T>
     ROCSPARSE_KERNEL(BLOCKSIZE)
     void bsrgemm_copy_scale(I size,
                             ROCSPARSE_DEVICE_HOST_SCALAR_PARAMS(T, beta),
@@ -44,7 +44,7 @@ namespace rocsparse
                             bool is_host_mode)
     {
         ROCSPARSE_DEVICE_HOST_SCALAR_GET(beta);
-        rocsparse::bsrgemm_copy_scale_device<BLOCKSIZE>(size, beta, in, out);
+        rocsparse::bsrgemm_copy_scale_device<BLOCKSIZE, GRID_STRIDE>(size, beta, in, out);
     }
 }
 
@@ -101,34 +101,68 @@ rocsparse_status rocsparse::bsrgemm_scal_core(rocsparse_handle          handle,
     // Copy column entries, if D != C
     if(bsr_col_ind_C != bsr_col_ind_D)
     {
-        RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
-            (rocsparse::bsrgemm_copy<BSRGEMM_DIM>),
-            rocsparse::csrgemm_scal_copy_blocks<BSRGEMM_DIM>(handle, nnzb_D),
-            dim3(BSRGEMM_DIM),
-            0,
-            stream,
-            nnzb_D,
-            bsr_col_ind_D,
-            bsr_col_ind_C,
-            descr_D->base,
-            descr_C->base);
+        if(rocsparse::csrgemm_scal_copy_grid_clamped<BSRGEMM_DIM>(handle, nnzb_D))
+        {
+            RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
+                (rocsparse::bsrgemm_copy<BSRGEMM_DIM, true>),
+                rocsparse::csrgemm_scal_copy_blocks<BSRGEMM_DIM>(handle, nnzb_D),
+                dim3(BSRGEMM_DIM),
+                0,
+                stream,
+                nnzb_D,
+                bsr_col_ind_D,
+                bsr_col_ind_C,
+                descr_D->base,
+                descr_C->base);
+        }
+        else
+        {
+            RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
+                (rocsparse::bsrgemm_copy<BSRGEMM_DIM, false>),
+                rocsparse::csrgemm_scal_copy_blocks<BSRGEMM_DIM>(handle, nnzb_D),
+                dim3(BSRGEMM_DIM),
+                0,
+                stream,
+                nnzb_D,
+                bsr_col_ind_D,
+                bsr_col_ind_C,
+                descr_D->base,
+                descr_C->base);
+        }
     }
 
     // Element count of the block-value array, computed in 64-bit to avoid the
     // 32-bit block_dim * block_dim * nnzb_D product overflowing (AISPARSE-676).
     const int64_t bsrgemm_scal_nnz
         = static_cast<int64_t>(block_dim) * block_dim * static_cast<int64_t>(nnzb_D);
-    RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
-        (rocsparse::bsrgemm_copy_scale<BSRGEMM_DIM>),
-        rocsparse::csrgemm_scal_copy_blocks<BSRGEMM_DIM>(handle, bsrgemm_scal_nnz),
-        dim3(BSRGEMM_DIM),
-        0,
-        stream,
-        bsrgemm_scal_nnz,
-        ROCSPARSE_DEVICE_HOST_SCALAR_ARGS(handle, beta),
-        bsr_val_D,
-        bsr_val_C,
-        handle->pointer_mode == rocsparse_pointer_mode_host);
+    if(rocsparse::csrgemm_scal_copy_grid_clamped<BSRGEMM_DIM>(handle, bsrgemm_scal_nnz))
+    {
+        RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
+            (rocsparse::bsrgemm_copy_scale<BSRGEMM_DIM, true>),
+            rocsparse::csrgemm_scal_copy_blocks<BSRGEMM_DIM>(handle, bsrgemm_scal_nnz),
+            dim3(BSRGEMM_DIM),
+            0,
+            stream,
+            bsrgemm_scal_nnz,
+            ROCSPARSE_DEVICE_HOST_SCALAR_ARGS(handle, beta),
+            bsr_val_D,
+            bsr_val_C,
+            handle->pointer_mode == rocsparse_pointer_mode_host);
+    }
+    else
+    {
+        RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
+            (rocsparse::bsrgemm_copy_scale<BSRGEMM_DIM, false>),
+            rocsparse::csrgemm_scal_copy_blocks<BSRGEMM_DIM>(handle, bsrgemm_scal_nnz),
+            dim3(BSRGEMM_DIM),
+            0,
+            stream,
+            bsrgemm_scal_nnz,
+            ROCSPARSE_DEVICE_HOST_SCALAR_ARGS(handle, beta),
+            bsr_val_D,
+            bsr_val_C,
+            handle->pointer_mode == rocsparse_pointer_mode_host);
+    }
 #undef BSRGEMM_DIM
 
     return rocsparse_status_success;

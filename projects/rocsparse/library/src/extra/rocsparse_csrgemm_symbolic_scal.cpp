@@ -34,7 +34,7 @@
 namespace rocsparse
 {
     // Copy an array
-    template <uint32_t BLOCKSIZE, typename I, typename J>
+    template <uint32_t BLOCKSIZE, bool GRID_STRIDE, typename I, typename J>
     ROCSPARSE_KERNEL(BLOCKSIZE)
     void csrgemm_symbolic_copy(I size,
                                const J* __restrict__ in,
@@ -46,6 +46,11 @@ namespace rocsparse
             idx += static_cast<I>(hipGridDim_x) * BLOCKSIZE)
         {
             out[idx] = in[idx] - idx_base_in + idx_base_out;
+
+            if constexpr(!GRID_STRIDE)
+            {
+                break;
+            }
         }
     }
 }
@@ -114,16 +119,34 @@ rocsparse_status rocsparse::csrgemm_symbolic_scal_core(rocsparse_handle         
         // Copy column entries, if D != C
         if(csr_col_ind_C != csr_col_ind_D)
         {
-            RETURN_IF_HIPLAUNCHKERNELGGL_ERROR((rocsparse::csrgemm_symbolic_copy<CSRGEMM_DIM>),
-                                               csrgemm_blocks,
-                                               csrgemm_threads,
-                                               0,
-                                               handle->stream,
-                                               nnz_D,
-                                               csr_col_ind_D,
-                                               csr_col_ind_C,
-                                               descr_D->base,
-                                               descr_C->base);
+            if(rocsparse::csrgemm_scal_copy_grid_clamped<CSRGEMM_DIM>(handle, nnz_D))
+            {
+                RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
+                    (rocsparse::csrgemm_symbolic_copy<CSRGEMM_DIM, true>),
+                    csrgemm_blocks,
+                    csrgemm_threads,
+                    0,
+                    handle->stream,
+                    nnz_D,
+                    csr_col_ind_D,
+                    csr_col_ind_C,
+                    descr_D->base,
+                    descr_C->base);
+            }
+            else
+            {
+                RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
+                    (rocsparse::csrgemm_symbolic_copy<CSRGEMM_DIM, false>),
+                    csrgemm_blocks,
+                    csrgemm_threads,
+                    0,
+                    handle->stream,
+                    nnz_D,
+                    csr_col_ind_D,
+                    csr_col_ind_C,
+                    descr_D->base,
+                    descr_C->base);
+            }
         }
 
 #undef CSRGEMM_DIM
