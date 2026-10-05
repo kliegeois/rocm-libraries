@@ -677,8 +677,8 @@ namespace rocsparse
             (floating_data_t<SOURCE>*)derr);
         RETURN_IF_HIP_ERROR(rocsparse_hipMemcpyAsync(
             &herr, derr, sizeof(floating_data_t<SOURCE>), hipMemcpyDeviceToHost, handle_->stream));
-        host_error[0] = static_cast<double>(herr);
         RETURN_IF_HIP_ERROR(rocsparse_hipStreamSynchronize(handle_->stream));
+        host_error[0] = static_cast<double>(herr);
         return rocsparse_status_success;
     }
 

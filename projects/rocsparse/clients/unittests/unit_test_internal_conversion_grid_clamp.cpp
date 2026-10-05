@@ -95,9 +95,12 @@
 // path; the same idiom is already used by unit_test_internal_collective_extras_*.
 #include "../../library/src/conversion/rocsparse_convert_array.hpp"
 
+#include <cmath>
 #include <cstdint>
 #include <gtest/gtest.h>
 #include <numeric>
+#include <sstream>
+#include <string>
 #include <vector>
 
 using namespace rocsparse_ut;
@@ -737,6 +740,49 @@ TEST_F(ConversionGrids, convert_array_data_narrowing_grid_stride)
     EXPECT_EQ(first_mismatch(to_host(d_target), expected), -1)
         << "convert_array (f64 -> f32) did not cover all " << convert_nitems
         << " items with grid.x clamped to " << clamped_grid_x << " blocks";
+}
+
+// The f64 -> f32 conversion error is reduced on the device, copied back
+// asynchronously and printed by convert_array. The host may only read the copy
+// after the stream synchronization, so the printed value must be the exact
+// maximum error. The largest error sits in the last item, reached only by the
+// stride loop.
+TEST_F(ConversionGrids, convert_array_data_narrowing_reports_error)
+{
+    std::vector<double> source(convert_nitems);
+    for(size_t i = 0; i < convert_nitems; ++i)
+    {
+        source[i] = static_cast<double>(i);
+    }
+    source[convert_nitems - 1] = 0.1;
+
+    double expected_error = 0;
+    for(const double s : source)
+    {
+        const double e = std::abs(s - static_cast<double>(static_cast<float>(s)));
+        expected_error = (e > expected_error) ? e : expected_error;
+    }
+    ASSERT_GT(expected_error, 0.0);
+
+    std::ostringstream expected;
+    expected << "rocsparse_convert_array numerical conversion error " << expected_error
+             << " invalid data." << std::endl;
+
+    device_vector<double> d_source(source);
+    device_vector<float>  d_target(std::vector<float>(convert_nitems, -1.0f));
+
+    ScopedMaxGridSizeX clamp(handle, clamped_grid_x);
+    testing::internal::CaptureStdout();
+    const rocsparse_status status  = rocsparse::convert_array(handle,
+                                                             convert_nitems,
+                                                             rocsparse_datatype_f32_r,
+                                                             d_target.ptr,
+                                                             rocsparse_datatype_f64_r,
+                                                             d_source.ptr);
+    const std::string      printed = testing::internal::GetCapturedStdout();
+
+    ASSERT_EQ(status, rocsparse_status_success);
+    EXPECT_EQ(printed, expected.str());
 }
 
 // ===========================================================================
