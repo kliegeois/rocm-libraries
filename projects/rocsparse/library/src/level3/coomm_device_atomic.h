@@ -376,7 +376,7 @@ namespace rocsparse
 
         // grid.y carries the dense column index and is clamped by get_grid_size_y, so stride
         // over the columns to cover panels beyond the cap.
-        for(I l = hipBlockIdx_y; l < n; l += hipGridDim_y)
+        for(int64_t l = hipBlockIdx_y; l < n; l += hipGridDim_y)
         {
             const T bval = (TRANSB) ? rocsparse::conj_val(dense_B[ldb * row + l], conj_B)
                                     : rocsparse::conj_val(dense_B[l * ldb + row], conj_B);

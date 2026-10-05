@@ -72,8 +72,8 @@ namespace rocsparse
         // grid.y carries the dense column panel index (WF_SIZE columns each) and
         // is clamped by get_grid_size_y, so stride over the WF_SIZE-wide panels to cover all
         // columns when the panel count exceeds the cap.
-        for(J col_panel = hipBlockIdx_y * WF_SIZE; col_panel < n;
-            col_panel += hipGridDim_y * WF_SIZE)
+        for(int64_t col_panel = static_cast<int64_t>(hipBlockIdx_y) * WF_SIZE; col_panel < n;
+            col_panel += static_cast<int64_t>(hipGridDim_y) * WF_SIZE)
         {
             // Grid-stride loop over the batch dimension (grid z).
             for(int64_t batch = hipBlockIdx_z; batch < batch_count; batch += hipGridDim_z)
@@ -94,7 +94,7 @@ namespace rocsparse
                     ldc,
                     order_C,
                     idx_base,
-                    col_panel);
+                    static_cast<J>(col_panel));
             }
         }
     }
@@ -144,8 +144,9 @@ namespace rocsparse
         // columns [start, ...) even when the panel count exceeds the cap. Every
         // launched panel is fully in-bounds by construction, reproduced by the
         // col_panel + LOOPS <= n condition.
-        for(J col_panel = start + LOOPS * hipBlockIdx_y; col_panel + LOOPS <= n;
-            col_panel += LOOPS * hipGridDim_y)
+        for(int64_t col_panel = start + static_cast<int64_t>(LOOPS) * hipBlockIdx_y;
+            col_panel + LOOPS <= n;
+            col_panel += static_cast<int64_t>(LOOPS) * hipGridDim_y)
         {
             // Grid-stride loop over the batch dimension (grid z).
             for(int64_t batch = hipBlockIdx_z; batch < batch_count; batch += hipGridDim_z)
@@ -155,7 +156,7 @@ namespace rocsparse
                     beta,
                     conj_A,
                     conj_B,
-                    col_panel,
+                    static_cast<J>(col_panel),
                     m,
                     n,
                     load_pointer(csr_row_ptr, batch, offsets_batch_stride_A),
@@ -279,8 +280,8 @@ namespace rocsparse
         // grid.y carries the dense column panel index (WF_SIZE columns each) and
         // is clamped by get_grid_size_y, so stride over the WF_SIZE-wide panels to cover all
         // columns when the panel count exceeds the cap.
-        for(J col_panel = hipBlockIdx_y * WF_SIZE; col_panel < n;
-            col_panel += hipGridDim_y * WF_SIZE)
+        for(int64_t col_panel = static_cast<int64_t>(hipBlockIdx_y) * WF_SIZE; col_panel < n;
+            col_panel += static_cast<int64_t>(hipGridDim_y) * WF_SIZE)
         {
             // Grid-stride loop over the batch dimension (grid z).
             for(int64_t batch = hipBlockIdx_z; batch < batch_count; batch += hipGridDim_z)
@@ -300,7 +301,7 @@ namespace rocsparse
                     ldc,
                     order_C,
                     idx_base,
-                    col_panel);
+                    static_cast<J>(col_panel));
             }
         }
     }
@@ -345,8 +346,8 @@ namespace rocsparse
         // grid.y carries the dense column panel index (WF_SIZE columns each) and
         // is clamped by get_grid_size_y, so stride over the WF_SIZE-wide panels to cover all
         // columns when the panel count exceeds the cap.
-        for(J col_panel = hipBlockIdx_y * WF_SIZE; col_panel < n;
-            col_panel += hipGridDim_y * WF_SIZE)
+        for(int64_t col_panel = static_cast<int64_t>(hipBlockIdx_y) * WF_SIZE; col_panel < n;
+            col_panel += static_cast<int64_t>(hipGridDim_y) * WF_SIZE)
         {
             // Grid-stride loop over the batch dimension (grid z).
             for(int64_t batch = hipBlockIdx_z; batch < batch_count; batch += hipGridDim_z)
@@ -366,7 +367,7 @@ namespace rocsparse
                     ldc,
                     order_C,
                     idx_base,
-                    col_panel);
+                    static_cast<J>(col_panel));
             }
         }
     }

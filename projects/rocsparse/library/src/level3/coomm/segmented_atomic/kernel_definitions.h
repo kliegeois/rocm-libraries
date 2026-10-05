@@ -67,8 +67,9 @@ namespace rocsparse
             // exceeds the cap. Every launched panel is fully in-bounds by
             // construction (COLS divides the covered range), so the exact panel
             // set is reproduced by the col_offset + COLS <= n condition.
-            for(I col_offset = nstart + COLS * hipBlockIdx_y; col_offset + COLS <= n;
-                col_offset += COLS * hipGridDim_y)
+            for(int64_t col_offset = nstart + static_cast<int64_t>(COLS) * hipBlockIdx_y;
+                col_offset + COLS <= n;
+                col_offset += static_cast<int64_t>(COLS) * hipGridDim_y)
             {
                 for(int64_t batch = hipBlockIdx_z; batch < batch_count; batch += hipGridDim_z)
                 {
@@ -77,7 +78,7 @@ namespace rocsparse
                         nnz,
                         m,
                         n,
-                        col_offset,
+                        static_cast<I>(col_offset),
                         alpha,
                         load_pointer(coo_row_ind, batch, batch_stride_A),
                         load_pointer(coo_col_ind, batch, batch_stride_A),
