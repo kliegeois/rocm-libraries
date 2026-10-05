@@ -24,7 +24,6 @@
 #include "internal/conversion/rocsparse_inverse_permutation.h"
 #include "rocsparse_utility.hpp"
 
-#include "rocsparse_common.hpp"
 #include "rocsparse_gcreate_identity_permutation.hpp"
 #include "rocsparse_grid.hpp"
 #include "rocsparse_identity.hpp"

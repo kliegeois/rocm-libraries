@@ -24,7 +24,6 @@
 #include "rocsparse_utility.hpp"
 
 #include "internal/conversion/rocsparse_csr2coo.h"
-#include "rocsparse_common.hpp"
 #include "rocsparse_csr2coo.hpp"
 #include "rocsparse_grid.hpp"
 

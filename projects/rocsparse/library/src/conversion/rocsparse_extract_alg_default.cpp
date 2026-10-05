@@ -22,7 +22,6 @@
  * ************************************************************************ */
 
 #include "rocsparse_extract_alg_default.hpp"
-#include "rocsparse_common.hpp"
 #include "rocsparse_grid.hpp"
 #include "rocsparse_primitives.hpp"
 
