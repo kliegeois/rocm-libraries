@@ -30,8 +30,8 @@
 //
 // The launches hardened by those tickets clamp grid.x against
 // handle->properties.maxGridSize[0] and grid-stride over whatever the clamp
-// drops. Reaching that clamp for real needs 2^31 CSR rows (684), 2.1e9
-// non-zeros (685) or 1e12 elements (686), so the tests shrink the limit instead
+// drops. Reaching that clamp for real needs more than 2^32 - 1 work-items, e.g.
+// 2^27 CSR rows (684) or 2^32 elements (685, 686), so the tests shrink the limit instead
 // and run a small problem through the same code path. This is the AISPARSE-702
 // idiom.
 //

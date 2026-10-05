@@ -39,23 +39,22 @@ rocsparse_status rocsparse::create_identity_permutation_core(rocsparse_handle ha
     // Stream
     hipStream_t stream = handle->stream;
 
-// AISPARSE-686. n is the template index type I, 64-bit on the int64_t
-// instantiations, and the block count computed from it was narrowed into a dim3
-// with no clamp and nothing behind it. The threshold -- 1.0995e12 elements -- is
-// not reachable, which is why this is P3, but the grid is clamped now and
-// identity_kernel grid-strides over the tail.
 #define IDENTITY_DIM 512
-    dim3 identity_blocks(
-        rocsparse::get_grid_size_x(handle, (n - 1) / IDENTITY_DIM + 1, IDENTITY_DIM));
-    dim3 identity_threads(IDENTITY_DIM);
-
-    RETURN_IF_HIPLAUNCHKERNELGGL_ERROR((rocsparse::identity_kernel<IDENTITY_DIM>),
-                                       identity_blocks,
-                                       identity_threads,
-                                       0,
-                                       stream,
-                                       n,
-                                       p);
+    RETURN_IF_ROCSPARSE_ERROR(rocsparse::dispatch_grid_stride_x(
+        handle,
+        (n - 1) / IDENTITY_DIM + 1,
+        IDENTITY_DIM,
+        [&](auto grid_stride, uint32_t grid) -> rocsparse_status {
+            RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
+                (rocsparse::identity_kernel<IDENTITY_DIM, decltype(grid_stride)::value>),
+                dim3(grid),
+                dim3(IDENTITY_DIM),
+                0,
+                stream,
+                n,
+                p);
+            return rocsparse_status_success;
+        }));
 #undef IDENTITY_DIM
 
     return rocsparse_status_success;

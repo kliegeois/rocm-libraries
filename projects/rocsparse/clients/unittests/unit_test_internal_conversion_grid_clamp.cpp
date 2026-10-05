@@ -56,11 +56,12 @@
 //       `hipBlockIdx_x * BLOCKSIZE + hipThreadIdx_x`, which is unsigned-int
 //       arithmetic and wraps at 2^32 whatever it is assigned to.
 //
-// WHY THE THRESHOLDS ARE NOT TESTED DIRECTLY. 684 needs mb * row_block_dim above
-// 2^31 (2.1 billion CSR rows), 685 needs 2.1e9 non-zeros, 686 needs 1.1e12 to
-// 2.2e12 elements. None of that fits the 15 GB gfx1201 this runs on, and 686 in
-// particular is unreachable on any machine, which is why it is P3. What IS
-// reachable -- and what the fixes actually consist of -- is the pairing of
+// WHY THE THRESHOLDS ARE NOT TESTED DIRECTLY. Every clamp binds once grid.x *
+// blockDim.x passes the 2^32 - 1 work-item dispatch limit: 2^27 CSR rows for 684
+// (one 32-wide wavefront per row), and 2^32 non-zeros or elements for the one-
+// thread-per-item kernels of 685 and 686. None of those arrays fits the 15 GB
+// gfx1201 this runs on. What IS reachable -- and what the fixes actually
+// consist of -- is the pairing of
 //
 //   (a) a grid.x clamped against handle->properties.maxGridSize[0], and
 //   (b) a grid-stride loop that covers the length the clamp dropped.
@@ -529,6 +530,26 @@ TEST_F(ConversionGrids, identity_grid_stride)
     EXPECT_EQ(first_mismatch(to_host(d_p), expected), -1)
         << "create_identity_permutation did not cover all " << n
         << " elements with grid.x clamped to " << clamped_grid_x << " blocks";
+}
+
+// The same 5000 elements on an unclamped grid, which dispatch_grid_stride_x
+// sends to the straight-line identity_kernel variant.
+TEST_F(ConversionGrids, identity_unclamped_control)
+{
+    constexpr rocsparse_int n = 5000;
+
+    device_vector<rocsparse_int> d_p(std::vector<rocsparse_int>(n, -1));
+    ASSERT_NE(d_p.ptr, nullptr);
+
+    ASSERT_EQ(rocsparse_create_identity_permutation(handle, n, d_p.ptr), rocsparse_status_success);
+    UT_CHECK_HIP(hipDeviceSynchronize());
+
+    std::vector<rocsparse_int> expected(n);
+    std::iota(expected.begin(), expected.end(), 0);
+
+    EXPECT_EQ(first_mismatch(to_host(d_p), expected), -1)
+        << "create_identity_permutation did not cover all " << n
+        << " elements on an unclamped grid";
 }
 
 // ===========================================================================

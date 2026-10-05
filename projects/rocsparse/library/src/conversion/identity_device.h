@@ -29,26 +29,33 @@
 namespace rocsparse
 {
     // Create identity permutation
-    template <uint32_t BLOCKSIZE, typename I>
+    // GRID_STRIDE is set when grid.x was clamped below the number of blocks n
+    // needs. Otherwise grid.x * BLOCKSIZE fits the 32-bit dispatch limit and the
+    // unsigned-int global id of the straight-line path is exact.
+    template <uint32_t BLOCKSIZE, bool GRID_STRIDE, typename I>
     ROCSPARSE_KERNEL(BLOCKSIZE)
     void identity_kernel(I n, I* p)
     {
-        // AISPARSE-686. `hipBlockIdx_x * BLOCKSIZE` is unsigned-int arithmetic --
-        // both operands are unsigned int -- so it wrapped at 2^32 before it was ever
-        // assigned to I, and there was no grid-stride loop to cover a grid.x that the
-        // caller clamped against the device limit. The id is formed in int64_t now --
-        // not in I, because the caller may clamp grid.x, so BLOCKSIZE * hipGridDim_x
-        // is no longer bounded by n.
-        //
-        // Block-uniform stride bound: every term is hipBlockIdx_x, hipGridDim_x, a
-        // kernel argument or a compile-time constant. This kernel has no
-        // __syncthreads(), and the early `return` it used to take is now the loop
-        // condition itself.
-        const int64_t stride = static_cast<int64_t>(BLOCKSIZE) * hipGridDim_x;
-
-        for(int64_t gid = static_cast<int64_t>(BLOCKSIZE) * hipBlockIdx_x + hipThreadIdx_x; gid < n;
-            gid += stride)
+        if constexpr(GRID_STRIDE)
         {
+            const int64_t stride = static_cast<int64_t>(BLOCKSIZE) * hipGridDim_x;
+
+            for(int64_t gid = static_cast<int64_t>(BLOCKSIZE) * hipBlockIdx_x + hipThreadIdx_x;
+                gid < n;
+                gid += stride)
+            {
+                p[gid] = static_cast<I>(gid);
+            }
+        }
+        else
+        {
+            const int64_t gid = BLOCKSIZE * hipBlockIdx_x + hipThreadIdx_x;
+
+            if(gid >= n)
+            {
+                return;
+            }
+
             p[gid] = static_cast<I>(gid);
         }
     }
