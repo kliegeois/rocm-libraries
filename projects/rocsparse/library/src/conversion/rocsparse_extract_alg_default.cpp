@@ -264,24 +264,27 @@ namespace rocsparse
                 target_ptr_, &base_value, sizeof(I), hipMemcpyHostToDevice, handle_->stream));
         }
 
-        static constexpr int nthreads_per_block = 1024;
-        dim3                 threads(nthreads_per_block);
-        dim3                 blocks(rocsparse::get_grid_size_x(
-            handle_, (num_seq - 1) / nthreads_per_block + 1, nthreads_per_block));
+        if(num_seq > 0)
+        {
+            static constexpr int nthreads_per_block = 1024;
+            dim3                 threads(nthreads_per_block);
+            dim3                 blocks(rocsparse::get_grid_size_x(
+                handle_, (num_seq - 1) / nthreads_per_block + 1, nthreads_per_block));
 
-        RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
-            (rocsparse::extract_count_kernel<nthreads_per_block, I, J>),
-            blocks,
-            threads,
-            0,
-            handle_->stream,
-            num_seq,
-            (const I* __restrict__)source_ptr_,
-            (const J* __restrict__)source_ind_,
-            source_base_,
-            extract_before_diagonal,
-            target_diag_,
-            (I* __restrict__)target_ptr_);
+            RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
+                (rocsparse::extract_count_kernel<nthreads_per_block, I, J>),
+                blocks,
+                threads,
+                0,
+                handle_->stream,
+                num_seq,
+                (const I* __restrict__)source_ptr_,
+                (const J* __restrict__)source_ind_,
+                source_base_,
+                extract_before_diagonal,
+                target_diag_,
+                (I* __restrict__)target_ptr_);
+        }
 
         RETURN_IF_ROCSPARSE_ERROR(rocsparse::internal_extract_inclusive_scan(
             handle_, num_seq, (I* __restrict__)target_ptr_, buffer_size_, buffer_));
@@ -549,6 +552,11 @@ namespace rocsparse
             }
             break;
         }
+        }
+
+        if(num_seq == 0)
+        {
+            return rocsparse_status_success;
         }
 
         static constexpr uint32_t nthreads_per_block = 1024;

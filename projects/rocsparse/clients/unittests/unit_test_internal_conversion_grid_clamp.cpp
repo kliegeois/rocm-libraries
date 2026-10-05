@@ -883,3 +883,141 @@ TEST_F(ConversionGrids, extract_grid_stride)
 {
     run_extract(handle, clamped_grid_x);
 }
+
+// An extract with no rows. The analysis must still produce row_ptr = {base}
+// and nnz = 0, and the compute stage has nothing to fill, so capturing it must
+// record no kernel at all. With a 32-bit J and an unsigned block size,
+// (num_seq - 1) / nthreads_per_block + 1 used to turn 0 rows into millions of
+// empty blocks.
+TEST_F(ConversionGrids, extract_empty)
+{
+    constexpr rocsparse_int n = 5;
+
+    device_vector<rocsparse_int> d_row_ptr(std::vector<rocsparse_int>(1, 1));
+    device_vector<rocsparse_int> d_col_ind(std::vector<rocsparse_int>(1, -1));
+    device_vector<float>         d_val(std::vector<float>(1, -1.0f));
+
+    device_vector<rocsparse_int> d_t_row_ptr(std::vector<rocsparse_int>(1, -1));
+    device_vector<rocsparse_int> d_t_col_ind(std::vector<rocsparse_int>(1, -1));
+    device_vector<float>         d_t_val(std::vector<float>(1, -1.0f));
+
+    rocsparse_spmat_descr source = nullptr;
+    rocsparse_spmat_descr target = nullptr;
+
+    ASSERT_EQ(rocsparse_create_csr_descr(&source,
+                                         0,
+                                         n,
+                                         0,
+                                         d_row_ptr.ptr,
+                                         d_col_ind.ptr,
+                                         d_val.ptr,
+                                         rocsparse_indextype_i32,
+                                         rocsparse_indextype_i32,
+                                         rocsparse_index_base_one,
+                                         rocsparse_datatype_f32_r),
+              rocsparse_status_success);
+
+    ASSERT_EQ(rocsparse_create_csr_descr(&target,
+                                         0,
+                                         n,
+                                         0,
+                                         d_t_row_ptr.ptr,
+                                         d_t_col_ind.ptr,
+                                         d_t_val.ptr,
+                                         rocsparse_indextype_i32,
+                                         rocsparse_indextype_i32,
+                                         rocsparse_index_base_one,
+                                         rocsparse_datatype_f32_r),
+              rocsparse_status_success);
+
+    const rocsparse_fill_mode   fill_mode   = rocsparse_fill_mode_lower;
+    const rocsparse_diag_type   diag_type   = rocsparse_diag_type_non_unit;
+    const rocsparse_matrix_type matrix_type = rocsparse_matrix_type_triangular;
+    ASSERT_EQ(rocsparse_spmat_set_attribute(
+                  target, rocsparse_spmat_fill_mode, &fill_mode, sizeof(fill_mode)),
+              rocsparse_status_success);
+    ASSERT_EQ(rocsparse_spmat_set_attribute(
+                  target, rocsparse_spmat_diag_type, &diag_type, sizeof(diag_type)),
+              rocsparse_status_success);
+    ASSERT_EQ(rocsparse_spmat_set_attribute(
+                  target, rocsparse_spmat_matrix_type, &matrix_type, sizeof(matrix_type)),
+              rocsparse_status_success);
+
+    rocsparse_extract_descr descr = nullptr;
+    ASSERT_EQ(rocsparse_create_extract_descr(&descr, source, target, rocsparse_extract_alg_default),
+              rocsparse_status_success);
+
+    size_t buffer_size = 0;
+    ASSERT_EQ(rocsparse_extract_buffer_size(
+                  handle, descr, source, target, rocsparse_extract_stage_analysis, &buffer_size),
+              rocsparse_status_success);
+    device_vector<char> d_buffer(buffer_size ? buffer_size : size_t{1});
+
+    ASSERT_EQ(rocsparse_extract(handle,
+                                descr,
+                                source,
+                                target,
+                                rocsparse_extract_stage_analysis,
+                                buffer_size,
+                                d_buffer.ptr),
+              rocsparse_status_success);
+    int64_t nnz = -1;
+    ASSERT_EQ(rocsparse_extract_nnz(handle, descr, &nnz), rocsparse_status_success);
+    UT_CHECK_HIP(hipDeviceSynchronize());
+
+    EXPECT_EQ(nnz, 0);
+    EXPECT_EQ(to_host(d_t_row_ptr), std::vector<rocsparse_int>(1, 1));
+
+    size_t compute_buffer_size = 0;
+    ASSERT_EQ(
+        rocsparse_extract_buffer_size(
+            handle, descr, source, target, rocsparse_extract_stage_compute, &compute_buffer_size),
+        rocsparse_status_success);
+    device_vector<char> d_compute_buffer(compute_buffer_size ? compute_buffer_size : size_t{1});
+
+    hipStream_t old_stream     = nullptr;
+    hipStream_t capture_stream = nullptr;
+    ASSERT_EQ(rocsparse_get_stream(handle, &old_stream), rocsparse_status_success);
+    UT_CHECK_HIP(hipStreamCreate(&capture_stream));
+    ASSERT_EQ(rocsparse_set_stream(handle, capture_stream), rocsparse_status_success);
+
+    UT_CHECK_HIP(hipStreamBeginCapture(capture_stream, hipStreamCaptureModeThreadLocal));
+    const rocsparse_status status = rocsparse_extract(handle,
+                                                      descr,
+                                                      source,
+                                                      target,
+                                                      rocsparse_extract_stage_compute,
+                                                      compute_buffer_size,
+                                                      d_compute_buffer.ptr);
+    hipGraph_t             graph  = nullptr;
+    UT_CHECK_HIP(hipStreamEndCapture(capture_stream, &graph));
+    EXPECT_EQ(status, rocsparse_status_success);
+
+    size_t num_nodes = 0;
+    UT_CHECK_HIP(hipGraphGetNodes(graph, nullptr, &num_nodes));
+    std::vector<hipGraphNode_t> nodes(num_nodes);
+    if(num_nodes > 0)
+    {
+        UT_CHECK_HIP(hipGraphGetNodes(graph, nodes.data(), &num_nodes));
+    }
+    for(hipGraphNode_t node : nodes)
+    {
+        hipGraphNodeType type;
+        UT_CHECK_HIP(hipGraphNodeGetType(node, &type));
+        if(type == hipGraphNodeTypeKernel)
+        {
+            hipKernelNodeParams params{};
+            UT_CHECK_HIP(hipGraphKernelNodeGetParams(node, &params));
+            ADD_FAILURE() << "extract compute stage launched a " << params.gridDim.x
+                          << "-block kernel for an empty matrix";
+        }
+    }
+
+    UT_CHECK_HIP(hipGraphDestroy(graph));
+    ASSERT_EQ(rocsparse_set_stream(handle, old_stream), rocsparse_status_success);
+    UT_CHECK_HIP(hipStreamDestroy(capture_stream));
+
+    EXPECT_EQ(rocsparse_destroy_extract_descr(descr), rocsparse_status_success);
+    EXPECT_EQ(rocsparse_destroy_spmat_descr(target), rocsparse_status_success);
+    EXPECT_EQ(rocsparse_destroy_spmat_descr(source), rocsparse_status_success);
+}
