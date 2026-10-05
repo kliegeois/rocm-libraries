@@ -169,9 +169,10 @@ namespace rocsparse
             // rows. The bound depends solely on block uniform values
             // (hipBlockIdx_x, hipGridDim_x and a kernel argument), so every
             // thread of a block runs the same number of iterations.
-            for(J row_offset = hipBlockIdx_x; row_offset < nblockrows; row_offset += hipGridDim_x)
+            for(int64_t row_offset = hipBlockIdx_x; row_offset < nblockrows;
+                row_offset += hipGridDim_x)
             {
-                rocsparse::bsrxmvn_general_device<BLOCKSIZE, WFSIZE>(row_offset,
+                rocsparse::bsrxmvn_general_device<BLOCKSIZE, WFSIZE>(static_cast<J>(row_offset),
                                                                      dir,
                                                                      alpha,
                                                                      size_of_mask,

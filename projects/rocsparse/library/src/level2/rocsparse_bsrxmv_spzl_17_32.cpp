@@ -199,9 +199,10 @@ namespace rocsparse
             // hipThreadIdx_x or on data -- so every thread of the block runs the
             // same iteration count and reaches the __syncthreads() below
             // together.
-            for(J row_offset = hipBlockIdx_x; row_offset < nblockrows; row_offset += hipGridDim_x)
+            for(int64_t row_offset = hipBlockIdx_x; row_offset < nblockrows;
+                row_offset += hipGridDim_x)
             {
-                rocsparse::bsrxmvn_17_32_device<BSRDIM>(row_offset,
+                rocsparse::bsrxmvn_17_32_device<BSRDIM>(static_cast<J>(row_offset),
                                                         mb,
                                                         dir,
                                                         alpha,

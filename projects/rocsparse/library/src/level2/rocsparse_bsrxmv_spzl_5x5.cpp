@@ -289,9 +289,10 @@ namespace rocsparse
             // hipThreadIdx_x or on data -- so every thread of the block runs the
             // same iteration count and reaches the __syncthreads() below
             // together.
-            for(J row_offset = hipBlockIdx_x; row_offset < nblockrows; row_offset += hipGridDim_x)
+            for(int64_t row_offset = hipBlockIdx_x; row_offset < nblockrows;
+                row_offset += hipGridDim_x)
             {
-                rocsparse::bsrxmvn_5x5_device<BLOCKSIZE>(row_offset,
+                rocsparse::bsrxmvn_5x5_device<BLOCKSIZE>(static_cast<J>(row_offset),
                                                          mb,
                                                          dir,
                                                          alpha,
@@ -347,10 +348,11 @@ namespace rocsparse
             // shared state across block rows, it reduces through rocsparse::shfl.
             const J rows_per_block = static_cast<J>(hipBlockDim_y);
 
-            for(J row_base = static_cast<J>(hipBlockIdx_x) * rows_per_block; row_base < nblockrows;
-                row_base += static_cast<J>(hipGridDim_x) * rows_per_block)
+            for(int64_t row_base = static_cast<int64_t>(hipBlockIdx_x) * rows_per_block;
+                row_base < nblockrows;
+                row_base += static_cast<int64_t>(hipGridDim_x) * rows_per_block)
             {
-                rocsparse::sbsrxmvn_5x5_device<BLOCKSIZE, DIR>(row_base,
+                rocsparse::sbsrxmvn_5x5_device<BLOCKSIZE, DIR>(static_cast<J>(row_base),
                                                                mb,
                                                                alpha,
                                                                size_of_mask,
