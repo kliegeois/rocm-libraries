@@ -66,8 +66,9 @@
 // wave32 part these cases exercise the five grids in
 // rocsparse_bsrxmv_spzl_general.cpp. On wave64 parts the same cases dispatch to
 // the block-dim specialisations, so block_dim 5/8/16/17/32 additionally cover
-// rocsparse_bsrxmv_spzl_5x5.cpp, _8x8.cpp, _16x16.cpp and _17_32.cpp. One test
-// case set, both architectures.
+// rocsparse_bsrxmv_spzl_5x5.cpp, _8x8.cpp, _16x16.cpp and _17_32.cpp. In those
+// two files float takes the half-warp kernels and only the double cases reach
+// the templated block-per-row kernels. One test case set, both architectures.
 //
 #include "unit_test_utils.hpp"
 
@@ -139,6 +140,7 @@ namespace
 
     // One block per block row, on the diagonal: block row i holds a single
     // block_dim x block_dim block in block column i.
+    template <typename T>
     struct bsr_matrix
     {
         rocsparse_int              mb;
@@ -148,17 +150,18 @@ namespace
         std::vector<rocsparse_int> row_ptr; // start offset of block row i
         std::vector<rocsparse_int> end_ptr; // end offset of block row i
         std::vector<rocsparse_int> col_ind;
-        std::vector<float>         val;
-        std::vector<float>         x;
+        std::vector<T>             val;
+        std::vector<T>             x;
     };
 
     // Build the diagonal test matrix. Entries vary with (block, row, column) so
     // a kernel that mixes up block rows, or drops some, cannot accidentally
     // produce the reference result. All values are small integers, so both the
-    // device and the host reference evaluate them exactly in float.
-    bsr_matrix make_matrix(rocsparse_int block_dim, rocsparse_direction dir)
+    // device and the host reference evaluate them exactly in float and double.
+    template <typename T>
+    bsr_matrix<T> make_matrix(rocsparse_int block_dim, rocsparse_direction dir)
     {
-        bsr_matrix m;
+        bsr_matrix<T> m;
         m.mb        = MB;
         m.nb        = MB;
         m.nnzb      = MB;
@@ -181,7 +184,7 @@ namespace
             {
                 for(rocsparse_int c = 0; c < block_dim; ++c)
                 {
-                    const float  v    = static_cast<float>(1 + ((i + 2 * r + 3 * c) % 7));
+                    const T      v    = static_cast<T>(1 + ((i + 2 * r + 3 * c) % 7));
                     const size_t base = static_cast<size_t>(i) * block_dim * block_dim;
                     // rocSPARSE stores each block either row-major
                     // (rocsparse_direction_row) or column-major.
@@ -197,7 +200,7 @@ namespace
         m.x.resize(static_cast<size_t>(MB) * block_dim);
         for(size_t j = 0; j < m.x.size(); ++j)
         {
-            m.x[j] = static_cast<float>(1 + (j % 5));
+            m.x[j] = static_cast<T>(1 + (j % 5));
         }
         return m;
     }
@@ -205,11 +208,12 @@ namespace
     // y = alpha * A * x + beta * y, restricted to the block rows `mask`
     // selects (all of them when `mask` is empty). Block rows outside the mask
     // are left at Y_INIT, exactly as the routine must leave them.
-    std::vector<float> reference(const bsr_matrix&                 m,
-                                 rocsparse_direction               dir,
-                                 const std::vector<rocsparse_int>& mask)
+    template <typename T>
+    std::vector<T> reference(const bsr_matrix<T>&              m,
+                             rocsparse_direction               dir,
+                             const std::vector<rocsparse_int>& mask)
     {
-        std::vector<float> y(static_cast<size_t>(m.mb) * m.block_dim, Y_INIT);
+        std::vector<T> y(static_cast<size_t>(m.mb) * m.block_dim, static_cast<T>(Y_INIT));
 
         std::vector<rocsparse_int> rows;
         if(mask.empty())
@@ -228,22 +232,23 @@ namespace
         {
             for(rocsparse_int r = 0; r < m.block_dim; ++r)
             {
-                float acc = 0.0f;
+                T acc = static_cast<T>(0);
                 for(rocsparse_int j = m.row_ptr[i]; j < m.end_ptr[i]; ++j)
                 {
                     const rocsparse_int col  = m.col_ind[j];
                     const size_t        base = static_cast<size_t>(j) * m.block_dim * m.block_dim;
                     for(rocsparse_int c = 0; c < m.block_dim; ++c)
                     {
-                        const float a = m.val[base
-                                              + (dir == rocsparse_direction_row
-                                                     ? static_cast<size_t>(r) * m.block_dim + c
-                                                     : static_cast<size_t>(c) * m.block_dim + r)];
+                        const T a = m.val[base
+                                          + (dir == rocsparse_direction_row
+                                                 ? static_cast<size_t>(r) * m.block_dim + c
+                                                 : static_cast<size_t>(c) * m.block_dim + r)];
                         acc += a * m.x[static_cast<size_t>(col) * m.block_dim + c];
                     }
                 }
                 const size_t idx = static_cast<size_t>(i) * m.block_dim + r;
-                y[idx]           = ALPHA * acc + BETA * Y_INIT;
+                y[idx]
+                    = static_cast<T>(ALPHA) * acc + static_cast<T>(BETA) * static_cast<T>(Y_INIT);
             }
         }
         return y;
@@ -251,7 +256,8 @@ namespace
 
     // Report the first index at which `got` and `want` differ, else -1. A single
     // precise failure beats thousands of EXPECT_FLOAT_EQ macros in a loop.
-    int64_t first_mismatch(const std::vector<float>& got, const std::vector<float>& want)
+    template <typename T>
+    int64_t first_mismatch(const std::vector<T>& got, const std::vector<T>& want)
     {
         for(size_t i = 0; i < got.size(); ++i)
         {
@@ -261,6 +267,84 @@ namespace
             }
         }
         return -1;
+    }
+
+    rocsparse_status xbsrxmv(rocsparse_handle          handle,
+                             rocsparse_direction       dir,
+                             rocsparse_operation       trans,
+                             rocsparse_int             size_of_mask,
+                             rocsparse_int             mb,
+                             rocsparse_int             nb,
+                             rocsparse_int             nnzb,
+                             const float*              alpha,
+                             const rocsparse_mat_descr descr,
+                             const float*              bsr_val,
+                             const rocsparse_int*      bsr_mask_ptr,
+                             const rocsparse_int*      bsr_row_ptr,
+                             const rocsparse_int*      bsr_end_ptr,
+                             const rocsparse_int*      bsr_col_ind,
+                             rocsparse_int             block_dim,
+                             const float*              x,
+                             const float*              beta,
+                             float*                    y)
+    {
+        return rocsparse_sbsrxmv(handle,
+                                 dir,
+                                 trans,
+                                 size_of_mask,
+                                 mb,
+                                 nb,
+                                 nnzb,
+                                 alpha,
+                                 descr,
+                                 bsr_val,
+                                 bsr_mask_ptr,
+                                 bsr_row_ptr,
+                                 bsr_end_ptr,
+                                 bsr_col_ind,
+                                 block_dim,
+                                 x,
+                                 beta,
+                                 y);
+    }
+
+    rocsparse_status xbsrxmv(rocsparse_handle          handle,
+                             rocsparse_direction       dir,
+                             rocsparse_operation       trans,
+                             rocsparse_int             size_of_mask,
+                             rocsparse_int             mb,
+                             rocsparse_int             nb,
+                             rocsparse_int             nnzb,
+                             const double*             alpha,
+                             const rocsparse_mat_descr descr,
+                             const double*             bsr_val,
+                             const rocsparse_int*      bsr_mask_ptr,
+                             const rocsparse_int*      bsr_row_ptr,
+                             const rocsparse_int*      bsr_end_ptr,
+                             const rocsparse_int*      bsr_col_ind,
+                             rocsparse_int             block_dim,
+                             const double*             x,
+                             const double*             beta,
+                             double*                   y)
+    {
+        return rocsparse_dbsrxmv(handle,
+                                 dir,
+                                 trans,
+                                 size_of_mask,
+                                 mb,
+                                 nb,
+                                 nnzb,
+                                 alpha,
+                                 descr,
+                                 bsr_val,
+                                 bsr_mask_ptr,
+                                 bsr_row_ptr,
+                                 bsr_end_ptr,
+                                 bsr_col_ind,
+                                 block_dim,
+                                 x,
+                                 beta,
+                                 y);
     }
 }
 
@@ -278,20 +362,22 @@ protected:
         check_with_grid_x(block_dim, dir, mask, CLAMPED_GRID_X);
     }
 
-    // As `check`, but with the grid.x limit given explicitly.
+    // As `check`, but with the grid.x limit and the value type given explicitly.
+    template <typename T = float>
     void check_with_grid_x(rocsparse_int                     block_dim,
                            rocsparse_direction               dir,
                            const std::vector<rocsparse_int>& mask,
                            int                               grid_x)
     {
-        const bsr_matrix m = make_matrix(block_dim, dir);
+        const bsr_matrix<T> m = make_matrix<T>(block_dim, dir);
 
         device_vector<rocsparse_int> d_row_ptr{m.row_ptr};
         device_vector<rocsparse_int> d_end_ptr{m.end_ptr};
         device_vector<rocsparse_int> d_col_ind{m.col_ind};
-        device_vector<float>         d_val{m.val};
-        device_vector<float>         d_x{m.x};
-        device_vector<float> d_y{std::vector<float>(static_cast<size_t>(m.mb) * block_dim, Y_INIT)};
+        device_vector<T>             d_val{m.val};
+        device_vector<T>             d_x{m.x};
+        device_vector<T>             d_y{
+            std::vector<T>(static_cast<size_t>(m.mb) * block_dim, static_cast<T>(Y_INIT))};
         ASSERT_TRUE(d_row_ptr.ptr && d_end_ptr.ptr && d_col_ind.ptr && d_val.ptr && d_x.ptr
                     && d_y.ptr);
 
@@ -304,37 +390,37 @@ protected:
         ASSERT_TRUE(d_mask.ptr);
         const rocsparse_int* mask_arg = mask.empty() ? nullptr : d_mask.ptr;
 
-        MatDescr    descr;
-        const float alpha = ALPHA;
-        const float beta  = BETA;
+        MatDescr descr;
+        const T  alpha = static_cast<T>(ALPHA);
+        const T  beta  = static_cast<T>(BETA);
 
         {
             ScopedMaxGridSizeX clamp(handle, grid_x);
 
-            ASSERT_EQ(rocsparse_sbsrxmv(handle,
-                                        dir,
-                                        rocsparse_operation_none,
-                                        static_cast<rocsparse_int>(mask.size()),
-                                        m.mb,
-                                        m.nb,
-                                        m.nnzb,
-                                        &alpha,
-                                        descr.d,
-                                        d_val,
-                                        mask_arg,
-                                        d_row_ptr,
-                                        d_end_ptr,
-                                        d_col_ind,
-                                        block_dim,
-                                        d_x,
-                                        &beta,
-                                        d_y),
+            ASSERT_EQ(xbsrxmv(handle,
+                              dir,
+                              rocsparse_operation_none,
+                              static_cast<rocsparse_int>(mask.size()),
+                              m.mb,
+                              m.nb,
+                              m.nnzb,
+                              &alpha,
+                              descr.d,
+                              d_val,
+                              mask_arg,
+                              d_row_ptr,
+                              d_end_ptr,
+                              d_col_ind,
+                              block_dim,
+                              d_x,
+                              &beta,
+                              d_y),
                       rocsparse_status_success);
             ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
         }
 
-        const std::vector<float> got  = to_host(d_y.ptr, d_y.n);
-        const std::vector<float> want = reference(m, dir, mask);
+        const std::vector<T> got  = to_host(d_y.ptr, d_y.n);
+        const std::vector<T> want = reference(m, dir, mask);
         ASSERT_EQ(got.size(), want.size());
 
         const int64_t bad = first_mismatch(got, want);
@@ -437,5 +523,31 @@ TEST_F(BsrxmvGridClamp, wave32_small_block_dims_reach_the_general_buckets)
         check(block_dim, rocsparse_direction_row, {});
         check(block_dim, rocsparse_direction_column, {});
         check(block_dim, rocsparse_direction_row, mask);
+    }
+}
+
+// rocsparse_sbsrxmv on wave64 sends block_dim 5 and 8 to the half-warp
+// sbsrxmvn_5x5_kernel / sbsrxmvn_8x8_kernel. The templated bsrxmvn_5x5_kernel
+// and bsrxmvn_8x8_kernel, whose grid-stride loop fences the shared sdata
+// reduction with __syncthreads(), only run for the other value types, so
+// repeat the clamped cases in double. On wave32 every block_dim goes through
+// bsrxmvn_general, so this also covers the general kernel in double.
+TEST_F(BsrxmvGridClamp, double_block_dims_5_and_8_reach_the_templated_kernels)
+{
+    std::vector<rocsparse_int> mask;
+    for(rocsparse_int i = 0; i < MB; i += 2)
+    {
+        mask.push_back(i);
+    }
+
+    for(rocsparse_int block_dim : {5, 8})
+    {
+        for(int grid_x : {1, CLAMPED_GRID_X})
+        {
+            check_with_grid_x<double>(block_dim, rocsparse_direction_row, {}, grid_x);
+            check_with_grid_x<double>(block_dim, rocsparse_direction_column, {}, grid_x);
+            check_with_grid_x<double>(block_dim, rocsparse_direction_row, mask, grid_x);
+            check_with_grid_x<double>(block_dim, rocsparse_direction_column, mask, grid_x);
+        }
     }
 }
