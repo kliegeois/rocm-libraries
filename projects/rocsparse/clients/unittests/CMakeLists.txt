@@ -188,7 +188,7 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_SOURCES
   unit_test_host_extra_geam.cpp
   unit_test_internal_level3_sddmm.cpp
   unit_test_internal_level3_bsrmm.cpp
-  # bsrmm grid.x/grid.y and coomm/csrmm block reduce forced clamp [AISPARSE-665/704]
+  # bsrmm grid.x/grid.y and coomm block reduce forced clamp [AISPARSE-665/704]
   unit_test_internal_level3_bsrmm_grids.cpp
   #10158: distinct anchor to avoid stacked-branch merge conflicts
   unit_test_host_level3.cpp

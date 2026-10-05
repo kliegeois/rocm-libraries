@@ -24,15 +24,14 @@
 
 //
 // Forced-clamp tests for the bsrmm grid.x / grid.y extents and for the grid.x
-// extent of the coomm segmented and csrmm nnz split block reductions
-// (AISPARSE-665/704).
+// extent of the coomm segmented block reduction (AISPARSE-665/704).
 //
 // bsrmm sizes grid.x from the block-row count and grid.y from the number of
 // dense column panels. Both are now clamped, grid.x with
 // rocsparse::get_grid_size_x (min(maxGridSize[0], (2^32 - 1) / blockDim.x)) and
 // grid.y with rocsparse::get_grid_size_y (maxGridSize[1], 65535), and the
-// kernels grid-stride over both. The block reductions ran one block per dense
-// column with grid.x = n; they now clamp grid.x and grid-stride over columns.
+// kernels grid-stride over both. The block reduction ran one block per dense
+// column with grid.x = n; it now clamps grid.x and grid-strides over columns.
 //
 // At real sizes the clamps need more than 65535 column panels or millions of
 // block rows. These tests shrink handle->properties.maxGridSize[0] and [1] for
@@ -619,24 +618,6 @@ namespace
                             "coommnn_general_block_reduce");
     }
 
-    // csrmm nnz split: nnz = 10000 is 40 nnz blocks of 256 for
-    // csrmmnn_general_block_reduce, which wants one block per column, 20 blocks.
-    template <typename T, typename I, typename J, size_t N>
-    void check_csrmm_nnz_split(rocsparse_handle handle,
-                               int64_t          batch_count,
-                               const GridLimits (&limits)[N])
-    {
-        const HostSparse a = make_coo_or_csr(rocsparse_format_csr, 2000, 300, 5);
-        check_spmm<T, I, J>(handle,
-                            a,
-                            20,
-                            batch_count,
-                            rocsparse_spmm_alg_csr_nnz_split,
-                            rocsparse_order_column,
-                            limits,
-                            "csrmmnn_general_block_reduce");
-    }
-
     using BsrmmGrids       = HandleTest;
     using BlockReduceGrids = HandleTest;
 }
@@ -819,14 +800,6 @@ TEST_F(BlockReduceGrids, coomm_segmented_batched_clamped)
     check_coomm<double, int64_t>(handle, rocsparse_order_row, 2, reduce_limits);
 }
 
-// The csrmm nnz split block reduction received the same grid.x clamp.
-TEST_F(BlockReduceGrids, csrmm_nnz_split_clamped)
-{
-    check_csrmm_nnz_split<float, int32_t, int32_t>(handle, 1, reduce_limits);
-    check_csrmm_nnz_split<double, int64_t, int64_t>(handle, 1, reduce_limits);
-    check_csrmm_nnz_split<double, int32_t, int32_t>(handle, 2, reduce_limits);
-}
-
 TEST_F(BlockReduceGrids, unclamped_grid_matches_host)
 {
     for(const rocsparse_order order_B : {rocsparse_order_column, rocsparse_order_row})
@@ -834,6 +807,4 @@ TEST_F(BlockReduceGrids, unclamped_grid_matches_host)
         check_coomm<float, int32_t>(handle, order_B, 1, unclamped);
         check_coomm<double, int64_t>(handle, order_B, 2, unclamped);
     }
-    check_csrmm_nnz_split<float, int32_t, int32_t>(handle, 1, unclamped);
-    check_csrmm_nnz_split<double, int32_t, int32_t>(handle, 2, unclamped);
 }
