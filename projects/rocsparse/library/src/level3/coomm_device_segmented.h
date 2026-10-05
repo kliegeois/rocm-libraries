@@ -481,13 +481,14 @@ namespace rocsparse
 
     // Do the final block reduction of the block reduction buffers back into global memory
     template <uint32_t BLOCKSIZE, typename T, typename I, typename C>
-    ROCSPARSE_DEVICE_ILF void coommnn_general_block_reduce_device(I               n,
-                                                                  I               nblocks,
-                                                                  const I*        row_block_red,
-                                                                  const T*        val_block_red,
-                                                                  C*              dense_C,
-                                                                  int64_t         ldc,
-                                                                  rocsparse_order order_C)
+    ROCSPARSE_DEVICE_ILF void
+        coommnn_general_block_reduce_device(I n,
+                                            I nblocks,
+                                            const I* __restrict__ row_block_red,
+                                            const T* __restrict__ val_block_red,
+                                            C*              dense_C,
+                                            int64_t         ldc,
+                                            rocsparse_order order_C)
     {
         const int tid = hipThreadIdx_x;
 
