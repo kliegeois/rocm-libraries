@@ -52,6 +52,11 @@
 // batches with different values, so the batch loop nested in the panel loop
 // has to pick the right per-batch pointers for every panel.
 //
+// INDEX TYPES. CSR runs with (row offset, column index) types (int32, int32),
+// (int64, int32) and (int64, int64); COO runs with int32 and int64 indices. The
+// kernels are instantiated per index type, so each one has its own copy of the
+// panel loop.
+//
 // ARITHMETIC. All values are small integers, so the host reference is exact in
 // either precision and does not depend on the order in which atomics land.
 //
@@ -171,7 +176,7 @@ namespace
         }
     };
 
-    template <typename T>
+    template <typename T, typename I, typename J>
     void check_case(rocsparse_handle handle, const Case& c)
     {
         const Pattern p   = make_pattern();
@@ -195,10 +200,10 @@ namespace
 
         for(int32_t batch_count : batch_counts)
         {
-            std::vector<int32_t> row_ptr;
-            std::vector<int32_t> row_ind;
-            std::vector<int32_t> col_ind;
-            std::vector<T>       val;
+            std::vector<I> row_ptr;
+            std::vector<J> row_ind;
+            std::vector<J> col_ind;
+            std::vector<T> val;
             for(int32_t b = 0; b < batch_count; ++b)
             {
                 row_ptr.insert(row_ptr.end(), p.row_ptr.begin(), p.row_ptr.end());
@@ -265,16 +270,17 @@ namespace
             for(int limit : grid_y_limits)
             {
                 SCOPED_TRACE(testing::Message()
-                             << "n = " << n << ", batch_count = " << batch_count
+                             << "I = int" << 8 * sizeof(I) << ", J = int" << 8 * sizeof(J)
+                             << ", n = " << n << ", batch_count = " << batch_count
                              << ", maxGridSize[1] = "
                              << (limit == 0 ? std::string("unclamped") : std::to_string(limit)));
 
-                device_vector<int32_t> d_row_ptr(row_ptr);
-                device_vector<int32_t> d_row_ind(row_ind);
-                device_vector<int32_t> d_col_ind(col_ind);
-                device_vector<T>       d_val(val);
-                device_vector<T>       d_B(dense_B);
-                device_vector<T>       d_C(dense_C);
+                device_vector<I> d_row_ptr(row_ptr);
+                device_vector<J> d_row_ind(row_ind);
+                device_vector<J> d_col_ind(col_ind);
+                device_vector<T> d_val(val);
+                device_vector<T> d_B(dense_B);
+                device_vector<T> d_C(dense_C);
                 ASSERT_TRUE(d_row_ptr.ptr && d_row_ind.ptr && d_col_ind.ptr && d_val.ptr && d_B.ptr
                             && d_C.ptr);
 
@@ -290,8 +296,8 @@ namespace
                                                          d_row_ptr.ptr,
                                                          d_col_ind.ptr,
                                                          d_val.ptr,
-                                                         rocsparse_indextype_i32,
-                                                         rocsparse_indextype_i32,
+                                                         it_of<I>(),
+                                                         it_of<J>(),
                                                          rocsparse_index_base_zero,
                                                          dt_of<T>()),
                               rocsparse_status_success);
@@ -305,7 +311,7 @@ namespace
                                                          d_row_ind.ptr,
                                                          d_col_ind.ptr,
                                                          d_val.ptr,
-                                                         rocsparse_indextype_i32,
+                                                         it_of<J>(),
                                                          rocsparse_index_base_zero,
                                                          dt_of<T>()),
                               rocsparse_status_success);
@@ -416,10 +422,18 @@ namespace
         }
     }
 
+    // COO has a single index type, so it only runs the I == J combinations.
     void check_all(rocsparse_handle handle, const Case& c)
     {
-        check_case<float>(handle, c);
-        check_case<double>(handle, c);
+        check_case<float, int32_t, int32_t>(handle, c);
+        check_case<double, int32_t, int32_t>(handle, c);
+        if(c.format == Format::csr)
+        {
+            check_case<float, int64_t, int32_t>(handle, c);
+            check_case<double, int64_t, int32_t>(handle, c);
+        }
+        check_case<float, int64_t, int64_t>(handle, c);
+        check_case<double, int64_t, int64_t>(handle, c);
     }
 }
 
