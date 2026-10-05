@@ -320,9 +320,8 @@ TEST_F(CommonGrids, scale_2d_array_grid_stride_batched)
 // scale_array / axpby_array_batched
 //
 // Both take a single index-typed length rather than a product, so they were never
-// exposed to the overflow above. They were widened and given the same stride loop
-// so every kernel in the file shares one indexing idiom; these two cases hold that
-// consistency in place.
+// exposed to the overflow above. These two cases check that every element is still
+// reached when grid.x is clamped.
 // ---------------------------------------------------------------------------
 
 TEST_F(CommonGrids, scale_array_grid_stride)

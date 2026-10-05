@@ -32,7 +32,7 @@
 namespace rocsparse
 {
     //
-    // AISPARSE-699. Two invariants hold for every kernel below.
+    // AISPARSE-699. Two invariants hold for the 2-D and axpby kernels below.
     //
     // 1. A dense element count is the product of two index-typed extents, so it must
     //    be formed in int64_t. The int32_t product overflows at m = n = 46341, which
@@ -64,9 +64,16 @@ namespace rocsparse
         array[lid + ld * wid] = value;
     }
 
-    template <typename A, typename T>
-    ROCSPARSE_DEVICE_ILF void scale_device(int64_t gid, T scalar, A* __restrict__ array)
+    template <uint32_t BLOCKSIZE, typename I, typename A, typename T>
+    ROCSPARSE_DEVICE_ILF void scale_device(I length, T scalar, A* __restrict__ array)
     {
+        const I gid = hipBlockIdx_x * BLOCKSIZE + hipThreadIdx_x;
+
+        if(gid >= length)
+        {
+            return;
+        }
+
         if(scalar == static_cast<T>(0))
         {
             array[gid] = static_cast<A>(0);
@@ -163,24 +170,9 @@ namespace rocsparse
                       bool is_host_mode)
     {
         ROCSPARSE_DEVICE_HOST_SCALAR_GET(scalar);
-        if(scalar == static_cast<T>(1))
+        if(scalar != static_cast<T>(1))
         {
-            return;
-        }
-
-        // length is a single extent rather than a product, so it cannot overflow the
-        // way m * n can. It is widened so that the index arithmetic cannot wrap and
-        // so that this kernel shares one indexing idiom with the 2-D ones.
-        const int64_t len = static_cast<int64_t>(length);
-
-        for(int64_t base = static_cast<int64_t>(hipBlockIdx_x) * BLOCKSIZE; base < len;
-            base += static_cast<int64_t>(hipGridDim_x) * BLOCKSIZE)
-        {
-            const int64_t gid = base + hipThreadIdx_x;
-            if(gid < len)
-            {
-                rocsparse::scale_device(gid, scalar, array);
-            }
+            rocsparse::scale_device<BLOCKSIZE>(length, scalar, array);
         }
     }
 
@@ -196,7 +188,9 @@ namespace rocsparse
         ROCSPARSE_DEVICE_HOST_SCALAR_GET(alpha);
         ROCSPARSE_DEVICE_HOST_SCALAR_GET(beta);
 
-        // See scale_kernel above for why length is widened.
+        // length is a single extent rather than a product, so it cannot overflow the
+        // way m * n can. It is widened so that the index arithmetic cannot wrap and
+        // so that this kernel shares one indexing idiom with the 2-D ones.
         const int64_t len = static_cast<int64_t>(length);
 
         for(int64_t base = static_cast<int64_t>(hipBlockIdx_x) * BLOCKSIZE; base < len;
@@ -222,7 +216,7 @@ namespace rocsparse
     {
         ROCSPARSE_DEVICE_HOST_SCALAR_GET(beta);
 
-        // See scale_kernel above for why length is widened.
+        // See axpby_kernel above for why length is widened.
         const int64_t len = static_cast<int64_t>(length);
 
         for(int64_t base = static_cast<int64_t>(hipBlockIdx_x) * BLOCKSIZE; base < len;
@@ -317,8 +311,7 @@ rocsparse_status rocsparse::scale_array(rocsparse_handle       handle,
         {
             RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
                 (rocsparse::scale_kernel<256>),
-                dim3(rocsparse::get_grid_size_x(
-                    handle, (static_cast<int64_t>(length) - 1) / 256 + 1, 256)),
+                dim3((length - 1) / 256 + 1),
                 dim3(256),
                 0,
                 handle->stream,
