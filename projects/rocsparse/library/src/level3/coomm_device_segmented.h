@@ -481,16 +481,13 @@ namespace rocsparse
 
     // Do the final block reduction of the block reduction buffers back into global memory
     template <uint32_t BLOCKSIZE, typename T, typename I, typename C>
-    ROCSPARSE_KERNEL(BLOCKSIZE)
-    void coommnn_general_block_reduce(I n,
-                                      I nblocks,
-                                      const I* __restrict__ row_block_red,
-                                      const T* __restrict__ val_block_red,
-                                      C*              dense_C,
-                                      int64_t         ldc,
-                                      int64_t         batch_stride_C,
-                                      rocsparse_order order_C,
-                                      int64_t         batch_count)
+    ROCSPARSE_DEVICE_ILF void coommnn_general_block_reduce_device(I               n,
+                                                                  I               nblocks,
+                                                                  const I*        row_block_red,
+                                                                  const T*        val_block_red,
+                                                                  C*              dense_C,
+                                                                  int64_t         ldc,
+                                                                  rocsparse_order order_C)
     {
         const int tid = hipThreadIdx_x;
 
@@ -502,43 +499,62 @@ namespace rocsparse
         // grid still covers all n columns.
         for(I col = hipBlockIdx_x; col < n; col += hipGridDim_x)
         {
-            for(int64_t batch = hipBlockIdx_z; batch < batch_count; batch += hipGridDim_z)
+            for(I i = 0; i < nblocks; i += BLOCKSIZE)
             {
-                for(I i = 0; i < nblocks; i += BLOCKSIZE)
+                // Copy data to reduction buffers
+                shared_row[tid] = (tid + i < nblocks) ? row_block_red[tid + i] : -1;
+                shared_val[tid] = (tid + i < nblocks)
+                                      ? val_block_red[tid + i + static_cast<int64_t>(nblocks) * col]
+                                      : static_cast<T>(0);
+
+                __syncthreads();
+
+                // Do segmented block reduction
+                segmented_blockreduce<BLOCKSIZE>(shared_row, shared_val);
+
+                // Add reduced sum to C if valid
+                const I row   = shared_row[tid];
+                const I rowp1 = (tid < BLOCKSIZE - 1) ? shared_row[tid + 1] : -1;
+
+                if(row != rowp1 && row >= 0)
                 {
-                    // Copy data to reduction buffers
-                    shared_row[tid]
-                        = (tid + i < nblocks) ? row_block_red[tid + i + nblocks * batch] : -1;
-                    shared_val[tid]
-                        = (tid + i < nblocks)
-                              ? val_block_red[tid + i + static_cast<int64_t>(nblocks) * col
-                                              + static_cast<int64_t>(nblocks) * n * batch]
-                              : static_cast<T>(0);
-
-                    __syncthreads();
-
-                    // Do segmented block reduction
-                    segmented_blockreduce<BLOCKSIZE>(shared_row, shared_val);
-
-                    // Add reduced sum to C if valid
-                    const I row   = shared_row[tid];
-                    const I rowp1 = (tid < BLOCKSIZE - 1) ? shared_row[tid + 1] : -1;
-
-                    if(row != rowp1 && row >= 0)
+                    if(order_C == rocsparse_order_column)
                     {
-                        if(order_C == rocsparse_order_column)
-                        {
-                            dense_C[row + ldc * col + batch_stride_C * batch] += shared_val[tid];
-                        }
-                        else
-                        {
-                            dense_C[col + ldc * row + batch_stride_C * batch] += shared_val[tid];
-                        }
+                        dense_C[row + ldc * col] += shared_val[tid];
                     }
-
-                    __syncthreads();
+                    else
+                    {
+                        dense_C[col + ldc * row] += shared_val[tid];
+                    }
                 }
+
+                __syncthreads();
             }
+        }
+    }
+
+    template <uint32_t BLOCKSIZE, typename T, typename I, typename C>
+    ROCSPARSE_KERNEL(BLOCKSIZE)
+    void coommnn_general_block_reduce(I n,
+                                      I nblocks,
+                                      const I* __restrict__ row_block_red,
+                                      const T* __restrict__ val_block_red,
+                                      C*              dense_C,
+                                      int64_t         ldc,
+                                      int64_t         batch_stride_C,
+                                      rocsparse_order order_C,
+                                      int64_t         batch_count)
+    {
+        for(int64_t batch = hipBlockIdx_z; batch < batch_count; batch += hipGridDim_z)
+        {
+            rocsparse::coommnn_general_block_reduce_device<BLOCKSIZE>(
+                n,
+                nblocks,
+                load_pointer(row_block_red, batch, nblocks),
+                load_pointer(val_block_red, batch, static_cast<int64_t>(nblocks) * n),
+                load_pointer(dense_C, batch, batch_stride_C),
+                ldc,
+                order_C);
         }
     }
 }
