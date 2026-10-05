@@ -497,7 +497,7 @@ namespace rocsparse
 
         // Grid-stride loop over the dense column dimension (grid x) so a clamped
         // grid still covers all n columns.
-        for(I col = hipBlockIdx_x; col < n; col += hipGridDim_x)
+        for(int64_t col = hipBlockIdx_x; col < n; col += hipGridDim_x)
         {
             for(I i = 0; i < nblocks; i += BLOCKSIZE)
             {

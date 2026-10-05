@@ -72,10 +72,10 @@ namespace rocsparse
         // grid.y is capped at 65,535, so grid-stride over the dense column panels
         // (each panel is WF_SIZE columns wide) to cover all of N. The loop bound is
         // uniform across the wavefront so every lane participates in the shfls below.
-        for(J col_panel = hipBlockIdx_y * WF_SIZE; col_panel < N;
+        for(int64_t col_panel = hipBlockIdx_y * WF_SIZE; col_panel < N;
             col_panel += hipGridDim_y * WF_SIZE)
         {
-            const J       col  = lid + col_panel;
+            const J       col  = lid + static_cast<J>(col_panel);
             const int64_t colB = col * ldb;
 
             for(int64_t block_row = gid / (WF_SIZE * BSR_BLOCK_DIM); block_row < Mb;

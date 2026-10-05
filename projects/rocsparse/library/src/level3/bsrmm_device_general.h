@@ -66,21 +66,21 @@ namespace rocsparse
         // grid.y is capped at 65,535, so grid-stride over the dense column panels
         // (each panel is BLK_SIZE_Y columns wide) to cover all of N. The loop bound is
         // uniform across the block so every thread reaches the __syncthreads below.
-        for(J col_panel = hipBlockIdx_y * BLK_SIZE_Y; col_panel < N;
+        for(int64_t col_panel = hipBlockIdx_y * BLK_SIZE_Y; col_panel < N;
             col_panel += hipGridDim_y * BLK_SIZE_Y)
         {
-            const J global_col = tidy + col_panel;
+            const J global_col = tidy + static_cast<J>(col_panel);
 
             // Grid-stride loop over the block-row dimension (grid x) so a clamped
             // grid still covers all Mb block rows.
-            for(J block_row = hipBlockIdx_x; block_row < Mb; block_row += hipGridDim_x)
+            for(int64_t block_row = hipBlockIdx_x; block_row < Mb; block_row += hipGridDim_x)
             {
                 const I block_row_start = bsr_row_ptr[block_row] - idx_base;
                 const I block_row_end   = bsr_row_ptr[block_row + 1] - idx_base;
 
                 for(J x = 0; x < block_dim; x += BSR_BLOCK_DIM)
                 {
-                    const J global_row = tidx + x + block_row * block_dim;
+                    const J global_row = tidx + x + static_cast<J>(block_row) * block_dim;
 
                     T sum = static_cast<T>(0);
 

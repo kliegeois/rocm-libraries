@@ -204,14 +204,14 @@ namespace rocsparse
                 // The bound is uniform across the block so every thread reaches the
                 // __syncthreads below.
                 constexpr uint32_t COL_PANEL = BLK_SIZE_Y * UNROLL_SIZE_Y;
-                for(J col_panel = hipBlockIdx_y * COL_PANEL; col_panel < N;
+                for(int64_t col_panel = hipBlockIdx_y * COL_PANEL; col_panel < N;
                     col_panel += hipGridDim_y * COL_PANEL)
                 {
                     T sum[UNROLL_SIZE_Y];
                     J cols[UNROLL_SIZE_Y];
                     for(uint32_t l = 0; l < UNROLL_SIZE_Y; ++l)
                     {
-                        cols[l] = (tidy + BLK_SIZE_Y * l) + col_panel;
+                        cols[l] = (tidy + BLK_SIZE_Y * l) + static_cast<J>(col_panel);
                     }
 
                     for(uint32_t l = 0; l < UNROLL_SIZE_Y; ++l)
