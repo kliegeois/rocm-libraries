@@ -110,7 +110,7 @@ namespace rocsparse
         const I row_end   = csr_row_ptr[ai + 1] - csr_idx_base;
 
         // Fill ELL matrix
-        for(rocsparse_int aj = row_begin; aj < row_end; ++aj)
+        for(I aj = row_begin; aj < row_end; ++aj)
         {
             if(p >= ell_width)
             {

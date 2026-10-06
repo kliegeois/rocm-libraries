@@ -5207,8 +5207,8 @@ void host_csrgeam_nnz(J                    M,
         int nthreads = omp_get_num_threads();
         int tid      = omp_get_thread_num();
 #else
-        int           nthreads = 1;
-        int           tid      = 0;
+        int nthreads = 1;
+        int tid      = 0;
 #endif
 
         J rows_per_thread = (M + nthreads - 1) / nthreads;
@@ -5301,8 +5301,8 @@ void host_csrgeam(J                    M,
         int nthreads = omp_get_num_threads();
         int tid      = omp_get_thread_num();
 #else
-        int           nthreads = 1;
-        int           tid      = 0;
+        int nthreads = 1;
+        int tid      = 0;
 #endif
 
         J rows_per_thread = (M + nthreads - 1) / nthreads;
@@ -9172,7 +9172,7 @@ void host_csr_to_hyb(rocsparse_int                     M,
         {
             if(p < ell_width)
             {
-                rocsparse_int idx = p++ * M + i;
+                int64_t idx = static_cast<int64_t>(p++) * M + i;
 
                 ell_col_ind[idx] = csr_col_ind[j];
                 ell_val[idx]     = csr_val[j];
@@ -9187,7 +9187,7 @@ void host_csr_to_hyb(rocsparse_int                     M,
 
         for(rocsparse_int j = row_nnz; j < ell_width; ++j)
         {
-            rocsparse_int idx = p++ * M + i;
+            int64_t idx = static_cast<int64_t>(p++) * M + i;
 
             ell_col_ind[idx] = -1;
             ell_val[idx]     = static_cast<T>(0);
@@ -9439,7 +9439,7 @@ void host_ell_to_csr(rocsparse_int                     M,
     {
         for(rocsparse_int p = 0; p < ell_width; ++p)
         {
-            rocsparse_int idx = p * M + i;
+            int64_t       idx = static_cast<int64_t>(p) * M + i;
             rocsparse_int col = ell_col_ind[idx] - ell_base;
 
             if(col >= 0 && col < N)
@@ -9475,7 +9475,7 @@ void host_ell_to_csr(rocsparse_int                     M,
 
         for(rocsparse_int p = 0; p < ell_width; ++p)
         {
-            rocsparse_int idx = p * M + i;
+            int64_t       idx = static_cast<int64_t>(p) * M + i;
             rocsparse_int col = ell_col_ind[idx] - ell_base;
 
             if(col >= 0 && col < N)
