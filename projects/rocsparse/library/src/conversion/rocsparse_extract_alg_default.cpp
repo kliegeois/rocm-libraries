@@ -133,7 +133,7 @@ namespace rocsparse
         // __syncthreads(), and the guard it used to apply is now the loop condition.
         const int64_t stride = static_cast<int64_t>(BLOCKSIZE) * hipGridDim_x;
 
-        auto predicate = [extract_before_diagonal_, target_diag_](J i, J j) {
+        auto predicate = [extract_before_diagonal_, target_diag_](int64_t i, J j) {
             return (extract_before_diagonal_)
                        ? ((target_diag_ == rocsparse_diag_type_unit) ? (i > j) : (i >= j))
                        : ((target_diag_ == rocsparse_diag_type_unit) ? (i < j) : (i <= j));
@@ -147,7 +147,7 @@ namespace rocsparse
             for(I k = source_ptr_[seq] - base_; k < source_ptr_[seq + 1] - base_; ++k)
             {
                 const J ind = source_ind_[k] - base_;
-                if(predicate(static_cast<J>(seq), ind))
+                if(predicate(seq, ind))
                 {
                     ++count;
                 }
@@ -447,7 +447,7 @@ namespace rocsparse
         // kernel argument or a compile-time constant. No __syncthreads() here either.
         const int64_t stride = static_cast<int64_t>(BLOCKSIZE) * hipGridDim_x;
 
-        auto predicate = [extract_before_diagonal_, target_diag_](J i, J j) {
+        auto predicate = [extract_before_diagonal_, target_diag_](int64_t i, J j) {
             return (extract_before_diagonal_)
                        ? ((target_diag_ == rocsparse_diag_type_unit) ? (i > j) : (i >= j))
                        : ((target_diag_ == rocsparse_diag_type_unit) ? (i < j) : (i <= j));
@@ -463,7 +463,7 @@ namespace rocsparse
             for(I k = source_ptr_[seq] - source_base_; k < end; ++k)
             {
                 const J ind = source_ind_[k] - source_base_;
-                if(predicate(static_cast<J>(seq), ind))
+                if(predicate(seq, ind))
                 {
                     target_ind_[target_start] = ind + target_base_;
                     target_val_[target_start] = source_val_[k];
