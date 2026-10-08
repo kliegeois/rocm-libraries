@@ -194,10 +194,14 @@ namespace rocsparse
             const int64_t nfullgroups = batch_count / m;
             // Check how many rocsparse_singularity the handle can handle.
             //
+            // Each chunk holds at most m elements, so the clamp does not bind in practice;
+            // it keeps every launch in this file on the same grid.x helper.
+            const int64_t chunk_grid_x
+                = rocsparse::get_grid_size_x(handle, (m - 1) / s_blocksize + 1, s_blocksize);
             for(int64_t igroup = 0; igroup < nfullgroups; ++igroup)
             {
                 RETURN_IF_HIPLAUNCHKERNELGGL_ERROR((kernel),
-                                                   dim3((m - 1) / s_blocksize + 1),
+                                                   dim3(chunk_grid_x),
                                                    dim3(s_blocksize),
                                                    0,
                                                    stream,
@@ -214,8 +218,10 @@ namespace rocsparse
             const int64_t rem = batch_count % m;
             if(rem > 0)
             {
+                const int64_t rem_grid_x
+                    = rocsparse::get_grid_size_x(handle, (rem - 1) / s_blocksize + 1, s_blocksize);
                 RETURN_IF_HIPLAUNCHKERNELGGL_ERROR((kernel),
-                                                   dim3((rem - 1) / s_blocksize + 1),
+                                                   dim3(rem_grid_x),
                                                    dim3(s_blocksize),
                                                    0,
                                                    stream,
