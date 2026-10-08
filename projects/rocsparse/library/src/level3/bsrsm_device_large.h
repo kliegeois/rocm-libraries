@@ -197,7 +197,7 @@ namespace rocsparse
             // Spin loop until dependency has been resolved
             if(threadIdx.x == 0)
             {
-                rocsparse::spin_loop<SLEEP>(&done_array[local_col + id], __HIP_MEMORY_SCOPE_AGENT);
+                rocsparse::spin_loop<SLEEP>(&done_array[local_col + id], __MEMORY_SCOPE_DEVICE);
             }
 
             // Make sure updated X is visible globally
@@ -277,8 +277,8 @@ namespace rocsparse
         if(row < mb && threadIdx.x == 0)
         {
             // Write "row is done" flag
-            __hip_atomic_store(
-                &done_array[row + id], 1, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);
+            rocsparse::atomic_store(
+                &done_array[row + id], 1, __ATOMIC_RELAXED, __MEMORY_SCOPE_DEVICE);
 
             if(pivot == true)
             {
@@ -466,7 +466,7 @@ namespace rocsparse
             // Spin loop until dependency has been resolved
             if(threadIdx.x == 0)
             {
-                rocsparse::spin_loop<SLEEP>(&done_array[local_col + id], __HIP_MEMORY_SCOPE_AGENT);
+                rocsparse::spin_loop<SLEEP>(&done_array[local_col + id], __MEMORY_SCOPE_DEVICE);
             }
 
             // Make sure updated X is visible globally
@@ -546,8 +546,8 @@ namespace rocsparse
         if(row < mb && threadIdx.x == 0)
         {
             // Write "row is done" flag
-            __hip_atomic_store(
-                &done_array[row + id], 1, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);
+            rocsparse::atomic_store(
+                &done_array[row + id], 1, __ATOMIC_RELAXED, __MEMORY_SCOPE_DEVICE);
 
             if(pivot == true)
             {
