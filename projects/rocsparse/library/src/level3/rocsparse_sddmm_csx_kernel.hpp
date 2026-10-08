@@ -31,9 +31,9 @@
 namespace rocsparse
 {
     // bid is the wavefront panel of rows (CSR) or columns (CSC) this thread block
-    // handles: hipBlockIdx_x as a uint32_t in the straight-line kernel, or a
-    // 64-bit grid-stride block index when grid.x was clamped against the device
-    // limit, so the row/column index cannot wrap for an int64_t index type.
+    // handles (hipBlockIdx_x, or the grid-stride block index when grid.x was
+    // clamped against the device limit). It is always 64-bit so the row/column
+    // index cannot wrap for an int64_t index type.
     template <uint32_t            BLOCKSIZE,
               uint32_t            WFSIZE,
               uint32_t            NTHREADS_PER_DOTPRODUCT,
@@ -43,9 +43,8 @@ namespace rocsparse
               typename J,
               typename A,
               typename B,
-              typename C,
-              typename BID>
-    ROCSPARSE_DEVICE_ILF void sddmm_csx_device_wavefront_per_rowcol(BID                 bid,
+              typename C>
+    ROCSPARSE_DEVICE_ILF void sddmm_csx_device_wavefront_per_rowcol(int64_t             bid,
                                                                     rocsparse_operation transA,
                                                                     rocsparse_operation transB,
                                                                     rocsparse_order     orderA,
@@ -84,7 +83,7 @@ namespace rocsparse
         const uint32_t            swid     = lid / NTHREADS_PER_DOTPRODUCT;
         const uint32_t            slid     = lid % NTHREADS_PER_DOTPRODUCT;
 
-        const BID rowcol = (BLOCKSIZE / WFSIZE) * bid + wid;
+        const int64_t rowcol = (BLOCKSIZE / WFSIZE) * bid + wid;
 
         static constexpr bool ROW_ORIENTED = (DIRECTION == rocsparse_direction_row);
 
@@ -233,7 +232,7 @@ namespace rocsparse
 
         for(int64_t batch = hipBlockIdx_y; batch < batch_count; batch += hipGridDim_y)
         {
-            const auto process_block = [&](auto bid) {
+            const auto process_block = [&](int64_t bid) {
                 rocsparse::sddmm_csx_device_wavefront_per_rowcol<BLOCKSIZE,
                                                                  WFSIZE,
                                                                  NTHREADS_PER_DOTPRODUCT,
@@ -272,7 +271,7 @@ namespace rocsparse
             }
             else
             {
-                process_block(static_cast<uint32_t>(hipBlockIdx_x));
+                process_block(hipBlockIdx_x);
             }
         }
     }

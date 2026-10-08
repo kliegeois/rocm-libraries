@@ -31,9 +31,9 @@
 
 namespace rocsparse
 {
-    // bid is the coefficient block this thread block handles: hipBlockIdx_x as a
-    // uint32_t in the straight-line kernel, or a 64-bit grid-stride block index
-    // when grid.x was clamped against the device limit.
+    // bid is the coefficient block this thread block handles (hipBlockIdx_x, or
+    // the grid-stride block index when grid.x was clamped against the device
+    // limit). It is always 64-bit so bid * NUM_COEFF cannot wrap.
     template <rocsparse_int BLOCKSIZE,
               rocsparse_int NTHREADS_PER_DOTPRODUCT,
               typename T,
@@ -41,9 +41,8 @@ namespace rocsparse
               typename J,
               typename A,
               typename B,
-              typename C,
-              typename BID>
-    ROCSPARSE_DEVICE_ILF void sddmm_ell_device(BID                 bid,
+              typename C>
+    ROCSPARSE_DEVICE_ILF void sddmm_ell_device(int64_t             bid,
                                                rocsparse_operation transA,
                                                rocsparse_operation transB,
                                                rocsparse_order     orderA,
@@ -76,10 +75,7 @@ namespace rocsparse
                                  ? ((transB == rocsparse_operation_none) ? 1 : ldb)
                                  : ((transB == rocsparse_operation_none) ? ldb : 1);
 
-        // Kept as wide as bid so the last grid-stride block cannot wrap a 32-bit I.
-        using innz_t = std::conditional_t<(sizeof(BID) > sizeof(I)), BID, I>;
-
-        const innz_t innz = bid * NUM_COEFF + local_coeff_index;
+        const int64_t innz = bid * NUM_COEFF + local_coeff_index;
         if(innz >= nnz)
         {
             return;
@@ -173,7 +169,7 @@ namespace rocsparse
 
         for(int64_t batch = hipBlockIdx_y; batch < batch_count; batch += hipGridDim_y)
         {
-            const auto process_block = [&](auto bid) {
+            const auto process_block = [&](int64_t bid) {
                 rocsparse::sddmm_ell_device<BLOCKSIZE, NTHREADS_PER_DOTPRODUCT>(
                     bid,
                     transA,
@@ -204,7 +200,7 @@ namespace rocsparse
             }
             else
             {
-                process_block(static_cast<uint32_t>(hipBlockIdx_x));
+                process_block(hipBlockIdx_x);
             }
         }
     }
