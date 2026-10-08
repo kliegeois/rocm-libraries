@@ -32,6 +32,9 @@
 
 #include "rocsparse_primitives.hpp"
 
+#include <algorithm>
+#include <limits>
+
 namespace rocsparse
 {
     template <typename T>
@@ -43,12 +46,13 @@ namespace rocsparse
     {
         ROCSPARSE_ROUTINE_TRACE;
 
-        hyb->m         = m;
-        hyb->n         = n;
-        hyb->partition = partition_type;
-        hyb->ell_nnz   = 0;
-        hyb->ell_width = 0;
-        hyb->coo_nnz   = 0;
+        hyb->m              = m;
+        hyb->n              = n;
+        hyb->partition      = partition_type;
+        hyb->ell_nnz        = 0;
+        hyb->ell_nnz_legacy = 0;
+        hyb->ell_width      = 0;
+        hyb->coo_nnz        = 0;
 
         if(std::is_same<T, float>{})
         {
@@ -248,7 +252,9 @@ rocsparse_status rocsparse::csr2hyb_template(rocsparse_handle          handle,
     }
 
     // Compute ELL non-zeros
-    hyb->ell_nnz = static_cast<int64_t>(hyb->ell_width) * m;
+    hyb->ell_nnz        = static_cast<int64_t>(hyb->ell_width) * m;
+    hyb->ell_nnz_legacy = static_cast<rocsparse_int>(
+        std::min<int64_t>(hyb->ell_nnz, std::numeric_limits<rocsparse_int>::max()));
 
     // Allocate ELL part
     if(hyb->ell_nnz > 0)
