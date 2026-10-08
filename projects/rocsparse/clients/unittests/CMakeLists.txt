@@ -229,6 +229,11 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_SOURCES
   # point with handle->properties.maxGridSize[0] shrunk, so no internal
   # translation unit has to be compiled in.
   unit_test_internal_level3_csrmm_grids.cpp
+  # --- Conversion-directory grid clamps [AISPARSE-684/685/686] --------------
+  # Distinct anchor at the end of the list so this leaf does not conflict with
+  # the sibling unit-test branches above. Drives public entry points plus
+  # rocsparse::convert_array, whose TU is already compiled in below.
+  unit_test_internal_conversion_grid_clamp.cpp
   # AISPARSE-670: distinct anchor to avoid stacked-branch merge conflicts.
   # Launches rocsparse::bsrsm_{lower,upper}_large_kernel (bsrsm_device_large.h),
   # rocsparse::bsrsm_copy_scale (bsrsm_device.h) and rocsparse::bsr_gather
