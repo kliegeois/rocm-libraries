@@ -354,8 +354,7 @@ rocsparse_status rocsparse::scale_2d_array(rocsparse_handle handle,
     {
         RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
             (rocsparse::scale_2d_kernel<256>),
-            dim3((static_cast<int64_t>(m) * n - 1) / 256 + 1,
-                 rocsparse::get_grid_size_y(handle, batch_count)),
+            dim3((int64_t(m) * n - 1) / 256 + 1, (batch_count > 65535) ? 65535 : batch_count),
             dim3(256),
             0,
             handle->stream,
