@@ -234,12 +234,17 @@ namespace rocsparse_ut
     // select the architecture from the device name instead.
     inline bool device_uses_dpp_wfreduce()
     {
-        int             dev   = 0;
-        hipDeviceProp_t props = {};
-        if(hipGetDevice(&dev) != hipSuccess || hipGetDeviceProperties(&props, dev) != hipSuccess)
-            return false;
-        return std::strncmp(props.gcnArchName, "gfx8", 4) == 0
-               || std::strncmp(props.gcnArchName, "gfx9", 4) == 0;
+        static const bool uses_dpp = [] {
+            int             dev   = 0;
+            hipDeviceProp_t props = {};
+            if(hipGetDevice(&dev) != hipSuccess
+               || hipGetDeviceProperties(&props, dev) != hipSuccess)
+                return false;
+            return std::strncmp(props.gcnArchName, "gfx8", 4) == 0
+                   || std::strncmp(props.gcnArchName, "gfx9", 4) == 0;
+        }();
+
+        return uses_dpp;
     }
 
     // First lane of a wavefront of `wf` lanes whose wfreduce_* result is

@@ -352,20 +352,13 @@ add_test(NAME rocsparse-unit-test-device COMMAND rocsparse-unit-test-device)
 
 rocm_install(TARGETS rocsparse-unit-test-device COMPONENT tests)
 
-# TheRock selects tests with ctest -L <tier> from the installed
-# bin/rocsparse/CTestTestfile.cmake. On gfx1151 it also requires the label
-# ex_gpu_gfx1151; on every other GPU it excludes any ex_gpu label. One ctest
-# entry cannot satisfy both, so each binary is registered twice.
+# Register each binary once in the build tree. TheRock instead selects tests
+# from the installed bin/rocsparse/CTestTestfile.cmake below, where gfx1151
+# requires separate entries carrying its GPU-specific label.
 set(ROCSPARSE_UNIT_TEST_CI_LABELS standard comprehensive full)
-set(ROCSPARSE_UNIT_TEST_CI_LABELS_GFX1151 ${ROCSPARSE_UNIT_TEST_CI_LABELS} ex_gpu_gfx1151)
 
 set_tests_properties(rocsparse-unit-test PROPERTIES LABELS "${ROCSPARSE_UNIT_TEST_CI_LABELS}")
-add_test(NAME rocsparse-unit-test_gfx1151 COMMAND rocsparse-unit-test)
-set_tests_properties(rocsparse-unit-test_gfx1151 PROPERTIES LABELS "${ROCSPARSE_UNIT_TEST_CI_LABELS_GFX1151}")
-
 set_tests_properties(rocsparse-unit-test-device PROPERTIES LABELS "gpu;${ROCSPARSE_UNIT_TEST_CI_LABELS}")
-add_test(NAME rocsparse-unit-test-device_gfx1151 COMMAND rocsparse-unit-test-device)
-set_tests_properties(rocsparse-unit-test-device_gfx1151 PROPERTIES LABELS "gpu;${ROCSPARSE_UNIT_TEST_CI_LABELS_GFX1151}")
 
 if(ROCSPARSE_CTEST_INSTALL_FILE)
   file(APPEND "${ROCSPARSE_CTEST_INSTALL_FILE}" [=[
