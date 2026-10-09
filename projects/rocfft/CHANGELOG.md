@@ -10,6 +10,13 @@ Documentation for rocFFT is available at
 * Fixed possible failures of `rocfft_plan_create` for multi-device plans.
 * Fixed out-of-bounds memory access when executing a multi-device complex-to-complex plan whose
   bricks used non-contiguous data layouts.
+* Fixed a memory leak when `rocfft_plan_create` fails.
+* Fixed `rocfft_plan_create` failures for large prime-length 1D complex transforms when a scale factor is set.
+* Fixed a potential write-after-free if plans are destroyed during process teardown.
+
+### Added
+
+* Added further support for very large FFTs (length greater than 2^32).
 
 ## rocFFT 1.0.40 for ROCm 10.1
 
