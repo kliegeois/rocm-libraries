@@ -45,6 +45,9 @@ def runCI =
 
         // Fast, CPU-only unit tests first as an early gate (no GPU required).
         commonGroovy.runUnitTestCommand(platform, project, "release-debug")
+        // Device unit tests fail the job here. coverage_analysis also runs this
+        // binary, but it ignores a non-zero exit so the profile upload can finish.
+        commonGroovy.runUnitTestDeviceCommand(platform, project, "release-debug")
 
         def gfilter = "*quick*:*pre_checkin*"
         commonGroovy.runCoverageCommand(platform, project, gfilter, "release-debug")

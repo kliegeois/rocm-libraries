@@ -90,6 +90,23 @@ def runUnitTestCommand (platform, project, String dirmode = "release")
 }
 
 
+// GPU unit tests (rocsparse-unit-test-device). The precheckin test stage already
+// has a GPU, so this runs there with the host unit tests. install.sh builds the
+// clients-tests target; cmake --build ensures this binary exists before launch.
+def runUnitTestDeviceCommand (platform, project, String dirmode = "release")
+{
+    def command = """#!/usr/bin/env bash
+                set -ex
+                cd ${project.paths.project_build_prefix}/build/${dirmode}
+                export LD_LIBRARY_PATH=/opt/rocm/lib/
+                cmake --build . --target rocsparse-unit-test-device
+                GTEST_LISTENER=NO_PASS_LINE_IN_LOG ./clients/staging/rocsparse-unit-test-device --gtest_output=xml:test_detail_unit_device.xml --gtest_color=yes
+            """
+
+    platform.runCommand(this, command)
+}
+
+
 def runHipDebugTestCommand (platform, project, gfilter, String dirmode = "release")
 {
     def hmmTestCommand= """GTEST_LISTENER=NO_PASS_LINE_IN_LOG ./rocsparse-test --test-hip-debug --test-hip-debug-full  --gtest_output=xml --gtest_color=yes --gtest_filter=${gfilter}-*known_bug*"""
