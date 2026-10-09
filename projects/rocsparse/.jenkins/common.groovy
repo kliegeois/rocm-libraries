@@ -32,6 +32,12 @@ def runCompileCommand(platform, project, jobName, boolean sameOrg=false)
 
 def runTestCommand (platform, project, gfilter, boolean rocmExamples=false, String dirmode = "release")
 {
+    // Math CI invokes this method and drops earlier calls in the Jenkinsfile
+    // testCommand closure (CPS method mismatch). Launch the unit-test binaries
+    // here so precheckin, extended, and static actually run them.
+    runUnitTestCommand(platform, project, dirmode)
+    runUnitTestDeviceCommand(platform, project, dirmode)
+
     def hmmTestCommand= """GTEST_LISTENER=NO_PASS_LINE_IN_LOG ./rocsparse-test --gtest_output=xml --gtest_color=yes --gtest_filter=${gfilter}-*known_bug*"""
     if (platform.jenkinsLabel.contains('gfx90a') || platform.jenkinsLabel.contains('gfx942'))
     {
@@ -137,6 +143,12 @@ def runTestWithSanitizerCommand (platform, project, gfilter, String dirmode = "r
 
 def runCoverageCommand (platform, project, gfilter, String dirmode = "release")
 {
+    // Same CPS mismatch as runTestCommand: calls before this method in the
+    // codecov Jenkinsfile are not executed. Run both binaries here so a
+    // failure fails the job before coverage upload.
+    runUnitTestCommand(platform, project, dirmode)
+    runUnitTestDeviceCommand(platform, project, dirmode)
+
     String commitSha
     String repoUrl
     (commitSha, repoUrl) = util.getGitHubCommitInformation(project.paths.project_src_prefix)
