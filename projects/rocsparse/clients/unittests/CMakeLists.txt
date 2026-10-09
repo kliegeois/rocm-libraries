@@ -103,9 +103,9 @@ set_target_properties(rocsparse-unit-test PROPERTIES
 )
 
 # CTest registration. enable_testing() is already invoked at the top-level
-# project scope (projects/rocsparse/CMakeLists.txt, guarded by BUILD_CLIENTS_TESTS),
-# so this test is discoverable via `ctest` from the top build directory. This lets
-# CI run the fast, GPU-independent unit tests as an early gate: `ctest -R rocsparse-unit-test`.
+# project scope (projects/rocsparse/CMakeLists.txt, guarded by BUILD_CLIENTS_TESTS).
+# Tier labels are applied with the device binary below, so ctest -L standard
+# (and comprehensive / full) runs this target.
 add_test(NAME rocsparse-unit-test COMMAND rocsparse-unit-test)
 
 rocm_install(TARGETS rocsparse-unit-test COMPONENT tests)
@@ -346,12 +346,47 @@ set_target_properties(rocsparse-unit-test-device PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/staging"
 )
 
-# Registered with CTest but tagged so CI can schedule it on a GPU node only
-# (it is NOT part of the fast CPU-only gate).
+# Device unit tests run in the same standard / comprehensive / full tiers as the
+# CPU binary. The gpu label remains so a GPU-only ctest selection still finds it.
 add_test(NAME rocsparse-unit-test-device COMMAND rocsparse-unit-test-device)
-set_tests_properties(rocsparse-unit-test-device PROPERTIES LABELS "gpu")
 
 rocm_install(TARGETS rocsparse-unit-test-device COMPONENT tests)
+
+# TheRock selects tests with ctest -L <tier> from the installed
+# bin/rocsparse/CTestTestfile.cmake. On gfx1151 it also requires the label
+# ex_gpu_gfx1151; on every other GPU it excludes any ex_gpu label. One ctest
+# entry cannot satisfy both, so each binary is registered twice.
+set(ROCSPARSE_UNIT_TEST_CI_LABELS standard comprehensive full)
+set(ROCSPARSE_UNIT_TEST_CI_LABELS_GFX1151 ${ROCSPARSE_UNIT_TEST_CI_LABELS} ex_gpu_gfx1151)
+
+set_tests_properties(rocsparse-unit-test PROPERTIES LABELS "${ROCSPARSE_UNIT_TEST_CI_LABELS}")
+add_test(NAME rocsparse-unit-test_gfx1151 COMMAND rocsparse-unit-test)
+set_tests_properties(rocsparse-unit-test_gfx1151 PROPERTIES LABELS "${ROCSPARSE_UNIT_TEST_CI_LABELS_GFX1151}")
+
+set_tests_properties(rocsparse-unit-test-device PROPERTIES LABELS "gpu;${ROCSPARSE_UNIT_TEST_CI_LABELS}")
+add_test(NAME rocsparse-unit-test-device_gfx1151 COMMAND rocsparse-unit-test-device)
+set_tests_properties(rocsparse-unit-test-device_gfx1151 PROPERTIES LABELS "gpu;${ROCSPARSE_UNIT_TEST_CI_LABELS_GFX1151}")
+
+if(ROCSPARSE_CTEST_INSTALL_FILE)
+  file(APPEND "${ROCSPARSE_CTEST_INSTALL_FILE}" [=[
+# rocSPARSE unit-test binaries (standard, comprehensive, full).
+# gfx1151 entries carry ex_gpu_gfx1151 so TheRock selects them with
+# -L <tier> -L ex_gpu_gfx1151. Other GPUs exclude ex_gpu and run the plain entries.
+
+add_test(rocsparse-unit-test "../rocsparse-unit-test")
+set_tests_properties(rocsparse-unit-test PROPERTIES LABELS "standard;comprehensive;full")
+
+add_test(rocsparse-unit-test_gfx1151 "../rocsparse-unit-test")
+set_tests_properties(rocsparse-unit-test_gfx1151 PROPERTIES LABELS "standard;comprehensive;full;ex_gpu_gfx1151")
+
+add_test(rocsparse-unit-test-device "../rocsparse-unit-test-device")
+set_tests_properties(rocsparse-unit-test-device PROPERTIES LABELS "gpu;standard;comprehensive;full")
+
+add_test(rocsparse-unit-test-device_gfx1151 "../rocsparse-unit-test-device")
+set_tests_properties(rocsparse-unit-test-device_gfx1151 PROPERTIES LABELS "gpu;standard;comprehensive;full;ex_gpu_gfx1151")
+
+]=])
+endif()
 
 # ---------------------------------------------------------------------------
 # Code coverage: instrument the unit-test binaries so the library sources that
