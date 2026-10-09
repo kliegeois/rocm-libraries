@@ -23,6 +23,7 @@
  * ************************************************************************ */
 
 #include "rocsparse_bsric0_kernel_general.hpp"
+#include "rocsparse_assert.hpp"
 #include "rocsparse_common.hpp"
 #include "rocsparse_grid.hpp"
 #include "rocsparse_utility.hpp"
@@ -353,6 +354,7 @@ namespace rocsparse
     ROCSPARSE_KERNEL(BLOCKSIZE)
     void bsric0_kernel_general(rocsparse_direction dir,
                                J                   mb,
+                               int64_t             batch_count,
                                const I* __restrict__ bsr_row_ptr,
                                const J* __restrict__ bsr_col_ind,
                                T*      bsr_val,
@@ -366,8 +368,6 @@ namespace rocsparse
                                int64_t              zero_pivot_stride,
                                rocsparse_index_base idx_base)
     {
-        const auto batch_index = hipBlockIdx_y;
-
         //
         // grid.x is clamped to what the hardware accepts, so this walks a
         // contiguous chunk of block rows. For every row count that fits on a
@@ -382,22 +382,27 @@ namespace rocsparse
         int64_t first_block_row, last_block_row;
         rocsparse::grid_x_chunk(mb, hipGridDim_x, hipBlockIdx_x, first_block_row, last_block_row);
 
-        for(int64_t block_row_idx = first_block_row; block_row_idx < last_block_row;
-            ++block_row_idx)
+        // grid.y is clamped too, so the batches are strided over it.
+        for(int64_t batch_index = hipBlockIdx_y; batch_index < batch_count;
+            batch_index += hipGridDim_y)
         {
-            rocsparse::bsric0_device_general<SLEEP, BLOCKSIZE, WFSIZE>(
-                dir,
-                mb,
-                bsr_dim,
-                bsr_row_ptr,
-                bsr_col_ind,
-                bsr_val + batch_index * bsr_val_stride,
-                bsr_diag_ind,
-                done_array + batch_index * done_array_stride,
-                map,
-                zero_pivot + batch_index * zero_pivot_stride,
-                idx_base,
-                block_row_idx);
+            for(int64_t block_row_idx = first_block_row; block_row_idx < last_block_row;
+                ++block_row_idx)
+            {
+                rocsparse::bsric0_device_general<SLEEP, BLOCKSIZE, WFSIZE>(
+                    dir,
+                    mb,
+                    bsr_dim,
+                    bsr_row_ptr,
+                    bsr_col_ind,
+                    rocsparse::load_pointer(bsr_val, batch_index, bsr_val_stride),
+                    bsr_diag_ind,
+                    rocsparse::load_pointer(done_array, batch_index, done_array_stride),
+                    map,
+                    rocsparse::load_pointer(zero_pivot, batch_index, zero_pivot_stride),
+                    idx_base,
+                    block_row_idx);
+            }
         }
     }
 
@@ -414,14 +419,20 @@ namespace rocsparse
         const int64_t done_array_stride = A->rows;
         auto          numeric_exact     = bsric0_info->get_singularity_numeric_exact();
 
+        rocsparse_host_assert(done_array_stride != 0 && numeric_exact->get_stride() != 0,
+                              "done_array and zero_pivot strides must be non-zero: "
+                              "each batch needs its own state.");
+
         RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
             (rocsparse::bsric0_kernel_general<SLEEP, BLOCKSIZE, WFSIZE>),
-            dim3(rocsparse::get_grid_size_x(handle, A->rows, BLOCKSIZE), A->batch_count),
+            dim3(rocsparse::get_grid_size_x(handle, A->rows, BLOCKSIZE),
+                 rocsparse::get_grid_size_y(handle, A->batch_count)),
             dim3(BLOCKSIZE),
             0,
             handle->stream,
             A->block_dir,
             static_cast<J>(A->rows),
+            A->batch_count,
             reinterpret_cast<const I*>(A->const_row_data),
             reinterpret_cast<const J*>(A->const_col_data),
             reinterpret_cast<T*>(A->val_data),
