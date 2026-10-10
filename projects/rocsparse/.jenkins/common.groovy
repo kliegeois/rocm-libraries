@@ -32,12 +32,6 @@ def runCompileCommand(platform, project, jobName, boolean sameOrg=false)
 
 def runTestCommand (platform, project, gfilter, boolean rocmExamples=false, String dirmode = "release")
 {
-    // Math CI invokes this method and drops earlier calls in the Jenkinsfile
-    // testCommand closure (CPS method mismatch). Launch the unit-test binaries
-    // here so precheckin, extended, and static actually run them.
-    runUnitTestCommand(platform, project, dirmode)
-    runUnitTestDeviceCommand(platform, project, dirmode)
-
     def hmmTestCommand= """GTEST_LISTENER=NO_PASS_LINE_IN_LOG ./rocsparse-test --gtest_output=xml --gtest_color=yes --gtest_filter=${gfilter}-*known_bug*"""
     if (platform.jenkinsLabel.contains('gfx90a') || platform.jenkinsLabel.contains('gfx942'))
     {
@@ -49,8 +43,14 @@ def runTestCommand (platform, project, gfilter, boolean rocmExamples=false, Stri
 
     def command = """#!/usr/bin/env bash
                 set -ex
-                cd ${project.paths.project_build_prefix}/build/${dirmode}/clients/staging
+                cd ${project.paths.project_build_prefix}/build/${dirmode}
                 export LD_LIBRARY_PATH=/opt/rocm/lib/
+                # Same shell step as rocsparse-test. Groovy calls before this
+                # script are not executed by Math CI.
+                cmake --build . --target rocsparse-unit-test rocsparse-unit-test-device
+                GTEST_LISTENER=NO_PASS_LINE_IN_LOG ./clients/staging/rocsparse-unit-test --gtest_output=xml:test_detail_unit.xml --gtest_color=yes
+                GTEST_LISTENER=NO_PASS_LINE_IN_LOG ./clients/staging/rocsparse-unit-test-device --gtest_output=xml:test_detail_unit_device.xml --gtest_color=yes
+                cd clients/staging
                 ${hmmTestCommand}
             """
 
@@ -143,12 +143,6 @@ def runTestWithSanitizerCommand (platform, project, gfilter, String dirmode = "r
 
 def runCoverageCommand (platform, project, gfilter, String dirmode = "release")
 {
-    // Same CPS mismatch as runTestCommand: calls before this method in the
-    // codecov Jenkinsfile are not executed. Run both binaries here so a
-    // failure fails the job before coverage upload.
-    runUnitTestCommand(platform, project, dirmode)
-    runUnitTestDeviceCommand(platform, project, dirmode)
-
     String commitSha
     String repoUrl
     (commitSha, repoUrl) = util.getGitHubCommitInformation(project.paths.project_src_prefix)
@@ -159,6 +153,12 @@ def runCoverageCommand (platform, project, gfilter, String dirmode = "release")
                     set -ex
                     cd ${project.paths.project_build_prefix}/build/${dirmode}
                     export LD_LIBRARY_PATH=/opt/rocm/lib/
+                    # Same shell step as coverage. Groovy calls before this
+                    # script are not executed, so a unit-test failure must be
+                    # raised here, before make coverage ignores it.
+                    cmake --build . --target rocsparse-unit-test rocsparse-unit-test-device
+                    GTEST_LISTENER=NO_PASS_LINE_IN_LOG ./clients/staging/rocsparse-unit-test --gtest_output=xml:test_detail_unit.xml --gtest_color=yes
+                    GTEST_LISTENER=NO_PASS_LINE_IN_LOG ./clients/staging/rocsparse-unit-test-device --gtest_output=xml:test_detail_unit_device.xml --gtest_color=yes
                     GTEST_LISTENER=NO_PASS_LINE_IN_LOG make coverage_cleanup coverage GTEST_FILTER=${gfilter}-*known_bug*
                     /usr/local/bin/codecov -v -U \$http_proxy -t ${CODECOV_TOKEN} --file coverage-report/coverage.info --name rocm-libraries --flags rocSPARSE --sha ${commitSha}
                 """

@@ -107,6 +107,12 @@ set_target_properties(rocsparse-unit-test PROPERTIES
 # bin/rocsparse-test*, so install them beside CTestTestfile.cmake. That is one
 # directory deeper than the other clients, so the RPATH gains an extra "..".
 function(rocsparse_install_unit_test target)
+  # TheRock's post-configure hook rewrites INSTALL_RPATH for every executable
+  # as if it lived in bin/. These binaries are installed in bin/rocsparse/, so
+  # tell that hook the real directory. It then emits $ORIGIN/../../lib, which
+  # reaches the same lib/ that rocsparse-test finds via $ORIGIN/../lib.
+  set_property(TARGET ${target} PROPERTY THEROCK_INSTALL_RPATH_ORIGIN
+    "${CMAKE_INSTALL_BINDIR}/rocsparse")
   if(NOT WIN32)
     set_property(TARGET ${target} PROPERTY INSTALL_RPATH
       "$ORIGIN/../../llvm/lib"
