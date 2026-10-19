@@ -1018,7 +1018,8 @@ namespace rocsparse_clients
     {
     private:
         hipStream_t m_stream;
-        hipEvent_t  m_start, m_stop;
+        hipEvent_t  m_start{};
+        hipEvent_t  m_stop{};
 
     public:
         timer(hipStream_t stream);

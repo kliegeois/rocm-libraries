@@ -51,6 +51,7 @@
 // public header, so they cannot be reached by linking roc::rocsparse.
 //
 
+#include "../include/rocsparse_clients_log.hpp"
 #include "unit_test_utils.hpp"
 
 #include "rocsparse.h"
@@ -223,7 +224,8 @@ namespace
         ~MatDescr()
         {
             if(d)
-                (void)rocsparse_destroy_mat_descr(d);
+                rocsparse_clients_log_rocsparse_error("rocsparse_destroy_mat_descr",
+                                                      rocsparse_destroy_mat_descr(d));
         }
     };
 }

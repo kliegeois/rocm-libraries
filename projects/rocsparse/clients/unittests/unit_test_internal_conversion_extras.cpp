@@ -33,6 +33,7 @@
 // buffer-size / nnz / compute pipeline on a tiny matrix plus a few bad-argument
 // branches.
 //
+#include "../include/rocsparse_clients_log.hpp"
 #include "unit_test_utils.hpp"
 
 #include "rocsparse.h"
@@ -57,7 +58,8 @@ namespace
         ~MatDescr()
         {
             if(d)
-                (void)rocsparse_destroy_mat_descr(d);
+                rocsparse_clients_log_rocsparse_error("rocsparse_destroy_mat_descr",
+                                                      rocsparse_destroy_mat_descr(d));
         }
     };
     struct MatInfo
@@ -73,7 +75,8 @@ namespace
         ~MatInfo()
         {
             if(i)
-                (void)rocsparse_destroy_mat_info(i);
+                rocsparse_clients_log_rocsparse_error("rocsparse_destroy_mat_info",
+                                                      rocsparse_destroy_mat_info(i));
         }
     };
 }

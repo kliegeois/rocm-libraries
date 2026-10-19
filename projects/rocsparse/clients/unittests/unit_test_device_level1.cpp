@@ -33,6 +33,7 @@
 // binary (links hip::device) and must run on a GPU (via the serializer, e.g.
 // HIP_VISIBLE_DEVICES=0 gpu-run ./rocsparse-unit-test-device).
 //
+#include "../include/rocsparse_clients_log.hpp"
 #include "rocsparse_common.hpp" // ROCSPARSE_DEVICE_ILF / ROCSPARSE_KERNEL / rocsparse::fma
 
 #include "axpyi_device.h"
@@ -60,14 +61,13 @@ namespace
     T* device_from(const std::vector<T>& h)
     {
         T* d = nullptr;
-        if(hipMalloc(&d, h.size() * sizeof(T)) != hipSuccess)
+        rocsparse_clients_throw_hip_error("hipMalloc", hipMalloc(&d, h.size() * sizeof(T)));
+        const hipError_t status
+            = hipMemcpy(d, h.data(), h.size() * sizeof(T), hipMemcpyHostToDevice);
+        if(status != hipSuccess)
         {
-            return nullptr;
-        }
-        if(hipMemcpy(d, h.data(), h.size() * sizeof(T), hipMemcpyHostToDevice) != hipSuccess)
-        {
-            (void)hipFree(d);
-            return nullptr;
+            rocsparse_clients_log_hip_error("hipFree", hipFree(d));
+            rocsparse_clients_throw_hip_error("hipMemcpy", status);
         }
         return d;
     }
@@ -75,16 +75,15 @@ namespace
     template <typename T>
     std::vector<T> host_from(const T* d, size_t n)
     {
-        std::vector<T>   h(n);
-        const hipError_t status = hipMemcpy(h.data(), d, n * sizeof(T), hipMemcpyDeviceToHost);
-        EXPECT_EQ(status, hipSuccess)
-            << "hipMemcpy (device->host) failed: " << hipGetErrorString(status);
+        std::vector<T> h(n);
+        rocsparse_clients_throw_hip_error(
+            "hipMemcpy", hipMemcpy(h.data(), d, n * sizeof(T), hipMemcpyDeviceToHost));
         return h;
     }
 
     void device_free(void* d)
     {
-        (void)hipFree(d);
+        rocsparse_clients_log_hip_error("hipFree", hipFree(d));
     }
 
     // Wrapper kernels for the ROCSPARSE_DEVICE_ILF functions (which are meant to

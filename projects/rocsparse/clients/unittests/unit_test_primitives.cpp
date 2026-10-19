@@ -77,10 +77,9 @@ namespace
     template <typename T>
     std::vector<T> to_host(const T* d, size_t n)
     {
-        std::vector<T>   h(n);
-        const hipError_t status = hipMemcpy(h.data(), d, n * sizeof(T), hipMemcpyDeviceToHost);
-        EXPECT_EQ(status, hipSuccess)
-            << "hipMemcpy (device->host) failed: " << hipGetErrorString(status);
+        std::vector<T> h(n);
+        rocsparse_clients_throw_hip_error(
+            "hipMemcpy", hipMemcpy(h.data(), d, n * sizeof(T), hipMemcpyDeviceToHost));
         return h;
     }
 } // namespace

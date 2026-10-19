@@ -21,6 +21,7 @@
 *
 * ************************************************************************ */
 #include "rocsparse_clients_dnvec_descr.hpp"
+#include "rocsparse_clients_log.hpp"
 #include "rocsparse_clients_objects.hpp"
 #include "rocsparse_clients_spmat_descr.hpp"
 #include "rocsparse_clients_sptrsv.hpp"
@@ -552,7 +553,9 @@ namespace rocsparse_clients
         {
             ROCSPARSE_CLIENTS_ROUTINE_TRACE;
             rocsparse_error* p_error = nullptr;
-            std::ignore = rocsparse_sptrsv_descr_destroy(this->m_handle, this->m_descr, p_error);
+            rocsparse_clients_log_rocsparse_error(
+                "rocsparse_sptrsv_descr_destroy",
+                rocsparse_sptrsv_descr_destroy(this->m_handle, this->m_descr, p_error));
         }
 
         inline operator rocsparse_sptrsv_descr&()

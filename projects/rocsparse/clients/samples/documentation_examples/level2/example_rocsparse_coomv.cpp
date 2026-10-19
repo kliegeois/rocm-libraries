@@ -49,7 +49,7 @@ int main()
 {
     // rocSPARSE handle
     rocsparse_handle handle;
-    rocsparse_create_handle(&handle);
+    ROCSPARSE_CHECK(rocsparse_create_handle(&handle));
 
     // A sparse matrix
     // 1 0 3 4

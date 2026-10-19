@@ -1,6 +1,6 @@
 /*! \file */
 /* ************************************************************************
- * Copyright (C) 2019-2025 Advanced Micro Devices, Inc. All rights Reserved.
+ * Copyright (C) 2019-2026 Advanced Micro Devices, Inc. All rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -22,6 +22,7 @@
  *
  * ************************************************************************ */
 #ifdef WIN32
+#include "rocsparse_clients_log.hpp"
 #include <windows.h>
 #endif
 
@@ -183,6 +184,9 @@ rocsparse_clients::timer::timer(hipStream_t stream)
     status = hipEventCreate(&this->m_stop);
     if(status != hipSuccess)
     {
+        rocsparse_clients_log_hip_error("hipEventDestroy", hipEventDestroy(this->m_start));
+        this->m_start = nullptr;
+        this->m_stop  = nullptr;
         throw status;
     }
 }
@@ -215,6 +219,12 @@ float rocsparse_clients::timer::stop()
 
 rocsparse_clients::timer::~timer()
 {
-    std::ignore = hipEventDestroy(this->m_start);
-    std::ignore = hipEventDestroy(this->m_stop);
+    if(this->m_start != nullptr)
+    {
+        rocsparse_clients_log_hip_error("hipEventDestroy", hipEventDestroy(this->m_start));
+    }
+    if(this->m_stop != nullptr)
+    {
+        rocsparse_clients_log_hip_error("hipEventDestroy", hipEventDestroy(this->m_stop));
+    }
 }

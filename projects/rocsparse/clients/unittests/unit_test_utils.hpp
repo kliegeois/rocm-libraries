@@ -32,6 +32,7 @@
 //
 #pragma once
 
+#include "../include/rocsparse_clients_log.hpp"
 #include "rocsparse.h"
 
 #include <cstdint>
@@ -115,32 +116,21 @@ namespace rocsparse_ut
         explicit device_vector(const std::vector<T>& host)
         {
             n = host.size();
-            if(hipMalloc(&ptr, n * sizeof(T)) != hipSuccess)
-            {
-                ptr = nullptr;
-                ADD_FAILURE() << "hipMalloc failed for device_vector of " << n << " element(s)";
-                return;
-            }
-            const hipError_t status
-                = hipMemcpy(ptr, host.data(), n * sizeof(T), hipMemcpyHostToDevice);
-            EXPECT_EQ(status, hipSuccess)
-                << "hipMemcpy (host->device) failed: " << hipGetErrorString(status);
+            rocsparse_clients_throw_hip_error("hipMalloc", hipMalloc(&ptr, n * sizeof(T)));
+            rocsparse_clients_throw_hip_error(
+                "hipMemcpy", hipMemcpy(ptr, host.data(), n * sizeof(T), hipMemcpyHostToDevice));
         }
         explicit device_vector(size_t count)
             : n(count)
         {
-            if(hipMalloc(&ptr, n * sizeof(T)) != hipSuccess)
-            {
-                ptr = nullptr;
-                ADD_FAILURE() << "hipMalloc failed for device_vector of " << n << " element(s)";
-            }
+            rocsparse_clients_throw_hip_error("hipMalloc", hipMalloc(&ptr, n * sizeof(T)));
         }
-        device_vector(const device_vector&) = delete;
+        device_vector(const device_vector&)            = delete;
         device_vector& operator=(const device_vector&) = delete;
         ~device_vector()
         {
             if(ptr)
-                (void)hipFree(ptr);
+                rocsparse_clients_log_hip_error("hipFree", hipFree(ptr));
         }
         operator T*() const
         {
@@ -157,10 +147,9 @@ namespace rocsparse_ut
         std::vector<T> host(count);
         if(count > 0 && device_ptr != nullptr)
         {
-            const hipError_t status
-                = hipMemcpy(host.data(), device_ptr, count * sizeof(T), hipMemcpyDeviceToHost);
-            EXPECT_EQ(status, hipSuccess)
-                << "hipMemcpy (device->host) failed: " << hipGetErrorString(status);
+            rocsparse_clients_throw_hip_error(
+                "hipMemcpy",
+                hipMemcpy(host.data(), device_ptr, count * sizeof(T), hipMemcpyDeviceToHost));
         }
         return host;
     }

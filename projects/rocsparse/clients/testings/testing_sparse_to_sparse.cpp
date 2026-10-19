@@ -22,6 +22,7 @@
  *
  * ************************************************************************ */
 #include "auto_testing_bad_arg.hpp"
+#include "rocsparse_clients_log.hpp"
 #include "testing.hpp"
 
 struct spmat
@@ -254,10 +255,10 @@ public:
         {
             rocsparse_destroy_spmat_descr(this->descr);
         }
-        std::ignore = rocsparse_hipFree(this->row_data);
-        std::ignore = rocsparse_hipFree(this->col_data);
-        std::ignore = rocsparse_hipFree(this->ind_data);
-        std::ignore = rocsparse_hipFree(this->val_data);
+        rocsparse_clients_log_hip_error("rocsparse_hipFree", rocsparse_hipFree(this->row_data));
+        rocsparse_clients_log_hip_error("rocsparse_hipFree", rocsparse_hipFree(this->col_data));
+        rocsparse_clients_log_hip_error("rocsparse_hipFree", rocsparse_hipFree(this->ind_data));
+        rocsparse_clients_log_hip_error("rocsparse_hipFree", rocsparse_hipFree(this->val_data));
     }
 
     // Allow spmat to be used anywhere rocsparse_spmat_descr is expected

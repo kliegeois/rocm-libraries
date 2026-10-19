@@ -96,7 +96,7 @@ int main()
         hipMalloc((void**)&dbsr_val_T, sizeof(float) * nnzb_A * row_block_dim * col_block_dim));
 
     rocsparse_handle handle;
-    rocsparse_create_handle(&handle);
+    ROCSPARSE_CHECK(rocsparse_create_handle(&handle));
 
     // Obtain the temporary buffer size
     size_t buffer_size;

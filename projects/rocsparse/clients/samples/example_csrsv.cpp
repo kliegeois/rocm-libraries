@@ -71,7 +71,7 @@ int main(int argc, char* argv[])
 
     // rocSPARSE handle
     rocsparse_handle handle;
-    rocsparse_create_handle(&handle);
+    ROCSPARSE_CHECK(rocsparse_create_handle(&handle));
 
     // Transposition of the matrix
     rocsparse_operation trans = rocsparse_operation_none;

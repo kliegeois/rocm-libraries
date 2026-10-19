@@ -38,6 +38,7 @@
 // Requires a GPU (creates a handle + launches kernels via the public API); part
 // of the rocsparse-unit-test-device binary.
 //
+#include "../include/rocsparse_clients_log.hpp"
 #include "rocsparse.h"
 
 #include <gtest/gtest.h>
@@ -152,12 +153,14 @@ namespace
         ~VecPair()
         {
             if(x)
-                (void)rocsparse_destroy_spvec_descr(x);
+                rocsparse_clients_log_rocsparse_error("rocsparse_destroy_spvec_descr",
+                                                      rocsparse_destroy_spvec_descr(x));
             if(y)
-                (void)rocsparse_destroy_dnvec_descr(y);
-            (void)hipFree(d_ind);
-            (void)hipFree(d_xval);
-            (void)hipFree(d_y);
+                rocsparse_clients_log_rocsparse_error("rocsparse_destroy_dnvec_descr",
+                                                      rocsparse_destroy_dnvec_descr(y));
+            rocsparse_clients_log_hip_error("hipFree", hipFree(d_ind));
+            rocsparse_clients_log_hip_error("hipFree", hipFree(d_xval));
+            rocsparse_clients_log_hip_error("hipFree", hipFree(d_y));
         }
     };
 
@@ -170,7 +173,7 @@ namespace
         const T c = scalar<T>(1);
         const T s = scalar<T>(0);
         EXPECT_ROC(rocsparse_rot(handle, &c, &s, vp.x, vp.y), rocsparse_status_success);
-        EXPECT_EQ(hipDeviceSynchronize(), hipSuccess);
+        ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
     }
 
     // Drive rocsparse_spvv end-to-end for one (T, I) combination and index base:
@@ -224,7 +227,7 @@ namespace
             rocsparse_spvv(
                 handle, rocsparse_operation_none, x, y, &result, dt_of<T>(), &buffer_size, temp),
             rocsparse_status_success);
-        EXPECT_EQ(hipDeviceSynchronize(), hipSuccess);
+        ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
 
         // Conjugate-transpose path (conjugated dot for complex, plain for real).
         EXPECT_ROC(rocsparse_spvv(handle,
@@ -236,14 +239,16 @@ namespace
                                   &buffer_size,
                                   temp),
                    rocsparse_status_success);
-        EXPECT_EQ(hipDeviceSynchronize(), hipSuccess);
+        ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
 
-        (void)rocsparse_destroy_spvec_descr(x);
-        (void)rocsparse_destroy_dnvec_descr(y);
-        (void)hipFree(d_ind);
-        (void)hipFree(d_xval);
-        (void)hipFree(d_y);
-        (void)hipFree(temp);
+        rocsparse_clients_log_rocsparse_error("rocsparse_destroy_spvec_descr",
+                                              rocsparse_destroy_spvec_descr(x));
+        rocsparse_clients_log_rocsparse_error("rocsparse_destroy_dnvec_descr",
+                                              rocsparse_destroy_dnvec_descr(y));
+        rocsparse_clients_log_hip_error("hipFree", hipFree(d_ind));
+        rocsparse_clients_log_hip_error("hipFree", hipFree(d_xval));
+        rocsparse_clients_log_hip_error("hipFree", hipFree(d_y));
+        rocsparse_clients_log_hip_error("hipFree", hipFree(temp));
     }
 } // namespace
 
@@ -318,7 +323,7 @@ TEST_F(HostLevel1, gather_ok)
     ASSERT_TRUE(
         vp.create(rocsparse_indextype_i32, rocsparse_datatype_f32_r, rocsparse_datatype_f32_r));
     EXPECT_ROC(rocsparse_gather(handle, vp.y, vp.x), rocsparse_status_success);
-    EXPECT_EQ(hipDeviceSynchronize(), hipSuccess);
+    ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
 }
 
 TEST_F(HostLevel1, scatter_ok)
@@ -327,7 +332,7 @@ TEST_F(HostLevel1, scatter_ok)
     ASSERT_TRUE(
         vp.create(rocsparse_indextype_i32, rocsparse_datatype_f32_r, rocsparse_datatype_f32_r));
     EXPECT_ROC(rocsparse_scatter(handle, vp.x, vp.y), rocsparse_status_success);
-    EXPECT_EQ(hipDeviceSynchronize(), hipSuccess);
+    ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
 }
 
 TEST_F(HostLevel1, axpby_ok_and_quick_return)
@@ -339,7 +344,7 @@ TEST_F(HostLevel1, axpby_ok_and_quick_return)
             vp.create(rocsparse_indextype_i32, rocsparse_datatype_f32_r, rocsparse_datatype_f32_r));
         const float alpha = 2, beta = 3;
         EXPECT_ROC(rocsparse_axpby(handle, &alpha, vp.x, &beta, vp.y), rocsparse_status_success);
-        EXPECT_EQ(hipDeviceSynchronize(), hipSuccess);
+        ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
     }
 }
 
@@ -513,7 +518,7 @@ TEST_F(HostLevel1, spvv_transpose_complex_not_implemented)
                               temp),
                rocsparse_status_not_implemented);
 
-    (void)hipFree(temp);
+    rocsparse_clients_log_hip_error("hipFree", hipFree(temp));
 }
 
 // ---------------------------------------------------------------------------

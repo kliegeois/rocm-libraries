@@ -227,10 +227,9 @@ namespace
     float read_half(const half* d_ptr, int64_t idx)
     {
         std::vector<uint16_t> h(static_cast<size_t>(idx) + 1);
-        const hipError_t      status
-            = hipMemcpy(h.data(), d_ptr, h.size() * sizeof(uint16_t), hipMemcpyDeviceToHost);
-        EXPECT_EQ(status, hipSuccess)
-            << "hipMemcpy (device->host) failed: " << hipGetErrorString(status);
+        rocsparse_clients_throw_hip_error(
+            "hipMemcpy",
+            hipMemcpy(h.data(), d_ptr, h.size() * sizeof(uint16_t), hipMemcpyDeviceToHost));
         _Float16 v;
         std::memcpy(&v, &h[idx], sizeof(v));
         return static_cast<float>(v);

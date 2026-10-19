@@ -31,6 +31,7 @@
 // rocsparse_bsrgeam_nnzb.cpp were 0%). The full nnzb -> compute pipeline is
 // driven on a tiny 2x2 block-identity plus bad-argument branches.
 //
+#include "../include/rocsparse_clients_log.hpp"
 #include "unit_test_utils.hpp"
 
 #include "rocsparse.h"
@@ -52,7 +53,8 @@ namespace
         ~MatDescr()
         {
             if(d)
-                (void)rocsparse_destroy_mat_descr(d);
+                rocsparse_clients_log_rocsparse_error("rocsparse_destroy_mat_descr",
+                                                      rocsparse_destroy_mat_descr(d));
         }
     };
 }

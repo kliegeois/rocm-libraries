@@ -31,6 +31,7 @@
 #include "auto_testing_bad_arg_get_status.hpp"
 #include "auto_testing_bad_arg_set_invalid.hpp"
 #include "rocsparse_clients_envariables.hpp"
+#include "rocsparse_clients_log.hpp"
 #include "rocsparse_test.hpp"
 #include "test_check.hpp"
 #include <fstream>
@@ -182,7 +183,11 @@ public:
 
     ~rocsparse_local_argdescr()
     {
-        rocsparse_argdescr_free(argdescr);
+        if(argdescr != nullptr)
+        {
+            rocsparse_clients_log_rocsparse_error("rocsparse_argdescr_free",
+                                                  rocsparse_argdescr_free(argdescr));
+        }
     }
 
     // Allow rocsparse_local_mat_descr to be used anywhere rocsparse_mat_descr is expected
