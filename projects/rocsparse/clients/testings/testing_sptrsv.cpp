@@ -455,7 +455,6 @@ namespace rocsparse_clients
 
         void set(rocsparse_handle handle)
         {
-            CHECK_ROCSPARSE_THROW_ERROR(rocsparse_create_sptrsv_descr(&this->m_descr));
             rocsparse_error p_error[1] = {nullptr};
             CHECK_ROCSPARSE_THROW_ERROR(rocsparse_sptrsv_set_input(handle,
                                                                    this->m_descr,
