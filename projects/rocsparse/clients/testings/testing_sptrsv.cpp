@@ -454,54 +454,58 @@ namespace rocsparse_clients
 
         void set(rocsparse_handle handle)
         {
-            rocsparse_create_sptrsv_descr(&this->m_descr);
+            CHECK_ROCSPARSE_THROW_ERROR(rocsparse_create_sptrsv_descr(&this->m_descr));
             rocsparse_error p_error[1] = {nullptr};
-            rocsparse_sptrsv_set_input(handle,
-                                       this->m_descr,
-                                       rocsparse_sptrsv_input_operation,
-                                       &config.operation,
-                                       sizeof(config.operation),
-                                       p_error);
+            CHECK_ROCSPARSE_THROW_ERROR(rocsparse_sptrsv_set_input(handle,
+                                                                   this->m_descr,
+                                                                   rocsparse_sptrsv_input_operation,
+                                                                   &config.operation,
+                                                                   sizeof(config.operation),
+                                                                   p_error));
 
-            rocsparse_sptrsv_set_input(handle,
-                                       this->m_descr,
-                                       rocsparse_sptrsv_input_alg,
-                                       &config.alg,
-                                       sizeof(config.alg),
-                                       p_error);
+            CHECK_ROCSPARSE_THROW_ERROR(rocsparse_sptrsv_set_input(handle,
+                                                                   this->m_descr,
+                                                                   rocsparse_sptrsv_input_alg,
+                                                                   &config.alg,
+                                                                   sizeof(config.alg),
+                                                                   p_error));
 
-            rocsparse_sptrsv_set_input(handle,
-                                       this->m_descr,
-                                       rocsparse_sptrsv_input_scalar_datatype,
-                                       &config.scalar_datatype,
-                                       sizeof(config.scalar_datatype),
-                                       p_error);
+            CHECK_ROCSPARSE_THROW_ERROR(
+                rocsparse_sptrsv_set_input(handle,
+                                           this->m_descr,
+                                           rocsparse_sptrsv_input_scalar_datatype,
+                                           &config.scalar_datatype,
+                                           sizeof(config.scalar_datatype),
+                                           p_error));
 
-            rocsparse_sptrsv_set_input(handle,
-                                       this->m_descr,
-                                       rocsparse_sptrsv_input_compute_datatype,
-                                       &config.compute_datatype,
-                                       sizeof(config.compute_datatype),
-                                       p_error);
+            CHECK_ROCSPARSE_THROW_ERROR(
+                rocsparse_sptrsv_set_input(handle,
+                                           this->m_descr,
+                                           rocsparse_sptrsv_input_compute_datatype,
+                                           &config.compute_datatype,
+                                           sizeof(config.compute_datatype),
+                                           p_error));
 
-            rocsparse_sptrsv_set_input(handle,
-                                       this->m_descr,
-                                       rocsparse_sptrsv_input_analysis_policy,
-                                       &config.apol,
-                                       sizeof(config.apol),
-                                       p_error);
+            CHECK_ROCSPARSE_THROW_ERROR(
+                rocsparse_sptrsv_set_input(handle,
+                                           this->m_descr,
+                                           rocsparse_sptrsv_input_analysis_policy,
+                                           &config.apol,
+                                           sizeof(config.apol),
+                                           p_error));
         }
 
         void set_solve_mode(rocsparse_solve_mode solve_mode)
         {
 #if defined(ROCSPARSE_WITH_DIAGONAL_SOLVE)
             rocsparse_error p_error[1] = {nullptr};
-            rocsparse_sptrsv_set_input(this->m_handle,
-                                       this->m_descr,
-                                       rocsparse_sptrsv_input_solve_mode,
-                                       &solve_mode,
-                                       sizeof(solve_mode),
-                                       p_error);
+            CHECK_ROCSPARSE_THROW_ERROR(
+                rocsparse_sptrsv_set_input(this->m_handle,
+                                           this->m_descr,
+                                           rocsparse_sptrsv_input_solve_mode,
+                                           &solve_mode,
+                                           sizeof(solve_mode),
+                                           p_error));
 #else
             (void)solve_mode;
 #endif
@@ -511,12 +515,13 @@ namespace rocsparse_clients
         {
 #if defined(ROCSPARSE_WITH_DIAGONAL_SOLVE)
             rocsparse_error p_error[1] = {nullptr};
-            rocsparse_sptrsv_set_input(this->m_handle,
-                                       this->m_descr,
-                                       rocsparse_sptrsv_input_diagonal_modifier,
-                                       &diagonal_modifier,
-                                       sizeof(diagonal_modifier),
-                                       p_error);
+            CHECK_ROCSPARSE_THROW_ERROR(
+                rocsparse_sptrsv_set_input(this->m_handle,
+                                           this->m_descr,
+                                           rocsparse_sptrsv_input_diagonal_modifier,
+                                           &diagonal_modifier,
+                                           sizeof(diagonal_modifier),
+                                           p_error));
 #else
             (void)diagonal_modifier;
 #endif

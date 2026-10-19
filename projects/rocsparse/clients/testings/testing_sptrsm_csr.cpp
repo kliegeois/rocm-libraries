@@ -48,45 +48,48 @@ struct rocsparse_local_sptrsm
                            const rocsparse_datatype        compute_datatype,
                            const rocsparse_analysis_policy apol)
     {
-        rocsparse_create_sptrsm_descr(&this->sptrsm_descr);
+        CHECK_ROCSPARSE_THROW_ERROR(rocsparse_create_sptrsm_descr(&this->sptrsm_descr));
         rocsparse_error p_error[1] = {nullptr};
-        rocsparse_sptrsm_set_input(handle,
-                                   sptrsm_descr,
-                                   rocsparse_sptrsm_input_operation_A,
-                                   &operation_A,
-                                   sizeof(operation_A),
-                                   p_error);
+        CHECK_ROCSPARSE_THROW_ERROR(rocsparse_sptrsm_set_input(handle,
+                                                               sptrsm_descr,
+                                                               rocsparse_sptrsm_input_operation_A,
+                                                               &operation_A,
+                                                               sizeof(operation_A),
+                                                               p_error));
 
-        rocsparse_sptrsm_set_input(handle,
-                                   sptrsm_descr,
-                                   rocsparse_sptrsm_input_operation_X,
-                                   &operation_X,
-                                   sizeof(operation_X),
-                                   p_error);
+        CHECK_ROCSPARSE_THROW_ERROR(rocsparse_sptrsm_set_input(handle,
+                                                               sptrsm_descr,
+                                                               rocsparse_sptrsm_input_operation_X,
+                                                               &operation_X,
+                                                               sizeof(operation_X),
+                                                               p_error));
 
-        rocsparse_sptrsm_set_input(
-            handle, sptrsm_descr, rocsparse_sptrsm_input_alg, &alg, sizeof(alg), p_error);
+        CHECK_ROCSPARSE_THROW_ERROR(rocsparse_sptrsm_set_input(
+            handle, sptrsm_descr, rocsparse_sptrsm_input_alg, &alg, sizeof(alg), p_error));
 
-        rocsparse_sptrsm_set_input(handle,
-                                   sptrsm_descr,
-                                   rocsparse_sptrsm_input_scalar_datatype,
-                                   &scalar_datatype,
-                                   sizeof(scalar_datatype),
-                                   p_error);
+        CHECK_ROCSPARSE_THROW_ERROR(
+            rocsparse_sptrsm_set_input(handle,
+                                       sptrsm_descr,
+                                       rocsparse_sptrsm_input_scalar_datatype,
+                                       &scalar_datatype,
+                                       sizeof(scalar_datatype),
+                                       p_error));
 
-        rocsparse_sptrsm_set_input(handle,
-                                   sptrsm_descr,
-                                   rocsparse_sptrsm_input_compute_datatype,
-                                   &compute_datatype,
-                                   sizeof(compute_datatype),
-                                   p_error);
+        CHECK_ROCSPARSE_THROW_ERROR(
+            rocsparse_sptrsm_set_input(handle,
+                                       sptrsm_descr,
+                                       rocsparse_sptrsm_input_compute_datatype,
+                                       &compute_datatype,
+                                       sizeof(compute_datatype),
+                                       p_error));
 
-        rocsparse_sptrsm_set_input(handle,
-                                   sptrsm_descr,
-                                   rocsparse_sptrsm_input_analysis_policy,
-                                   &apol,
-                                   sizeof(apol),
-                                   p_error);
+        CHECK_ROCSPARSE_THROW_ERROR(
+            rocsparse_sptrsm_set_input(handle,
+                                       sptrsm_descr,
+                                       rocsparse_sptrsm_input_analysis_policy,
+                                       &apol,
+                                       sizeof(apol),
+                                       p_error));
     }
 };
 

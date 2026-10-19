@@ -176,7 +176,7 @@ public:
     {
         if(rocsparse_clients_envariables::get(rocsparse_clients_envariables::TEST_DEBUG_ARGUMENTS))
         {
-            rocsparse_argdescr_create(&argdescr);
+            CHECK_ROCSPARSE_THROW_ERROR(rocsparse_argdescr_create(&argdescr));
         }
     }
 

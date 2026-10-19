@@ -1245,7 +1245,7 @@ void testing_spilu0(const Arguments& arg_)
         const int32_t n_calls      = arg.iters;
 
         hipStream_t stream;
-        rocsparse_get_stream(handle, &stream);
+        CHECK_ROCSPARSE_ERROR(rocsparse_get_stream(handle, &stream));
 
         for(int32_t iter = 0; iter < n_cold_calls; ++iter)
         {

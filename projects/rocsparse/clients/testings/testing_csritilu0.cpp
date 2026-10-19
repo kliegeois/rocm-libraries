@@ -88,9 +88,7 @@ static rocsparse_status csrilu0(rocsparse_handle          handle_,
         return status;
     }
 
-    rocsparse_csrilu0_clear(handle_, info_);
-
-    return rocsparse_status_success;
+    return rocsparse_csrilu0_clear(handle_, info_);
 }
 
 void testing_csritilu0_extra(const Arguments& arg) {}
