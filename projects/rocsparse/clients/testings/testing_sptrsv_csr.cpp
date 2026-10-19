@@ -39,7 +39,8 @@ struct rocsparse_local_sptrsv
     rocsparse_sptrsv_descr sptrsv_descr{};
     ~rocsparse_local_sptrsv()
     {
-        rocsparse_destroy_sptrsv_descr(this->sptrsv_descr);
+        rocsparse_clients_log_rocsparse_error("rocsparse_destroy_sptrsv_descr",
+                                              rocsparse_destroy_sptrsv_descr(this->sptrsv_descr));
     }
 
     operator rocsparse_sptrsv_descr&()

@@ -28,7 +28,8 @@ struct rocsparse_local_sptrsm
     rocsparse_sptrsm_descr sptrsm_descr{};
     ~rocsparse_local_sptrsm()
     {
-        rocsparse_destroy_sptrsm_descr(this->sptrsm_descr);
+        rocsparse_clients_log_rocsparse_error("rocsparse_destroy_sptrsm_descr",
+                                              rocsparse_destroy_sptrsm_descr(this->sptrsm_descr));
     }
 
     operator rocsparse_sptrsm_descr&()
