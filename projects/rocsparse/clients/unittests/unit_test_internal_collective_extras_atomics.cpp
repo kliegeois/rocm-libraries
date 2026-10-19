@@ -227,7 +227,10 @@ namespace
     float read_half(const half* d_ptr, int64_t idx)
     {
         std::vector<uint16_t> h(static_cast<size_t>(idx) + 1);
-        (void)hipMemcpy(h.data(), d_ptr, h.size() * sizeof(uint16_t), hipMemcpyDeviceToHost);
+        const hipError_t      status
+            = hipMemcpy(h.data(), d_ptr, h.size() * sizeof(uint16_t), hipMemcpyDeviceToHost);
+        EXPECT_EQ(status, hipSuccess)
+            << "hipMemcpy (device->host) failed: " << hipGetErrorString(status);
         _Float16 v;
         std::memcpy(&v, &h[idx], sizeof(v));
         return static_cast<float>(v);
@@ -384,7 +387,8 @@ TEST(internal_collective_extras_atomic_add_by_CAS, bfloat16_even_paired)
     ASSERT_EQ(launch_single_block(k_atomic_add_by_CAS_bf16, n, d_base, int64_t{0}, size),
               hipSuccess);
     std::vector<uint16_t> hraw(static_cast<size_t>(size));
-    (void)hipMemcpy(hraw.data(), d_raw.ptr, hraw.size() * sizeof(uint16_t), hipMemcpyDeviceToHost);
+    UT_CHECK_HIP(
+        hipMemcpy(hraw.data(), d_raw.ptr, hraw.size() * sizeof(uint16_t), hipMemcpyDeviceToHost));
     rocsparse_bfloat16 bf;
     bf.data = hraw[0];
     EXPECT_FLOAT_EQ(static_cast<float>(bf), static_cast<float>(n));

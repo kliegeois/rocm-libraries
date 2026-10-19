@@ -160,11 +160,13 @@ std::string rocsparse_datapath()
 /*! \brief  CPU Timer(in microsecond): synchronize with the default device and return wall time */
 double get_time_us(void)
 {
-    std::ignore = hipDeviceSynchronize();
-    auto now    = std::chrono::steady_clock::now();
-    // struct timeval tv;
-    // gettimeofday(&tv, NULL);
-    //  return (tv.tv_sec * 1000 * 1000) + tv.tv_usec;
+    const hipError_t status = hipDeviceSynchronize();
+    if(status != hipSuccess)
+    {
+        throw status;
+    }
+
+    auto now = std::chrono::steady_clock::now();
     auto duration
         = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
     return (static_cast<double>(duration));

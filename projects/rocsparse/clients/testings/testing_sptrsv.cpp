@@ -46,8 +46,8 @@ static void host_csr_lsolve(J                    M,
     int             dev;
     hipDeviceProp_t prop;
 
-    std::ignore = hipGetDevice(&dev);
-    std::ignore = hipGetDeviceProperties(&prop, dev);
+    CHECK_HIP_ERROR(hipGetDevice(&dev));
+    CHECK_HIP_ERROR(hipGetDeviceProperties(&prop, dev));
 
     std::vector<T> temp(prop.warpSize);
 
@@ -156,8 +156,8 @@ static void host_csr_usolve(J                    M,
     int             dev;
     hipDeviceProp_t prop;
 
-    std::ignore = hipGetDevice(&dev);
-    std::ignore = hipGetDeviceProperties(&prop, dev);
+    CHECK_HIP_ERROR(hipGetDevice(&dev));
+    CHECK_HIP_ERROR(hipGetDeviceProperties(&prop, dev));
 
     std::vector<T> temp(prop.warpSize);
 

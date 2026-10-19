@@ -123,6 +123,12 @@ int main(int argc, char* argv[])
         {
             return status;
         }
+        catch(const hipError_t& error)
+        {
+            std::cerr << "rocsparse-bench error: " << hipGetErrorString(error) << " (" << error
+                      << ")" << std::endl;
+            return EXIT_FAILURE;
+        }
     }
     else
     {
@@ -152,6 +158,12 @@ int main(int argc, char* argv[])
         catch(const rocsparse_status& status)
         {
             return status;
+        }
+        catch(const hipError_t& error)
+        {
+            std::cerr << "rocsparse-bench error: " << hipGetErrorString(error) << " (" << error
+                      << ")" << std::endl;
+            return EXIT_FAILURE;
         }
     }
 }

@@ -297,8 +297,12 @@ public:
 
     hipStream_t get_stream()
     {
-        hipStream_t stream;
-        rocsparse_get_stream(*this, &stream);
+        hipStream_t            stream{};
+        const rocsparse_status status = rocsparse_get_stream(*this, &stream);
+        if(status != rocsparse_status_success)
+        {
+            throw status;
+        }
         return stream;
     }
 
@@ -602,7 +606,7 @@ public:
     template <memory_mode::value_t MODE, typename T, typename I = rocsparse_int>
     explicit rocsparse_local_spmat(coo_aos_matrix<MODE, T, I>& h)
         : rocsparse_local_spmat(
-            h.m, h.n, h.nnz, h.ind, h.val, get_indextype<I>(), h.base, get_datatype<T>())
+              h.m, h.n, h.nnz, h.ind, h.val, get_indextype<I>(), h.base, get_datatype<T>())
     {
     }
 
@@ -863,7 +867,7 @@ public:
     template <memory_mode::value_t MODE, typename T, typename I = rocsparse_int>
     explicit rocsparse_local_spmat(ell_matrix<MODE, T, I>& h)
         : rocsparse_local_spmat(
-            h.m, h.n, h.ind, h.val, h.width, get_indextype<I>(), h.base, get_datatype<T>())
+              h.m, h.n, h.ind, h.val, h.width, get_indextype<I>(), h.base, get_datatype<T>())
     {
     }
     rocsparse_local_spmat() {}
@@ -892,7 +896,7 @@ class rocsparse_local_dnvec
     rocsparse_dnvec_descr descr{};
 
 public:
-    rocsparse_local_dnvec(){};
+    rocsparse_local_dnvec() {};
     rocsparse_local_dnvec(int64_t size, void* values, rocsparse_datatype compute_type)
     {
         ROCSPARSE_CLIENTS_ROUTINE_TRACE;
@@ -1050,8 +1054,14 @@ namespace rocsparse_clients
         const int32_t n_sub_calls  = arguments.iters_inner;
         const int32_t n_calls      = arguments.iters;
 
-        hipStream_t stream;
-        rocsparse_get_stream(handle, &stream);
+        hipStream_t            stream;
+        const rocsparse_status stream_status = rocsparse_get_stream(handle, &stream);
+        if(stream_status != rocsparse_status_success)
+        {
+            std::cerr << "error " << __FUNCTION__ << ": cannot get the handle stream, exit program."
+                      << std::endl;
+            exit(rocsparse_status_invalid_value);
+        }
 
         for(int32_t iter = 0; iter < n_cold_calls; ++iter)
         {
