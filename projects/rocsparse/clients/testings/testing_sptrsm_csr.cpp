@@ -49,47 +49,59 @@ struct rocsparse_local_sptrsm
                            const rocsparse_analysis_policy apol)
     {
         CHECK_ROCSPARSE_THROW_ERROR(rocsparse_create_sptrsm_descr(&this->sptrsm_descr));
-        rocsparse_error p_error[1] = {nullptr};
-        CHECK_ROCSPARSE_THROW_ERROR(rocsparse_sptrsm_set_input(handle,
-                                                               sptrsm_descr,
-                                                               rocsparse_sptrsm_input_operation_A,
-                                                               &operation_A,
-                                                               sizeof(operation_A),
-                                                               p_error));
+        try
+        {
+            rocsparse_error p_error[1] = {nullptr};
+            CHECK_ROCSPARSE_THROW_ERROR(
+                rocsparse_sptrsm_set_input(handle,
+                                           sptrsm_descr,
+                                           rocsparse_sptrsm_input_operation_A,
+                                           &operation_A,
+                                           sizeof(operation_A),
+                                           p_error));
 
-        CHECK_ROCSPARSE_THROW_ERROR(rocsparse_sptrsm_set_input(handle,
-                                                               sptrsm_descr,
-                                                               rocsparse_sptrsm_input_operation_X,
-                                                               &operation_X,
-                                                               sizeof(operation_X),
-                                                               p_error));
+            CHECK_ROCSPARSE_THROW_ERROR(
+                rocsparse_sptrsm_set_input(handle,
+                                           sptrsm_descr,
+                                           rocsparse_sptrsm_input_operation_X,
+                                           &operation_X,
+                                           sizeof(operation_X),
+                                           p_error));
 
-        CHECK_ROCSPARSE_THROW_ERROR(rocsparse_sptrsm_set_input(
-            handle, sptrsm_descr, rocsparse_sptrsm_input_alg, &alg, sizeof(alg), p_error));
+            CHECK_ROCSPARSE_THROW_ERROR(rocsparse_sptrsm_set_input(
+                handle, sptrsm_descr, rocsparse_sptrsm_input_alg, &alg, sizeof(alg), p_error));
 
-        CHECK_ROCSPARSE_THROW_ERROR(
-            rocsparse_sptrsm_set_input(handle,
-                                       sptrsm_descr,
-                                       rocsparse_sptrsm_input_scalar_datatype,
-                                       &scalar_datatype,
-                                       sizeof(scalar_datatype),
-                                       p_error));
+            CHECK_ROCSPARSE_THROW_ERROR(
+                rocsparse_sptrsm_set_input(handle,
+                                           sptrsm_descr,
+                                           rocsparse_sptrsm_input_scalar_datatype,
+                                           &scalar_datatype,
+                                           sizeof(scalar_datatype),
+                                           p_error));
 
-        CHECK_ROCSPARSE_THROW_ERROR(
-            rocsparse_sptrsm_set_input(handle,
-                                       sptrsm_descr,
-                                       rocsparse_sptrsm_input_compute_datatype,
-                                       &compute_datatype,
-                                       sizeof(compute_datatype),
-                                       p_error));
+            CHECK_ROCSPARSE_THROW_ERROR(
+                rocsparse_sptrsm_set_input(handle,
+                                           sptrsm_descr,
+                                           rocsparse_sptrsm_input_compute_datatype,
+                                           &compute_datatype,
+                                           sizeof(compute_datatype),
+                                           p_error));
 
-        CHECK_ROCSPARSE_THROW_ERROR(
-            rocsparse_sptrsm_set_input(handle,
-                                       sptrsm_descr,
-                                       rocsparse_sptrsm_input_analysis_policy,
-                                       &apol,
-                                       sizeof(apol),
-                                       p_error));
+            CHECK_ROCSPARSE_THROW_ERROR(
+                rocsparse_sptrsm_set_input(handle,
+                                           sptrsm_descr,
+                                           rocsparse_sptrsm_input_analysis_policy,
+                                           &apol,
+                                           sizeof(apol),
+                                           p_error));
+        }
+        catch(...)
+        {
+            rocsparse_clients_log_rocsparse_error(
+                "rocsparse_destroy_sptrsm_descr",
+                rocsparse_destroy_sptrsm_descr(this->sptrsm_descr));
+            throw;
+        }
     }
 };
 
@@ -735,8 +747,7 @@ void testing_sptrsm_csr(const Arguments& arg)
         std::cout << "C_{" << C_m << " x " << C_n
                   << "}( order: " << ((order_C == rocsparse_order_row) ? "row" : "col")
                   << ", ld = " << ldc << " )";
-        std::cout << " = "
-                  << "(" << halpha[0] << ")"
+        std::cout << " = " << "(" << halpha[0] << ")"
                   << ((uplo == rocsparse_fill_mode_lower)
                           ? ((diag == rocsparse_diag_type_unit) ? "(L + Id)" : "(L + D)")
                           : ((diag == rocsparse_diag_type_unit) ? "(U + Id)" : "(U + D_U)"))

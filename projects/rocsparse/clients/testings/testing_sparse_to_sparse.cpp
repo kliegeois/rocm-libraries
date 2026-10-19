@@ -253,7 +253,8 @@ public:
     {
         if(this->descr != nullptr)
         {
-            rocsparse_destroy_spmat_descr(this->descr);
+            rocsparse_clients_log_rocsparse_error("rocsparse_destroy_spmat_descr",
+                                                  rocsparse_destroy_spmat_descr(this->descr));
         }
         rocsparse_clients_log_hip_error("rocsparse_hipFree", rocsparse_hipFree(this->row_data));
         rocsparse_clients_log_hip_error("rocsparse_hipFree", rocsparse_hipFree(this->col_data));

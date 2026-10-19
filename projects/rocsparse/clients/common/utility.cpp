@@ -21,8 +21,8 @@
  * THE SOFTWARE.
  *
  * ************************************************************************ */
-#ifdef WIN32
 #include "rocsparse_clients_log.hpp"
+#ifdef WIN32
 #include <windows.h>
 #endif
 

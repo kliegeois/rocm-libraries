@@ -65,44 +65,54 @@ struct rocsparse_local_sptrsv
     void set(rocsparse_handle handle)
     {
         CHECK_ROCSPARSE_THROW_ERROR(rocsparse_create_sptrsv_descr(&this->sptrsv_descr));
-        rocsparse_error p_error[1] = {nullptr};
-        CHECK_ROCSPARSE_THROW_ERROR(rocsparse_sptrsv_set_input(handle,
-                                                               sptrsv_descr,
-                                                               rocsparse_sptrsv_input_operation,
-                                                               &config.operation,
-                                                               sizeof(config.operation),
-                                                               p_error));
+        try
+        {
+            rocsparse_error p_error[1] = {nullptr};
+            CHECK_ROCSPARSE_THROW_ERROR(rocsparse_sptrsv_set_input(handle,
+                                                                   sptrsv_descr,
+                                                                   rocsparse_sptrsv_input_operation,
+                                                                   &config.operation,
+                                                                   sizeof(config.operation),
+                                                                   p_error));
 
-        CHECK_ROCSPARSE_THROW_ERROR(rocsparse_sptrsv_set_input(handle,
-                                                               sptrsv_descr,
-                                                               rocsparse_sptrsv_input_alg,
-                                                               &config.alg,
-                                                               sizeof(config.alg),
-                                                               p_error));
+            CHECK_ROCSPARSE_THROW_ERROR(rocsparse_sptrsv_set_input(handle,
+                                                                   sptrsv_descr,
+                                                                   rocsparse_sptrsv_input_alg,
+                                                                   &config.alg,
+                                                                   sizeof(config.alg),
+                                                                   p_error));
 
-        CHECK_ROCSPARSE_THROW_ERROR(
-            rocsparse_sptrsv_set_input(handle,
-                                       sptrsv_descr,
-                                       rocsparse_sptrsv_input_scalar_datatype,
-                                       &config.scalar_datatype,
-                                       sizeof(config.scalar_datatype),
-                                       p_error));
+            CHECK_ROCSPARSE_THROW_ERROR(
+                rocsparse_sptrsv_set_input(handle,
+                                           sptrsv_descr,
+                                           rocsparse_sptrsv_input_scalar_datatype,
+                                           &config.scalar_datatype,
+                                           sizeof(config.scalar_datatype),
+                                           p_error));
 
-        CHECK_ROCSPARSE_THROW_ERROR(
-            rocsparse_sptrsv_set_input(handle,
-                                       sptrsv_descr,
-                                       rocsparse_sptrsv_input_compute_datatype,
-                                       &config.compute_datatype,
-                                       sizeof(config.compute_datatype),
-                                       p_error));
+            CHECK_ROCSPARSE_THROW_ERROR(
+                rocsparse_sptrsv_set_input(handle,
+                                           sptrsv_descr,
+                                           rocsparse_sptrsv_input_compute_datatype,
+                                           &config.compute_datatype,
+                                           sizeof(config.compute_datatype),
+                                           p_error));
 
-        CHECK_ROCSPARSE_THROW_ERROR(
-            rocsparse_sptrsv_set_input(handle,
-                                       sptrsv_descr,
-                                       rocsparse_sptrsv_input_analysis_policy,
-                                       &config.apol,
-                                       sizeof(config.apol),
-                                       p_error));
+            CHECK_ROCSPARSE_THROW_ERROR(
+                rocsparse_sptrsv_set_input(handle,
+                                           sptrsv_descr,
+                                           rocsparse_sptrsv_input_analysis_policy,
+                                           &config.apol,
+                                           sizeof(config.apol),
+                                           p_error));
+        }
+        catch(...)
+        {
+            rocsparse_clients_log_rocsparse_error(
+                "rocsparse_destroy_sptrsv_descr",
+                rocsparse_destroy_sptrsv_descr(this->sptrsv_descr));
+            throw;
+        }
     }
 };
 

@@ -117,8 +117,14 @@ namespace rocsparse_ut
         {
             n = host.size();
             rocsparse_clients_throw_hip_error("hipMalloc", hipMalloc(&ptr, n * sizeof(T)));
-            rocsparse_clients_throw_hip_error(
-                "hipMemcpy", hipMemcpy(ptr, host.data(), n * sizeof(T), hipMemcpyHostToDevice));
+            const hipError_t copy_status
+                = hipMemcpy(ptr, host.data(), n * sizeof(T), hipMemcpyHostToDevice);
+            if(copy_status != hipSuccess)
+            {
+                rocsparse_clients_log_hip_error("hipFree", hipFree(ptr));
+                ptr = nullptr;
+                rocsparse_clients_throw_hip_error("hipMemcpy", copy_status);
+            }
         }
         explicit device_vector(size_t count)
             : n(count)

@@ -546,7 +546,18 @@ namespace rocsparse_clients
             {
                 throw(status);
             }
-            this->set(handle);
+            try
+            {
+                this->set(handle);
+            }
+            catch(...)
+            {
+                rocsparse_error* p_error = nullptr;
+                rocsparse_clients_log_rocsparse_error(
+                    "rocsparse_sptrsv_descr_destroy",
+                    rocsparse_sptrsv_descr_destroy(this->m_handle, this->m_descr, p_error));
+                throw;
+            }
         }
 
         ~sptrsv_descr()

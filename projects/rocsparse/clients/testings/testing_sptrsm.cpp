@@ -392,6 +392,9 @@ namespace rocsparse_clients
             status = this->set(handle);
             if(status != rocsparse_status_success)
             {
+                rocsparse_clients_log_rocsparse_error(
+                    "rocsparse_destroy_sptrsm_descr",
+                    rocsparse_destroy_sptrsm_descr(this->m_descr));
                 throw(status);
             }
         }

@@ -843,7 +843,6 @@ namespace rocsparse_clients_test
             std::cerr
                 << "// rocsparse_clients_test_hip_debug error: rocsparse_hip_debug_disable failed."
                 << std::endl;
-            exit(1);
         }
     }
 
