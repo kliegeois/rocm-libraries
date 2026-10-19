@@ -382,6 +382,7 @@ public:
 
         rocsparse_clients_log_rocsparse_error("rocsparse_destroy_mat_info",
                                               rocsparse_destroy_mat_info(this->info));
+        this->info                    = nullptr;
         const rocsparse_status status = rocsparse_create_mat_info(&this->info);
         if(status != rocsparse_status_success)
         {
@@ -431,6 +432,7 @@ public:
 
         rocsparse_clients_log_rocsparse_error("rocsparse_destroy_color_info",
                                               rocsparse_destroy_color_info(this->info));
+        this->info                    = nullptr;
         const rocsparse_status status = rocsparse_create_color_info(&this->info);
         if(status != rocsparse_status_success)
         {
