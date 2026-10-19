@@ -160,20 +160,32 @@ rocsparse_status rocsparse_exporter_rocalution::write_sparse_csx(rocsparse_direc
     ptr_mem = nullptr;
     if(!ptr_same && (base_ != rocsparse_index_base_zero))
     {
-        std::ignore = rocsparse_hipHostMalloc(&ptr_mem, sizeof(int) * (m + 1));
+        if(rocsparse_hipHostMalloc(&ptr_mem, sizeof(int) * (m + 1)) != hipSuccess)
+        {
+            return rocsparse_status_memory_error;
+        }
     }
 
     ind_mem = nullptr;
     if(!ind_same && (base_ != rocsparse_index_base_zero))
     {
-        std::ignore = rocsparse_hipHostMalloc(&ind_mem, sizeof(int) * nnz);
+        if(rocsparse_hipHostMalloc(&ind_mem, sizeof(int) * nnz) != hipSuccess)
+        {
+            std::ignore = rocsparse_hipFree(ptr_mem);
+            return rocsparse_status_memory_error;
+        }
     }
 
     val_mem = nullptr;
     if(!val_same)
     {
-        std::ignore
-            = rocsparse_hipHostMalloc(&val_mem, sizeof(double) * (is_T_complex ? (2 * nnz) : nnz));
+        if(rocsparse_hipHostMalloc(&val_mem, sizeof(double) * (is_T_complex ? (2 * nnz) : nnz))
+           != hipSuccess)
+        {
+            std::ignore = rocsparse_hipFree(ind_mem);
+            std::ignore = rocsparse_hipFree(ptr_mem);
+            return rocsparse_status_memory_error;
+        }
     }
 
     ptr = (ptr_same || (base_ == rocsparse_index_base_zero)) ? ((const int*)ptr_) : ptr_mem;

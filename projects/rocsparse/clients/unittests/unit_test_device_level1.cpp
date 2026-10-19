@@ -141,6 +141,7 @@ TEST(device_level1_axpyi, basic)
                        d_xind,
                        d_y,
                        rocsparse_index_base_zero);
+    CHECK_HIP(hipGetLastError());
     CHECK_HIP(hipDeviceSynchronize());
 
     const std::vector<T> got = host_from(d_y, y.size());
@@ -181,6 +182,7 @@ TEST(device_level1_gthr, basic)
                        d_xval,
                        d_xind,
                        rocsparse_index_base_zero);
+    CHECK_HIP(hipGetLastError());
     CHECK_HIP(hipDeviceSynchronize());
 
     const std::vector<T> got = host_from(d_xval, x_val.size());
@@ -219,6 +221,7 @@ TEST(device_level1_gthr, index_base_one)
                        d_xval,
                        d_xind,
                        rocsparse_index_base_one);
+    CHECK_HIP(hipGetLastError());
     CHECK_HIP(hipDeviceSynchronize());
 
     const std::vector<T> got = host_from(d_xval, x_val.size());
@@ -258,6 +261,7 @@ TEST(device_level1_gthrz, basic)
                        d_xval,
                        d_xind,
                        rocsparse_index_base_zero);
+    CHECK_HIP(hipGetLastError());
     CHECK_HIP(hipDeviceSynchronize());
 
     const std::vector<T> got_xval = host_from(d_xval, x_val.size());
@@ -299,6 +303,7 @@ TEST(device_level1_sctr, basic)
                        d_xind,
                        d_y,
                        rocsparse_index_base_zero);
+    CHECK_HIP(hipGetLastError());
     CHECK_HIP(hipDeviceSynchronize());
 
     const std::vector<T> got = host_from(d_y, y.size());
@@ -343,6 +348,7 @@ TEST(device_level1_roti, rotation_90deg)
                        (T)0,
                        (T)1,
                        rocsparse_index_base_zero);
+    CHECK_HIP(hipGetLastError());
     CHECK_HIP(hipDeviceSynchronize());
 
     const std::vector<T> got_xval = host_from(d_xval, x_val.size());
@@ -392,6 +398,7 @@ TEST(device_level1_roti, grid_stride)
                        (T)2,
                        (T)1,
                        rocsparse_index_base_zero);
+    CHECK_HIP(hipGetLastError());
     CHECK_HIP(hipDeviceSynchronize());
 
     std::vector<T> want_xval(nnz);
@@ -438,6 +445,7 @@ TEST(device_level1_roti, identity)
                        (T)1,
                        (T)0,
                        rocsparse_index_base_zero);
+    CHECK_HIP(hipGetLastError());
     CHECK_HIP(hipDeviceSynchronize());
 
     EXPECT_EQ(host_from(d_xval, x_val.size()), (std::vector<T>{3, 4}));

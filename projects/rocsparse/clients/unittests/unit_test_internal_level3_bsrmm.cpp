@@ -44,7 +44,10 @@ namespace
         rocsparse_mat_descr d = nullptr;
         MatDescr()
         {
-            (void)rocsparse_create_mat_descr(&d);
+            if(rocsparse_create_mat_descr(&d) != rocsparse_status_success)
+            {
+                ADD_FAILURE() << "rocsparse_create_mat_descr failed";
+            }
         }
         ~MatDescr()
         {
