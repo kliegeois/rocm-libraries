@@ -224,3 +224,35 @@ TEST_F(GebsrmmCov80, scalar_special_values)
                     return;
             }
 }
+
+// Larger (rectangular) blocks select the tuned 8 / 16 / 32 kernels.
+TEST_F(GebsrmmCov80, large_block_dimensions)
+{
+    const int64_t dims[][2]
+        = {{5, 7}, {8, 3}, {6, 8}, {9, 12}, {16, 10}, {13, 16}, {20, 32}, {32, 17}};
+    for(const auto& d : dims)
+        for(rocsparse_direction dir : {rocsparse_direction_row, rocsparse_direction_column})
+            for(rocsparse_operation opB : {rocsparse_operation_none, rocsparse_operation_transpose})
+            {
+                GebsrmmCase c;
+                c.mb     = 3;
+                c.kb     = 3;
+                c.rbd    = d[0];
+                c.cbd    = d[1];
+                c.n      = 20;
+                c.dir    = dir;
+                c.opB    = opB;
+                c.device = (d[0] + d[1]) % 2 == 1;
+                run_gebsrmm<float>(handle, c);
+                if(HasFatalFailure())
+                    return;
+            }
+    GebsrmmCase c;
+    c.rbd = 9;
+    c.cbd = 14;
+    c.n   = 3;
+    run_gebsrmm<double>(handle, c);
+    c.alpha = cplx(1.0, 1.0);
+    c.beta  = cplx(0.5, -1.0);
+    run_gebsrmm<rocsparse_double_complex>(handle, c);
+}
