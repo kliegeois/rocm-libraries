@@ -39,6 +39,7 @@
 #include "rocsparse_csritilu0x_preprocess.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <string>
 
 using namespace cov70;
@@ -380,7 +381,9 @@ namespace
                             const csr_matrix<T>& a,
                             rocsparse_int        options,
                             rocsparse_int        nmaxiter,
-                            const std::string&   what)
+                            const std::string&   what,
+                            rocsparse_itilu0_alg alg      = rocsparse_itilu0_alg_sync_split,
+                            bool                 poisoned = false)
     {
         SCOPED_TRACE(what);
         using I = int32_t;
@@ -411,7 +414,6 @@ namespace
         const auto ldir  = rocsparse_direction_row;
         const auto udir  = rocsparse_direction_column;
         const auto base  = rocsparse_index_base_zero;
-        const auto alg   = rocsparse_itilu0_alg_sync_split;
 
         size_t buffer_size = 0;
         ASSERT_EQ((rocsparse::csritilu0x_buffer_size_impl<I, J>(handle,
@@ -501,6 +503,15 @@ namespace
         std::string log_text;
         if(verbose)
             log_text = testing::internal::GetCapturedStdout();
+        if(poisoned)
+        {
+            // Non-finite data: the iteration may notice and report a zero pivot, or end at the
+            // sweep limit. It must not fault.
+            EXPECT_TRUE(status == rocsparse_status_success || status == rocsparse_status_zero_pivot)
+                << status;
+            ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
+            return;
+        }
         ASSERT_EQ(status, rocsparse_status_success);
         ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
         EXPECT_GE(nsweeps, 1);
@@ -1176,5 +1187,38 @@ TEST_F(Cov80PrecondItilu0, extended_interface_with_the_unimplemented_algorithms)
                                                                     0,
                                                                     nullptr)),
                   rocsparse_status_success);
+    }
+}
+
+// Non-finite entries make the norms used by the stopping criterion infinite or undefined.
+// The iteration may report a zero pivot or end at the sweep limit, but it must not fault.
+TEST_F(Cov80PrecondItilu0, non_finite_input_with_stopping_criterion)
+{
+    const double infinity = std::numeric_limits<double>::infinity();
+    for(const auto options : {stopping | nrm_residual,
+                              stopping | nrm_residual | nrm_correction,
+                              stopping | nrm_correction | nrm_residual | history_opt})
+    {
+        for(const auto alg : algorithms)
+        {
+            SCOPED_TRACE("alg " + std::to_string(alg) + " options " + std::to_string(options));
+            auto a   = make_band<double>(16, 2);
+            a.val[5] = infinity;
+            itilu0_run<double> r;
+            r.prepare(handle, alg, a, options, 20);
+            const auto out = r.compute(handle, 1.0e-12);
+            EXPECT_TRUE(out.compute_status == rocsparse_status_zero_pivot
+                        || out.compute_status == rocsparse_status_success)
+                << out.compute_status;
+            ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
+        }
+
+        for(const auto alg : {rocsparse_itilu0_alg_async_split, rocsparse_itilu0_alg_sync_split})
+        {
+            auto a   = make_band<double>(24, 3);
+            a.val[7] = infinity;
+            check_sync_split_x<double>(
+                handle, a, options, 20, "x interface with an infinite entry", alg, true);
+        }
     }
 }
