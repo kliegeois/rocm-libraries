@@ -330,6 +330,7 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_SOURCES
   # cov70 level2
   unit_test_device_cov70_level2_bsr.cpp
   unit_test_device_cov70_level2_itsv.cpp
+  unit_test_device_cov70_level2_spsv.cpp
 )
 
 # Host building-block library translation units under test by the
