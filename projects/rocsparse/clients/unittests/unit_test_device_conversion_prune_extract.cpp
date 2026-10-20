@@ -1500,8 +1500,12 @@ TEST_F(ConversionPruneExtract, prune_csr2csr_by_percentage_segments)
                                    /*device_mode=*/false,
                                    /*force_alloc=*/false);
         }
+        // The pattern index base must match the descriptor base given to the
+        // library. A zero-based pattern with a one-based descriptor makes
+        // row_ptr[0] - base == -1 and the kernels read out of bounds.
+        const auto pattern_one = make_pattern(4, mean, rocsparse_index_base_one);
         run_pct_pattern<double>(handle,
-                                pattern,
+                                pattern_one,
                                 25.0,
                                 rocsparse_index_base_one,
                                 /*device_mode=*/false,
