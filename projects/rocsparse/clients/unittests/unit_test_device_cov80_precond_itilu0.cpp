@@ -1039,3 +1039,142 @@ TEST_F(Cov80PrecondItilu0, sync_split_extended_interface_sweeps)
             handle, make_band<double>(m, w), nrm_residual, 80, "w=" + std::to_string(w));
     }
 }
+
+namespace
+{
+    // Makes the handle report a tiny internal buffer, so that every routine that uses it
+    // as temporary storage has to allocate its own.
+    struct shrunk_buffer
+    {
+        rocsparse_handle handle;
+        size_t           saved;
+
+        shrunk_buffer(rocsparse_handle h, size_t size)
+            : handle(h)
+            , saved(h->buffer_size)
+        {
+            handle->buffer_size = size;
+        }
+
+        ~shrunk_buffer()
+        {
+            handle->buffer_size = saved;
+        }
+
+        shrunk_buffer(const shrunk_buffer&) = delete;
+        shrunk_buffer& operator=(const shrunk_buffer&) = delete;
+    };
+}
+
+// The factorization does not depend on where the temporary storage of the library lives.
+TEST_F(Cov80PrecondItilu0, temporary_storage_when_the_handle_buffer_is_small)
+{
+    shrunk_buffer shrink(handle, 1);
+    for(const auto alg : algorithms)
+    {
+        for_all_types([&](auto tag) {
+            using T = decltype(tag);
+            SCOPED_TRACE("alg " + std::to_string(alg));
+            const auto    a = make_band<T>(40, 4);
+            itilu0_run<T> r;
+            r.prepare(handle, alg, a, nrm_residual, 40);
+            const auto out = r.compute(handle, default_tol<T>());
+            ASSERT_EQ(out.compute_status, rocsparse_status_success);
+            expect_close(to_host(r.dilu), host_ilu0(a), iterative_tolerance<T>(false, 9));
+        });
+    }
+}
+
+// The extended interface only implements the split algorithms; the others are refused
+// when computing, and the unsupported value types are refused when sizing the buffer.
+TEST_F(Cov80PrecondItilu0, extended_interface_with_the_unimplemented_algorithms)
+{
+    using I = int32_t;
+    using J = int32_t;
+    const std::vector<I>  ptr{0, 2, 5, 8, 10};
+    const std::vector<J>  ind{0, 1, 0, 1, 2, 1, 2, 3, 2, 3};
+    const std::vector<I>  lptr{0, 0, 1, 2, 3};
+    const std::vector<J>  lind{0, 1, 2};
+    const std::vector<I>  uptr{0, 0, 1, 2, 3};
+    const std::vector<J>  uind{0, 1, 2};
+    device_vector<I>      dptr{ptr};
+    device_vector<J>      dind{ind};
+    device_vector<I>      dlptr{lptr};
+    device_vector<J>      dlind{lind};
+    device_vector<I>      duptr{uptr};
+    device_vector<J>      duind{uind};
+    device_vector<double> dval{std::vector<double>{4, -1, -1, 4, -1, -1, 4, -1, -1, 4}};
+    device_vector<double> dlval{std::vector<double>(3, 0.0)};
+    device_vector<double> duval{std::vector<double>(3, 0.0)};
+    device_vector<double> ddval{std::vector<double>(4, 0.0)};
+    ASSERT_TRUE(dptr.ptr && dind.ptr && dlptr.ptr && dlind.ptr && duptr.ptr && duind.ptr && dval.ptr
+                && dlval.ptr && duval.ptr && ddval.ptr);
+
+    for(const auto alg : {rocsparse_itilu0_alg_default, rocsparse_itilu0_alg_async_inplace})
+    {
+        SCOPED_TRACE("alg " + std::to_string(alg));
+
+        size_t size = 0;
+        for(const auto dtype : {rocsparse_datatype_i8_r,
+                                rocsparse_datatype_u8_r,
+                                rocsparse_datatype_i32_r,
+                                rocsparse_datatype_u32_r,
+                                rocsparse_datatype_f16_r,
+                                rocsparse_datatype_bf16_r})
+        {
+            EXPECT_NE((rocsparse::csritilu0x_buffer_size_impl<I, J>(
+                          handle,
+                          alg,
+                          rocsparse_itilu0_option_compute_nrm_residual,
+                          10,
+                          4,
+                          10,
+                          dptr.ptr,
+                          dptr.ptr + 1,
+                          dind.ptr,
+                          rocsparse_index_base_zero,
+                          rocsparse_diag_type_unit,
+                          rocsparse_direction_row,
+                          rocsparse_diag_type_unit,
+                          rocsparse_direction_column,
+                          dtype,
+                          &size)),
+                      rocsparse_status_success);
+        }
+
+        rocsparse_int nsweeps = 10;
+        EXPECT_NE((rocsparse::csritilu0x_compute_impl<double, I, J>(handle,
+                                                                    alg,
+                                                                    0,
+                                                                    &nsweeps,
+                                                                    0,
+                                                                    1.0e-12,
+                                                                    4,
+                                                                    10,
+                                                                    dptr.ptr,
+                                                                    dptr.ptr + 1,
+                                                                    dind.ptr,
+                                                                    dval.ptr,
+                                                                    rocsparse_index_base_zero,
+                                                                    rocsparse_diag_type_unit,
+                                                                    rocsparse_direction_row,
+                                                                    3,
+                                                                    dlptr.ptr,
+                                                                    dlptr.ptr + 1,
+                                                                    dlind.ptr,
+                                                                    dlval.ptr,
+                                                                    rocsparse_index_base_zero,
+                                                                    rocsparse_diag_type_unit,
+                                                                    rocsparse_direction_column,
+                                                                    3,
+                                                                    duptr.ptr,
+                                                                    duptr.ptr + 1,
+                                                                    duind.ptr,
+                                                                    duval.ptr,
+                                                                    rocsparse_index_base_zero,
+                                                                    ddval.ptr,
+                                                                    0,
+                                                                    nullptr)),
+                  rocsparse_status_success);
+    }
+}

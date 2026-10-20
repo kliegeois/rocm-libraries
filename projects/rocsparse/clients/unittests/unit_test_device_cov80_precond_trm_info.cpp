@@ -32,6 +32,7 @@
 #include "unit_test_device_cov70_precond_common.hpp"
 
 #include "rocsparse_mat_info.hpp"
+#include "rocsparse_trm_data_t.hpp"
 #include "rocsparse_trm_info.hpp"
 
 #include <vector>
@@ -344,4 +345,68 @@ TEST_F(Cov80PrecondTrm, mat_info_trm_slots_of_every_routine)
     const rocsparse_mat_info cinfo = info;
     EXPECT_NE(cinfo->get_boost(), nullptr);
     EXPECT_EQ(cinfo->get_boost(), info->get_boost());
+}
+
+// The four (operation, fill mode) slots of the data of a triangular routine: the index
+// type of the slots, copies that duplicate every filled slot, and the release of slots
+// that two holders share.
+TEST_F(Cov80PrecondTrm, trm_data_slots_copy_and_uncouple)
+{
+    rocsparse::trm_data_t        empty;
+    const rocsparse::trm_data_t& const_empty = empty;
+    EXPECT_EQ(empty.get_indextype_J(), rocsparse_indextype_i32);
+    EXPECT_EQ(const_empty.get(rocsparse_operation_none, rocsparse_fill_mode_lower), nullptr);
+    EXPECT_EQ(const_empty.get(rocsparse_operation_transpose, rocsparse_fill_mode_upper), nullptr);
+
+    // The index type is the one of the first slot that is filled.
+    {
+        rocsparse::trm_data_t wide;
+        auto*                 info = new rocsparse::trm_info_t();
+        info->set_index_indextype(rocsparse_indextype_i64);
+        wide.set(rocsparse_operation_transpose, rocsparse_fill_mode_upper, info);
+        EXPECT_EQ(wide.get_indextype_J(), rocsparse_indextype_i64);
+        EXPECT_EQ(wide.get(rocsparse_operation_transpose, rocsparse_fill_mode_upper), info);
+    }
+
+    // A copy duplicates the filled slots and leaves the others empty.
+    rocsparse::trm_data_t source;
+    auto*                 lower = new rocsparse::trm_info_t();
+    auto*                 trans = new rocsparse::trm_info_t();
+    fill_trm_info(*lower, 10);
+    fill_trm_info(*trans, 200);
+    source.set(rocsparse_operation_none, rocsparse_fill_mode_lower, lower);
+    source.set(rocsparse_operation_transpose, rocsparse_fill_mode_upper, trans);
+
+    rocsparse::trm_data_t copy;
+    copy.copy(&source, handle->stream);
+    auto* copied_lower = copy.get(rocsparse_operation_none, rocsparse_fill_mode_lower);
+    auto* copied_trans = copy.get(rocsparse_operation_transpose, rocsparse_fill_mode_upper);
+    ASSERT_NE(copied_lower, nullptr);
+    ASSERT_NE(copied_trans, nullptr);
+    EXPECT_NE(copied_lower, lower);
+    EXPECT_NE(copied_trans, trans);
+    EXPECT_EQ(copy.get(rocsparse_operation_none, rocsparse_fill_mode_upper), nullptr);
+    EXPECT_EQ(copy.get(rocsparse_operation_transpose, rocsparse_fill_mode_lower), nullptr);
+    expect_same_arrays(*lower, *copied_lower);
+    expect_same_arrays(*trans, *copied_trans);
+    copy.copy(nullptr, handle->stream);
+
+    // Uncoupling releases the slots that are shared with the other holder only.
+    rocsparse::trm_data_t holder_a;
+    rocsparse::trm_data_t holder_b;
+    auto*                 shared = new rocsparse::trm_info_t();
+    auto*                 own    = new rocsparse::trm_info_t();
+    fill_trm_info(*shared, 30);
+    fill_trm_info(*own, 40);
+    holder_a.set(rocsparse_operation_none, rocsparse_fill_mode_upper, shared);
+    holder_b.set(rocsparse_operation_none, rocsparse_fill_mode_upper, shared);
+    holder_a.set(rocsparse_operation_transpose, rocsparse_fill_mode_lower, own);
+
+    holder_a.uncouple(nullptr);
+    holder_a.uncouple(&holder_a);
+    EXPECT_EQ(holder_a.get(rocsparse_operation_none, rocsparse_fill_mode_upper), shared);
+    holder_a.uncouple(&holder_b);
+    EXPECT_EQ(holder_a.get(rocsparse_operation_none, rocsparse_fill_mode_upper), nullptr);
+    EXPECT_EQ(holder_a.get(rocsparse_operation_transpose, rocsparse_fill_mode_lower), own);
+    EXPECT_EQ(holder_b.get(rocsparse_operation_none, rocsparse_fill_mode_upper), shared);
 }
