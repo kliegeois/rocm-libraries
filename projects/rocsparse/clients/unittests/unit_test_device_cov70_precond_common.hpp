@@ -36,6 +36,8 @@
 #include <cmath>
 #include <complex>
 #include <cstdint>
+#include <stdexcept>
+#include <string>
 #include <type_traits>
 #include <vector>
 
@@ -129,24 +131,41 @@ namespace cov70
     }
 
     template <typename T>
+    constexpr bool is_single_precision
+        = std::is_same_v<T, float> || std::is_same_v<T, rocsparse_float_complex>;
+
+    // Per-entry relative tolerance of a direct factorization or solve against a
+    // double precision host reference: about ten times the largest error measured
+    // on gfx1201 over every test using it (float/cfloat: 3.1e-7, double/cdouble:
+    // 1.6e-15).
+    template <typename T>
     double tolerance()
     {
-        return (std::is_same_v<T, float> || std::is_same_v<T, rocsparse_float_complex>) ? 2.0e-4
-                                                                                        : 1.0e-9;
+        return is_single_precision<T> ? 3.0e-6 : 2.0e-14;
     }
 
-    // Element-wise comparison of every entry (real and imaginary parts).
+    // Entries below this fraction of the largest reference entry are compared with
+    // an absolute allowance (they may be exact zeros or the result of cancellation).
+    constexpr double small_entry_fraction = 1.0e-3;
+
+    // Element-wise comparison: |got - want| <= rel_tol * max(|want|, floor) for every
+    // entry (complex modulus), with floor = small_entry_fraction * max |want|.
     template <typename T>
-    void expect_close(const std::vector<T>& got, const std::vector<T>& want, double scale_tol = 1.0)
+    void expect_close(const std::vector<T>& got,
+                      const std::vector<T>& want,
+                      double                rel_tol = tolerance<T>())
     {
         ASSERT_EQ(got.size(), want.size());
-        const double tol = tolerance<T>() * scale_tol;
+        double max_want = 0.0;
+        for(const auto& w : want)
+            max_want = std::max(max_want, std::abs(to_cd(w)));
+        const double floor = small_entry_fraction * max_want;
         for(size_t i = 0; i < got.size(); ++i)
         {
-            const double scale
-                = std::max(1.0, std::max(std::abs(re(want[i])), std::abs(im(want[i]))));
-            EXPECT_NEAR(re(got[i]), re(want[i]), tol * scale) << "re " << i;
-            EXPECT_NEAR(im(got[i]), im(want[i]), tol * scale) << "im " << i;
+            const double w = std::abs(to_cd(want[i]));
+            EXPECT_LE(std::abs(to_cd(got[i]) - to_cd(want[i])), rel_tol * std::max(w, floor))
+                << "entry " << i << " got (" << re(got[i]) << ", " << im(got[i]) << ") want ("
+                << re(want[i]) << ", " << im(want[i]) << ")";
         }
     }
 
@@ -205,19 +224,49 @@ namespace cov70
         return a;
     }
 
-    // Exact ILU(0) in place (unit L below the diagonal, U on and above it).
-    // Lower-triangular matrix (stored pattern includes the diagonal) whose last
-    // row holds `fat` entries and every other row two (r-1, r). The row-length
-    // statistic that selects between hash and binary-search kernels is `fat`.
-    template <typename T>
-    csr_matrix<T> make_fat_row_matrix(int32_t fat, bool imag = true)
+    // The CSR hash kernels of csric0 and csrildlt0 keep the entries of the current
+    // row in a shared-memory table of 32, 64, 128, 256 or 512 slots (wavefront 32:
+    // table size = 32 * HASH, HASH picked from the longest row with
+    // max_nnz <= 32 / 64 / 128 / 256 / 512). A row of EXACTLY that many entries
+    // fills the table and the lookup of a column that is not in the row then probes
+    // forever: the kernel never returns and the GPU hangs. No test may build a matrix
+    // whose longest row has 32, 64, 128, 256 or 512 entries; the generators below
+    // throw instead of launching such a matrix (csrilu0 switches to the binary
+    // search kernel from 512 entries and is not affected, but it is kept away from
+    // these lengths as well).
+    inline bool is_hash_table_size(int32_t row_length)
     {
+        return row_length == 32 || row_length == 64 || row_length == 128 || row_length == 256
+               || row_length == 512;
+    }
+
+    inline void require_safe_row_length(int32_t row_length)
+    {
+        if(is_hash_table_size(row_length))
+        {
+            throw std::invalid_argument("row length " + std::to_string(row_length)
+                                        + " fills the csric0/csrildlt0 hash table and hangs");
+        }
+    }
+
+    // Lower-triangular matrix (stored pattern includes the diagonal) whose last
+    // row holds `fat` entries and every other row `band` + 1 entries
+    // (r - band .. r). The longest row, `fat`, selects between the hash kernels
+    // (fat <= 512) and the binary-search kernels (fat > 512). With band >= 2 the
+    // IC(0) / ILDLT(0) inner sums of the last row have several terms.
+    // `imag` adds an imaginary part to the off-diagonal entries of complex types
+    // (the complex IC(0) kernels conjugate the wrong operand, so IC(0) tests on
+    // complex types must pass imag = false: the products are then real).
+    template <typename T>
+    csr_matrix<T> make_fat_row_matrix(int32_t fat, bool imag = true, int32_t band = 1)
+    {
+        require_safe_row_length(fat);
         csr_matrix<T> a;
         a.n = fat + 1;
         a.ptr.push_back(0);
         for(int32_t r = 0; r < a.n; ++r)
         {
-            const int32_t first = (r == a.n - 1) ? a.n - fat : std::max(0, r - 1);
+            const int32_t first = (r == a.n - 1) ? a.n - fat : std::max(0, r - band);
             for(int32_t c = first; c <= r; ++c)
             {
                 a.ind.push_back(c);
@@ -225,7 +274,38 @@ namespace cov70
                     a.val.push_back(make_value<T>(4.0));
                 else
                     a.val.push_back(
-                        make_value<T>(-0.05, (imag && is_cplx<T>) ? 0.01 * ((r - c) % 3) : 0.0));
+                        make_value<T>(-0.05 * (1.0 + 0.1 * ((r + 2 * c) % 3)),
+                                      (imag && is_cplx<T>) ? 0.01 * ((r - c) % 3) : 0.0));
+            }
+            a.ptr.push_back(static_cast<int32_t>(a.ind.size()));
+        }
+        return a;
+    }
+
+    // Lower band matrix of order n: row r holds the columns max(0, r - w) .. r, so the
+    // longest row has min(n, w + 1) entries and every IC(0) / ILDLT(0) inner sum
+    // runs over up to w terms. The diagonal grows with w so that the symmetric
+    // matrix (the lower triangle mirrored) stays positive definite. See make_fat_row_matrix for `imag` and the row
+    // lengths that must be avoided.
+    template <typename T>
+    csr_matrix<T> make_lower_band_matrix(int32_t n, int32_t w, bool imag = true)
+    {
+        require_safe_row_length(std::min(n, w + 1));
+        csr_matrix<T> a;
+        a.n = n;
+        a.ptr.push_back(0);
+        for(int32_t r = 0; r < n; ++r)
+        {
+            for(int32_t c = std::max(0, r - w); c <= r; ++c)
+            {
+                a.ind.push_back(c);
+                if(c == r)
+                    a.val.push_back(
+                        make_value<T>(1.0 + 0.15 * std::min(w, n - 1) + 0.25 * (r % 3)));
+                else
+                    a.val.push_back(
+                        make_value<T>(-0.05 * (1.0 + 0.1 * ((r + 2 * c) % 3)),
+                                      (imag && is_cplx<T>) ? 0.01 * ((r - c) % 3) : 0.0));
             }
             a.ptr.push_back(static_cast<int32_t>(a.ind.size()));
         }
@@ -435,29 +515,16 @@ namespace cov70
         }
     };
 
-    // Block tridiagonal pattern (blocks I-1, I, I+1 present when `bandwidth`
-    // is 1; only the diagonal block when it is 0, block I-1 .. I when `lower`).
-    // The scalar matrix is Hermitian and strictly diagonally dominant;
-    // `skew` breaks the symmetry of the lower triangle (ILU(0) only).
+    // Fills the dense blocks of a BSR matrix whose pattern (ptr / ind) is set. The
+    // scalar matrix is strictly diagonally dominant for the block tridiagonal
+    // pattern and Hermitian (its lower triangle is what IC(0) reads); `skew` breaks
+    // the symmetry of the lower triangle (ILU(0) only).
     template <typename T>
-    bsr_matrix<T> make_block_matrix(
-        int32_t mb, int32_t block_dim, rocsparse_direction dir, bool skew, bool lower_only = false)
+    void fill_block_values(bsr_matrix<T>& m, bool skew)
     {
-        bsr_matrix<T> m;
-        m.mb        = mb;
-        m.block_dim = block_dim;
-        m.dir       = dir;
-        m.ptr.push_back(0);
-        const int32_t b = block_dim;
-        for(int32_t r = 0; r < mb; ++r)
-        {
-            for(int32_t c = std::max(0, r - 1); c <= std::min(mb - 1, r + (lower_only ? 0 : 1));
-                ++c)
-                m.ind.push_back(c);
-            m.ptr.push_back(static_cast<int32_t>(m.ind.size()));
-        }
+        const int32_t b = m.block_dim;
         m.val.assign(static_cast<size_t>(m.nnzb()) * b * b, make_value<T>(0.0));
-        for(int32_t r = 0; r < mb; ++r)
+        for(int32_t r = 0; r < m.mb; ++r)
         {
             for(int32_t k = m.ptr[r]; k < m.ptr[r + 1]; ++k)
             {
@@ -481,7 +548,7 @@ namespace cov70
                             if(skew && gi > gj)
                                 rv *= 1.2;
                         }
-                        const size_t idx = (dir == rocsparse_direction_row)
+                        const size_t idx = (m.dir == rocsparse_direction_row)
                                                ? static_cast<size_t>(i) * b + j
                                                : static_cast<size_t>(j) * b + i;
                         m.val[static_cast<size_t>(k) * b * b + idx] = make_value<T>(rv, iv);
@@ -489,6 +556,47 @@ namespace cov70
                 }
             }
         }
+    }
+
+    // Block tridiagonal pattern: block row I holds the blocks I-1, I and I+1.
+    template <typename T>
+    bsr_matrix<T>
+        make_block_matrix(int32_t mb, int32_t block_dim, rocsparse_direction dir, bool skew)
+    {
+        bsr_matrix<T> m;
+        m.mb        = mb;
+        m.block_dim = block_dim;
+        m.dir       = dir;
+        m.ptr.push_back(0);
+        for(int32_t r = 0; r < mb; ++r)
+        {
+            for(int32_t c = std::max(0, r - 1); c <= std::min(mb - 1, r + 1); ++c)
+                m.ind.push_back(c);
+            m.ptr.push_back(static_cast<int32_t>(m.ind.size()));
+        }
+        fill_block_values(m, skew);
+        return m;
+    }
+
+    // Lower block pattern whose last block row holds `fat` blocks (the others the
+    // blocks I-1 and I): the longest block row selects the bsric0 kernel family
+    // (max_nnzb <= 32 unrolled, 33..128 plain, above 128 general).
+    template <typename T>
+    bsr_matrix<T> make_fat_block_row_matrix(int32_t fat, int32_t block_dim, rocsparse_direction dir)
+    {
+        bsr_matrix<T> m;
+        m.mb        = fat + 1;
+        m.block_dim = block_dim;
+        m.dir       = dir;
+        m.ptr.push_back(0);
+        for(int32_t r = 0; r < m.mb; ++r)
+        {
+            const int32_t first = (r == m.mb - 1) ? m.mb - fat : std::max(0, r - 1);
+            for(int32_t c = first; c <= r; ++c)
+                m.ind.push_back(c);
+            m.ptr.push_back(static_cast<int32_t>(m.ind.size()));
+        }
+        fill_block_values(m, false);
         return m;
     }
 
@@ -518,32 +626,6 @@ namespace cov70
             }
         }
         return a;
-    }
-
-    // Scatters scalar CSR values (of the expansion) back into BSR block storage.
-    template <typename T>
-    std::vector<T> collapse_bsr(const bsr_matrix<T>& m, const std::vector<T>& scalar_val)
-    {
-        const int32_t  b = m.block_dim;
-        std::vector<T> out(m.val.size());
-        size_t         pos = 0;
-        for(int32_t r = 0; r < m.mb; ++r)
-        {
-            for(int32_t i = 0; i < b; ++i)
-            {
-                for(int32_t k = m.ptr[r]; k < m.ptr[r + 1]; ++k)
-                {
-                    for(int32_t j = 0; j < b; ++j)
-                    {
-                        const size_t idx = (m.dir == rocsparse_direction_row)
-                                               ? static_cast<size_t>(i) * b + j
-                                               : static_cast<size_t>(j) * b + i;
-                        out[static_cast<size_t>(k) * b * b + idx] = scalar_val[pos++];
-                    }
-                }
-            }
-        }
-        return out;
     }
 
     // The L factor (entries on or below the scalar diagonal) of a factorized
@@ -621,5 +703,29 @@ namespace cov70
             }
         }
         return res;
+    }
+
+    template <typename T>
+    double max_abs_value(const csr_matrix<T>& a)
+    {
+        double m = 0.0;
+        for(const auto& v : a.val)
+            m = std::max(m, std::abs(to_cd(v)));
+        return m;
+    }
+
+    // Residual of a factorization on the pattern, relative to the largest entry of A:
+    // about ten times the largest measured on gfx1201 (float/cfloat 2.0e-7, double/cdouble
+    // 2.8e-16).
+    template <typename T>
+    double residual_tolerance()
+    {
+        return is_single_precision<T> ? 2.0e-6 : 3.0e-15;
+    }
+
+    template <typename T>
+    void expect_small_residual(double residual, const csr_matrix<T>& a)
+    {
+        EXPECT_LE(residual, residual_tolerance<T>() * max_abs_value(a));
     }
 } // namespace cov70

@@ -181,6 +181,28 @@ namespace
         std::vector<int64_t>               position;
     };
 
+    // Destroys the descriptor when a failed ASSERT leaves the function early.
+    template <Kind K>
+    struct descr_guard
+    {
+        rocsparse_handle         handle;
+        typename api<K>::descr_t descr = nullptr;
+
+        explicit descr_guard(rocsparse_handle h)
+            : handle(h)
+        {
+        }
+
+        ~descr_guard()
+        {
+            if(descr)
+                (void)api<K>::destroy(handle, descr);
+        }
+
+        descr_guard(const descr_guard&) = delete;
+        descr_guard& operator=(const descr_guard&) = delete;
+    };
+
     // Analysis then compute through the generic API on matrix `A`. `val` is the
     // device value array (nvals entries, all batches) that holds the result.
     template <Kind K, typename T>
@@ -191,7 +213,8 @@ namespace
                            const run_options&      opt,
                            run_result<T>&          out)
     {
-        typename api<K>::descr_t descr = nullptr;
+        descr_guard<K> guard(handle);
+        auto&          descr = guard.descr;
         ASSERT_EQ(api<K>::create(handle, &descr), rocsparse_status_success);
 
         const rocsparse_datatype dtype = dt_of<T>();
@@ -277,18 +300,30 @@ namespace
         ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
         out.values = to_host(val);
 
-        // The singularity output is written once per batch entry even though
-        // the size argument describes a single element.
-        out.singularity.assign(static_cast<size_t>(batch), rocsparse_singularity_numeric_near);
-        out.position.assign(static_cast<size_t>(batch), -2);
+        // API quirk: data_size_in_bytes must be the size of ONE element (any other
+        // value is rejected), but the library writes one element per batch entry. A
+        // caller that follows the documented size for a batched matrix therefore
+        // needs a buffer of `batch` elements. The buffers below hold one extra
+        // sentinel entry to prove that exactly `batch` entries are written.
+        const auto    sing_sentinel = static_cast<rocsparse_singularity>(-123);
+        const int64_t pos_sentinel  = -987654321;
+        out.singularity.assign(static_cast<size_t>(batch) + 1, rocsparse_singularity_numeric_near);
+        out.singularity.back() = sing_sentinel;
+        out.position.assign(static_cast<size_t>(batch) + 1, -2);
+        out.position.back() = pos_sentinel;
         ASSERT_EQ(api<K>::get(
                       handle, descr, false, out.singularity.data(), sizeof(rocsparse_singularity)),
                   rocsparse_status_success);
         ASSERT_EQ(api<K>::get(handle, descr, true, out.position.data(), sizeof(int64_t)),
                   rocsparse_status_success);
         ASSERT_EQ(hipStreamSynchronize(nullptr), hipSuccess);
+        EXPECT_EQ(out.singularity.back(), sing_sentinel);
+        EXPECT_EQ(out.position.back(), pos_sentinel);
+        out.singularity.pop_back();
+        out.position.pop_back();
 
         EXPECT_EQ(api<K>::destroy(handle, descr), rocsparse_status_success);
+        descr = nullptr;
     }
 
     // CSR matrix on the device, optionally batched (each batch entry scales the
@@ -313,9 +348,15 @@ namespace
                 (void)rocsparse_destroy_spmat_descr(A);
         }
 
-        void init(const csr_matrix<T>& m, int batch, bool shared_row_ptr)
+        // `m` is zero based; the arrays handed to the library are shifted by one
+        // when `index_base` is one.
+        void init(const csr_matrix<T>& m,
+                  int                  batch,
+                  bool                 shared_row_ptr,
+                  rocsparse_index_base index_base = rocsparse_index_base_zero)
         {
-            base = m;
+            const I shift = (index_base == rocsparse_index_base_one) ? 1 : 0;
+            base          = m;
             batches.clear();
             std::vector<I> hrow;
             std::vector<J> hcol;
@@ -328,8 +369,12 @@ namespace
                     v = make_value<T>(re(v) * s, im(v) * s);
                 batches.push_back(mb);
                 if(b == 0 || !shared_row_ptr)
-                    hrow.insert(hrow.end(), m.ptr.begin(), m.ptr.end());
-                hcol.insert(hcol.end(), m.ind.begin(), m.ind.end());
+                {
+                    for(const auto p : m.ptr)
+                        hrow.push_back(static_cast<I>(p) + shift);
+                }
+                for(const auto c : m.ind)
+                    hcol.push_back(static_cast<J>(c) + static_cast<J>(shift));
                 hval.insert(hval.end(), mb.val.begin(), mb.val.end());
             }
             upload(row, hrow);
@@ -345,7 +390,7 @@ namespace
                                                  val.ptr,
                                                  it_of<I>(),
                                                  it_of<J>(),
-                                                 rocsparse_index_base_zero,
+                                                 index_base,
                                                  dt_of<T>()),
                       rocsparse_status_success);
             if(batch > 1)
@@ -376,11 +421,19 @@ namespace
                 (void)rocsparse_destroy_spmat_descr(A);
         }
 
-        void init(const bsr_matrix<T>& m)
+        void init(const bsr_matrix<T>& m,
+                  rocsparse_index_base index_base = rocsparse_index_base_zero)
         {
-            base = m;
-            upload(row, m.ptr);
-            upload(col, m.ind);
+            const int32_t shift       = (index_base == rocsparse_index_base_one) ? 1 : 0;
+            base                      = m;
+            std::vector<int32_t> hrow = m.ptr;
+            std::vector<int32_t> hcol = m.ind;
+            for(auto& p : hrow)
+                p += shift;
+            for(auto& c : hcol)
+                c += shift;
+            upload(row, hrow);
+            upload(col, hcol);
             upload(val, m.val);
             ASSERT_TRUE(row.ptr && col.ptr && val.ptr);
             ASSERT_EQ(rocsparse_create_bsr_descr(&A,
@@ -394,7 +447,7 @@ namespace
                                                  val.ptr,
                                                  rocsparse_indextype_i32,
                                                  rocsparse_indextype_i32,
-                                                 rocsparse_index_base_zero,
+                                                 index_base,
                                                  dt_of<T>()),
                       rocsparse_status_success);
         }
@@ -433,7 +486,7 @@ namespace
         std::vector<T> got = got_in;
         if constexpr(K == Kind::ic)
             got = keep_lower_only(a, got_in);
-        expect_close(got, reference<K>(a, opt), 4.0);
+        expect_close(got, reference<K>(a, opt));
         if(!opt.boost)
         {
             double res = 0.0;
@@ -443,20 +496,29 @@ namespace
                 res = ic_pattern_residual(a, got);
             else
                 res = ildlt_pattern_residual(a, got);
-            EXPECT_LT(res, 50.0 * tolerance<T>());
+            expect_small_residual(res, a);
         }
     }
 
+    // The singularity position is reported in the index base of the matrix; -1 means
+    // "no singularity" in either base.
+    inline int64_t position_in_base(int64_t zero_based, rocsparse_index_base base)
+    {
+        return (zero_based < 0 || base == rocsparse_index_base_zero) ? zero_based : zero_based + 1;
+    }
+
+    // Factorization of the (batched) grid matrix.
     template <Kind K, typename T, typename I = int32_t, typename J = int32_t>
-    void check_csr_case(rocsparse_handle   handle,
-                        int32_t            grid,
-                        int                batch,
-                        bool               shared_row_ptr,
-                        const run_options& opt)
+    void check_csr_case(rocsparse_handle     handle,
+                        int32_t              grid,
+                        int                  batch,
+                        bool                 shared_row_ptr,
+                        const run_options&   opt,
+                        rocsparse_index_base base = rocsparse_index_base_zero)
     {
         const bool       skew = (K == Kind::ilu);
         dev_csr<T, I, J> d;
-        d.init(make_grid_matrix<T>(grid, skew), batch, shared_row_ptr);
+        d.init(make_grid_matrix<T>(grid, skew), batch, shared_row_ptr, base);
         ASSERT_NE(d.A, nullptr);
         run_result<T> out;
         run_factorization<K, T>(handle, d.A, d.val, batch, opt, out);
@@ -473,17 +535,29 @@ namespace
         }
     }
 
+    // Factorization of the BSR matrix `m` through the generic API.
+    //
+    // verify == true: the factor must match the host reference (the scalar
+    // expansion factorized on the host) and no singularity may be reported.
+    //
+    // verify == false is used for the wave64-specialised kernels forced onto a 32-lane
+    // GPU by the wave64 tests: the kernels are written for 64 lanes and, run with 32,
+    // produce wrong (for block dimensions above 4 even non-finite) values, so the values
+    // are not compared and finiteness cannot be asserted either. The call must still
+    // succeed, the sparsity pattern the library was given must be unchanged, and the
+    // factorization must have written to the values. On a native 64-lane GPU the tests
+    // verify the values.
     template <Kind K, typename T>
-    void check_bsr_case(rocsparse_handle    handle,
-                        int32_t             mb,
-                        int32_t             block_dim,
-                        rocsparse_direction dir,
-                        const run_options&  opt,
-                        bool                verify = true)
+    void check_bsr_matrix(rocsparse_handle     handle,
+                          const bsr_matrix<T>& m,
+                          const run_options&   opt,
+                          bool                 verify,
+                          const std::string&   what,
+                          rocsparse_index_base base = rocsparse_index_base_zero)
     {
-        const bool skew = (K == Kind::ilu);
+        SCOPED_TRACE(what);
         dev_bsr<T> d;
-        d.init(make_block_matrix<T>(mb, block_dim, dir, skew));
+        d.init(m, base);
         ASSERT_NE(d.A, nullptr);
         run_result<T> out;
         run_factorization<K, T>(handle, d.A, d.val, 1, opt, out);
@@ -491,28 +565,189 @@ namespace
         ASSERT_EQ(out.values.size(), d.base.val.size());
         if(!verify)
         {
-            // Launch-only check, see the wave64 tests: only the status is asserted,
-            // the output of a 64-lane kernel on 32-lane hardware is not meaningful.
+            const int32_t shift = (base == rocsparse_index_base_one) ? 1 : 0;
+            const auto    row   = to_host(d.row);
+            const auto    col   = to_host(d.col);
+            ASSERT_EQ(row.size(), d.base.ptr.size());
+            ASSERT_EQ(col.size(), d.base.ind.size());
+            for(size_t i = 0; i < row.size(); ++i)
+                EXPECT_EQ(row[i], d.base.ptr[i] + shift) << "row pointer " << i;
+            for(size_t i = 0; i < col.size(); ++i)
+                EXPECT_EQ(col[i], d.base.ind[i] + shift) << "column index " << i;
+            bool written = false;
+            for(size_t i = 0; i < out.values.size(); ++i)
+                written = written || !(to_cd(out.values[i]) == to_cd(d.base.val[i]));
+            EXPECT_TRUE(written) << "the kernel left every value unchanged";
             return;
         }
         const csr_matrix<T> scalar = expand_bsr(d.base);
         const csr_matrix<T> got    = expand_bsr([&] {
-            bsr_matrix<T> m = d.base;
-            m.val           = out.values;
-            return m;
+            bsr_matrix<T> f = d.base;
+            f.val           = out.values;
+            return f;
         }());
-        check_factor<K>(scalar,
-                        got.val,
-                        opt,
-                        "mb=" + std::to_string(mb) + " block_dim=" + std::to_string(block_dim));
+        check_factor<K>(scalar, got.val, opt, "scalar expansion");
         EXPECT_EQ(out.singularity[0], rocsparse_singularity_none);
         EXPECT_EQ(out.position[0], -1);
+    }
+
+    template <Kind K, typename T>
+    void check_bsr_case(rocsparse_handle     handle,
+                        int32_t              mb,
+                        int32_t              block_dim,
+                        rocsparse_direction  dir,
+                        const run_options&   opt,
+                        bool                 verify = true,
+                        rocsparse_index_base base   = rocsparse_index_base_zero)
+    {
+        const bool skew = (K == Kind::ilu);
+        check_bsr_matrix<K, T>(handle,
+                               make_block_matrix<T>(mb, block_dim, dir, skew),
+                               opt,
+                               verify,
+                               "mb=" + std::to_string(mb)
+                                   + " block_dim=" + std::to_string(block_dim),
+                               base);
     }
 }
 
 class Cov70PrecondGeneric : public HandleTest
 {
 };
+
+// ---------------------------------------------------------------------------
+// Test matrices and helpers shared by the factorization tests below
+// ---------------------------------------------------------------------------
+namespace
+{
+    // Factorization of one scalar CSR matrix through the generic API, compared
+    // with the host reference. `result` (optional) receives the raw outputs.
+    template <Kind K, typename T, typename I = int32_t, typename J = int32_t>
+    void check_csr_matrix(rocsparse_handle     handle,
+                          const csr_matrix<T>& m,
+                          const run_options&   opt,
+                          const std::string&   what,
+                          rocsparse_index_base base   = rocsparse_index_base_zero,
+                          run_result<T>*       result = nullptr)
+    {
+        SCOPED_TRACE(what);
+        dev_csr<T, I, J> d;
+        d.init(m, 1, true, base);
+        ASSERT_NE(d.A, nullptr);
+        run_result<T> out;
+        run_factorization<K, T>(handle, d.A, d.val, 1, opt, out);
+        ASSERT_EQ(out.compute_status, rocsparse_status_success);
+        check_factor<K>(d.base, out.values, opt, what);
+        EXPECT_EQ(out.singularity[0], rocsparse_singularity_none);
+        EXPECT_EQ(out.position[0], -1);
+        if(result != nullptr)
+            *result = out;
+    }
+
+    // Position of the diagonal entry of `row` in the CSR arrays.
+    template <typename T>
+    size_t diagonal_position(const csr_matrix<T>& a, int32_t row)
+    {
+        for(int32_t p = a.ptr[row]; p < a.ptr[row + 1]; ++p)
+            if(a.ind[p] == row)
+                return static_cast<size_t>(p);
+        return static_cast<size_t>(-1);
+    }
+
+    // A grid matrix whose diagonal entry of `row` is removed (symbolic singularity).
+    template <typename T>
+    csr_matrix<T> without_diagonal(csr_matrix<T> a, int32_t row)
+    {
+        for(int32_t p = a.ptr[row]; p < a.ptr[row + 1]; ++p)
+        {
+            if(a.ind[p] == row)
+            {
+                a.ind.erase(a.ind.begin() + p);
+                a.val.erase(a.val.begin() + p);
+                for(int32_t r = row + 1; r <= a.n; ++r)
+                    --a.ptr[r];
+                break;
+            }
+        }
+        return a;
+    }
+
+    // `want_position` is zero based; the library reports it in the matrix index base.
+    template <Kind K, typename T>
+    void singular_case(rocsparse_handle      handle,
+                       const csr_matrix<T>&  a,
+                       const run_options&    opt,
+                       rocsparse_singularity want_singularity,
+                       int64_t               want_position,
+                       rocsparse_index_base  base = rocsparse_index_base_zero)
+    {
+        dev_csr<T, int32_t, int32_t> d;
+        d.init(a, 1, true, base);
+        ASSERT_NE(d.A, nullptr);
+        run_result<T> out;
+        run_factorization<K, T>(handle, d.A, d.val, 1, opt, out);
+        EXPECT_EQ(out.compute_status, rocsparse_status_success);
+        EXPECT_EQ(out.singularity[0], want_singularity);
+        EXPECT_EQ(out.position[0], position_in_base(want_position, base));
+    }
+
+    // Pivot of every row as the singularity test sees it: |u_ii| for ILU(0) (the test
+    // is |u_ii| <= tol) and the pivot before the square root, l_ii^2, for IC(0) (the
+    // test is l_ii^2 <= tol^2).
+    template <Kind K>
+    std::vector<double> pivots_of(const csr_matrix<double>& a)
+    {
+        const auto          f = (K == Kind::ic) ? host_ic0(a) : host_ilu0(a);
+        std::vector<double> pivots;
+        for(int32_t r = 0; r < a.n; ++r)
+        {
+            const double v = f[diagonal_position(a, r)];
+            pivots.push_back(K == Kind::ic ? v * v : std::abs(v));
+        }
+        return pivots;
+    }
+
+    // Zero based row of the first pivot that is at most `threshold`, -1 if none.
+    int64_t first_pivot_at_most(const std::vector<double>& pivots, double threshold)
+    {
+        for(size_t i = 0; i < pivots.size(); ++i)
+            if(pivots[i] <= threshold)
+                return static_cast<int64_t>(i);
+        return -1;
+    }
+
+    // True when no pivot lies within a relative 1e-6 of `threshold`, so that host and
+    // device rounding cannot disagree on which side of it a pivot falls.
+    bool clear_of_pivots(const std::vector<double>& pivots, double threshold)
+    {
+        for(const double p : pivots)
+            if(std::abs(p - threshold) <= 1.0e-6 * threshold)
+                return false;
+        return true;
+    }
+
+    template <Kind K>
+    void near_singular_case(rocsparse_handle          handle,
+                            const csr_matrix<double>& a,
+                            double                    tol,
+                            bool                      after_analysis,
+                            int64_t                   want_position,
+                            rocsparse_index_base      base = rocsparse_index_base_zero)
+    {
+        SCOPED_TRACE("tol=" + std::to_string(tol) + " after=" + std::to_string(after_analysis));
+        run_options opt;
+        opt.set_sing_tol = true;
+        opt.sing_tol     = tol;
+        opt.tol_after    = after_analysis;
+        singular_case<K, double>(handle,
+                                 a,
+                                 opt,
+                                 want_position < 0 ? rocsparse_singularity_none
+                                                   : rocsparse_singularity_numeric_near,
+                                 want_position,
+                                 base);
+    }
+}
 
 // ---------------------------------------------------------------------------
 // CSR
@@ -528,6 +763,11 @@ TEST_F(Cov70PrecondGeneric, spilu0_csr_types_and_policies)
     });
 }
 
+// On the grid matrix a row never shares a column below the diagonal with a row it
+// depends on, so every IC(0) inner sum is zero (the band tests below have non-zero
+// sums). The complex conjugation order of the library's complex IC(0) update
+// (see spic0_csr_nonzero_inner_sums_hash) is therefore invisible here, and the
+// complex types are safe to use on this matrix.
 TEST_F(Cov70PrecondGeneric, spic0_csr_types_and_policies)
 {
     for_all_types([&](auto tag) {
@@ -557,9 +797,101 @@ TEST_F(Cov70PrecondGeneric, spilu0_spic0_csr_batched)
         check_csr_case<Kind::ic, double>(handle, 4, 3, shared, opt);
     }
     check_csr_case<Kind::ilu, rocsparse_float_complex>(handle, 4, 2, false, opt);
+    // Grid matrix: the IC(0) inner sums are zero, see spic0_csr_types_and_policies.
     check_csr_case<Kind::ic, rocsparse_double_complex>(handle, 4, 2, false, opt);
 }
 
+// ILU(0) of banded matrices: every row has several entries on both sides of the
+// diagonal that the elimination updates.
+TEST_F(Cov70PrecondGeneric, spilu0_csr_band_matrices)
+{
+    run_options opt;
+    // Longest rows of 3, 6, 21 and 41 entries.
+    for(const int32_t w : {2, 5, 20, 40})
+    {
+        for_all_types([&](auto tag) {
+            using T = decltype(tag);
+            check_csr_matrix<Kind::ilu, T>(
+                handle, make_lower_band_matrix<T>(60, w), opt, "w=" + std::to_string(w));
+        });
+    }
+}
+
+// IC(0) inner sums with several non-zero terms (rows that share columns below the
+// diagonal) through the hash kernel. The real types are checked with real data; the
+// complex types only with real-valued entries: the library's complex IC(0) kernels
+// accumulate fma(val[k], conj(val[idx]), sum), which is the conjugate of the sum
+// L * L^H requires, so a complex matrix with non-real products does not reproduce
+// the host factorization (library bug, not exercised here). With real values the
+// products are real and the conjugation order does not matter.
+TEST_F(Cov70PrecondGeneric, spic0_csr_nonzero_inner_sums_hash)
+{
+    run_options opt;
+    // Longest rows of 3, 6, 21 and 41 entries (never 32, 64, ..., see
+    // make_fat_row_matrix).
+    for(const int32_t w : {2, 5, 20, 40})
+    {
+        check_csr_matrix<Kind::ic, float>(
+            handle, make_lower_band_matrix<float>(60, w, false), opt, "band float");
+        check_csr_matrix<Kind::ic, double>(
+            handle, make_lower_band_matrix<double>(60, w, false), opt, "band double");
+        check_csr_matrix<Kind::ic, rocsparse_float_complex>(
+            handle, make_lower_band_matrix<rocsparse_float_complex>(60, w, false), opt, "band cf");
+        check_csr_matrix<Kind::ic, rocsparse_double_complex>(
+            handle, make_lower_band_matrix<rocsparse_double_complex>(60, w, false), opt, "band cd");
+    }
+    // A dense last row over narrow band rows: table sizes 32 .. 512 (lengths below
+    // the sizes) and band 3 so that the sums have three terms.
+    for(const int32_t fat : {8, 40, 100, 300, 511})
+    {
+        check_csr_matrix<Kind::ic, double>(
+            handle, make_fat_row_matrix<double>(fat, false, 3), opt, "fat " + std::to_string(fat));
+        check_csr_matrix<Kind::ic, float>(
+            handle, make_fat_row_matrix<float>(fat, false, 3), opt, "fat " + std::to_string(fat));
+    }
+    check_csr_matrix<Kind::ic, rocsparse_double_complex>(
+        handle, make_fat_row_matrix<rocsparse_double_complex>(100, false, 3), opt, "fat cd");
+}
+
+TEST_F(Cov70PrecondGeneric, spilu0_spic0_csr_one_based)
+{
+    run_options opt;
+    for_all_types([&](auto tag) {
+        using T = decltype(tag);
+        check_csr_case<Kind::ilu, T>(handle, 5, 1, true, opt, rocsparse_index_base_one);
+        // Grid matrix: the IC(0) inner sums are zero, see spic0_csr_types_and_policies.
+        check_csr_case<Kind::ic, T>(handle, 5, 1, true, opt, rocsparse_index_base_one);
+    });
+    check_csr_case<Kind::ilu, double>(handle, 4, 3, false, opt, rocsparse_index_base_one);
+    check_csr_case<Kind::ic, double>(handle, 4, 3, true, opt, rocsparse_index_base_one);
+    check_csr_case<Kind::ilu, double, int64_t, int32_t>(
+        handle, 5, 1, true, opt, rocsparse_index_base_one);
+    check_csr_case<Kind::ic, float, int64_t, int64_t>(
+        handle, 5, 1, true, opt, rocsparse_index_base_one);
+    // Band and fat-row matrices (non-zero inner sums) in the hash and binary-search kernels.
+    check_csr_matrix<Kind::ic, double>(handle,
+                                       make_lower_band_matrix<double>(60, 5, false),
+                                       opt,
+                                       "band",
+                                       rocsparse_index_base_one);
+    check_csr_matrix<Kind::ic, double>(handle,
+                                       make_fat_row_matrix<double>(520, false, 3),
+                                       opt,
+                                       "fat 520",
+                                       rocsparse_index_base_one);
+    check_csr_matrix<Kind::ilu, double>(
+        handle, make_lower_band_matrix<double>(60, 5), opt, "band", rocsparse_index_base_one);
+    check_csr_matrix<Kind::ilu, double>(handle,
+                                        make_fat_row_matrix<double>(520, true, 3),
+                                        opt,
+                                        "fat 520",
+                                        rocsparse_index_base_one);
+    check_csr_matrix<Kind::ildlt, double>(
+        handle, make_fat_row_matrix<double>(40, true, 3), opt, "fat 40", rocsparse_index_base_one);
+}
+
+// The ILU(0) boost replaces a pivot whose magnitude is at most the boost tolerance
+// by the boost value (its magnitude) with the sign / phase of the pivot.
 TEST_F(Cov70PrecondGeneric, spilu0_csr_numeric_boost)
 {
     run_options opt;
@@ -578,14 +910,145 @@ TEST_F(Cov70PrecondGeneric, spilu0_csr_numeric_boost)
     check_csr_case<Kind::ilu, float>(handle, 4, 2, false, opt);
 }
 
-TEST_F(Cov70PrecondGeneric, spic0_csr_boost_inputs_are_accepted)
+namespace
 {
-    // spic0 stores the boost parameters but its kernels do not apply them.
+    // Tridiagonal matrix of order 12 with weak off-diagonal entries (the pivots stay
+    // close to the diagonal) and three small diagonal entries:
+    //   row 3: -0.5 (+0.2i for complex types), a negative real part
+    //   row 6:  0.4 (0 when `zero_pivot_row6`; row 6 then also loses its lower
+    //           entry so that its pivot is exactly 0)
+    //   row 9:  2.5
+    // All the other diagonal entries are 5.
+    template <typename T>
+    csr_matrix<T> make_boost_matrix(bool zero_pivot_row6)
+    {
+        csr_matrix<T> a;
+        a.n = 12;
+        a.ptr.push_back(0);
+        for(int32_t r = 0; r < a.n; ++r)
+        {
+            if(r > 0 && !(zero_pivot_row6 && r == 6))
+            {
+                a.ind.push_back(r - 1);
+                a.val.push_back(make_value<T>(-0.01 * (1.0 + 0.1 * (r % 3))));
+            }
+            a.ind.push_back(r);
+            switch(r)
+            {
+            case 3:
+                a.val.push_back(make_value<T>(-0.5, is_cplx<T> ? 0.2 : 0.0));
+                break;
+            case 6:
+                a.val.push_back(make_value<T>(zero_pivot_row6 ? 0.0 : 0.4));
+                break;
+            case 9:
+                a.val.push_back(make_value<T>(2.5));
+                break;
+            default:
+                a.val.push_back(make_value<T>(5.0));
+                break;
+            }
+            if(r + 1 < a.n)
+            {
+                a.ind.push_back(r + 1);
+                a.val.push_back(make_value<T>(-0.01));
+            }
+            a.ptr.push_back(static_cast<int32_t>(a.ind.size()));
+        }
+        return a;
+    }
+
+    // Boost with the given tolerance on the matrix of make_boost_matrix: the factor
+    // must equal the host factor with the same boost, the boosted pivots must have
+    // the magnitude of the boost value (2) and the sign / phase of the original
+    // pivot, the others must be untouched, and the factorization reports no
+    // singularity (a boosted pivot is not a zero pivot).
+    template <typename T>
+    void check_boost(rocsparse_handle handle,
+                     bool             zero_pivot_row6,
+                     double           boost_tol,
+                     bool             boosted3,
+                     bool             boosted6,
+                     bool             boosted9)
+    {
+        SCOPED_TRACE("boost_tol=" + std::to_string(boost_tol));
+        run_options opt;
+        opt.boost     = true;
+        opt.boost_tol = boost_tol;
+        opt.boost_val = 2.0;
+        run_result<T>       out;
+        const csr_matrix<T> a = make_boost_matrix<T>(zero_pivot_row6);
+        check_csr_matrix<Kind::ilu, T>(
+            handle, a, opt, "boost matrix", rocsparse_index_base_zero, &out);
+        ASSERT_FALSE(out.values.empty());
+        const double kBoost = 2.0;
+        const auto   d3     = to_cd(out.values[diagonal_position(a, 3)]);
+        const auto   d6     = to_cd(out.values[diagonal_position(a, 6)]);
+        const auto   d9     = to_cd(out.values[diagonal_position(a, 9)]);
+        if(boosted3)
+        {
+            EXPECT_NEAR(std::abs(d3), kBoost, 1.0e-5 * kBoost);
+            EXPECT_LT(d3.real(), 0.0); // the negative real part of the pivot is kept
+            if(is_cplx<T>)
+                EXPECT_GT(d3.imag(), 0.0); // and so is its phase
+        }
+        else
+        {
+            // |-0.5| or |-0.5 + 0.2i| = 0.539, the weak coupling moves it by about 1e-4.
+            EXPECT_NEAR(std::abs(d3), is_cplx<T> ? std::hypot(0.5, 0.2) : 0.5, 5.0e-3);
+        }
+        if(boosted6)
+        {
+            EXPECT_NEAR(d6.real(), kBoost, 1.0e-5 * kBoost);
+            EXPECT_NEAR(d6.imag(), 0.0, 1.0e-5);
+        }
+        else
+        {
+            EXPECT_NEAR(std::abs(d6), 0.4, 5.0e-3);
+        }
+        if(boosted9)
+            EXPECT_NEAR(std::abs(d9), kBoost, 1.0e-5 * kBoost);
+        else
+            EXPECT_GT(std::abs(d9), 2.4);
+    }
+}
+
+TEST_F(Cov70PrecondGeneric, spilu0_csr_numeric_boost_partial_and_signed)
+{
+    for_all_types([&](auto tag) {
+        using T = decltype(tag);
+        // Pivot magnitudes (about) 5, 0.54 or 0.5, 0.4, 2.5.
+        // tol 1.0: the pivots of rows 3 (negative real part) and 6 are boosted.
+        check_boost<T>(handle, false, 1.0, true, true, false);
+        // tol 0.45 is between the pivot magnitudes: only row 6 is boosted. The row 3
+        // pivot (-0.5, or -0.5 + 0.2i with modulus 0.54) stays.
+        check_boost<T>(handle, false, 0.45, false, true, false);
+        // tol 3: rows 3, 6 and 9 are boosted, the 5s stay.
+        check_boost<T>(handle, false, 3.0, true, true, true);
+        // An exactly zero pivot is boosted to +2 (and is not reported as singular).
+        check_boost<T>(handle, true, 1.0e-3, false, true, false);
+    });
+}
+
+TEST_F(Cov70PrecondGeneric, spilu0_exact_zero_pivot_without_boost)
+{
+    // The same matrix without the boost reports the zero pivot of row 6.
+    for_all_types([&](auto tag) {
+        using T = decltype(tag);
+        run_options opt;
+        singular_case<Kind::ilu, T>(
+            handle, make_boost_matrix<T>(true), opt, rocsparse_singularity_numeric_exact, 6);
+    });
+}
+
+// spic0 stores the boost parameters but its kernels never apply them: the factor
+// is the plain IC(0) factor.
+TEST_F(Cov70PrecondGeneric, spic0_csr_boost_inputs_do_not_change_the_factor)
+{
     run_options opt;
     opt.boost     = true;
     opt.boost_tol = 1.0e6;
     opt.boost_val = 2.0;
-    opt.boost     = true;
     dev_csr<double, int32_t, int32_t> d;
     d.init(make_grid_matrix<double>(4, false), 1, true);
     ASSERT_NE(d.A, nullptr);
@@ -593,50 +1056,14 @@ TEST_F(Cov70PrecondGeneric, spic0_csr_boost_inputs_are_accepted)
     run_factorization<Kind::ic, double>(handle, d.A, d.val, 1, opt, out);
     ASSERT_EQ(out.compute_status, rocsparse_status_success);
     const auto want = keep_lower_only(d.base, host_ic0(d.base));
-    expect_close(keep_lower_only(d.base, out.values), want, 4.0);
+    expect_close(keep_lower_only(d.base, out.values), want);
+    EXPECT_EQ(out.singularity[0], rocsparse_singularity_none);
+    EXPECT_EQ(out.position[0], -1);
 }
 
 // ---------------------------------------------------------------------------
 // Singularity reporting
 // ---------------------------------------------------------------------------
-namespace
-{
-    // A grid matrix whose diagonal entry of `row` is removed (symbolic singularity).
-    template <typename T>
-    csr_matrix<T> without_diagonal(csr_matrix<T> a, int32_t row)
-    {
-        for(int32_t p = a.ptr[row]; p < a.ptr[row + 1]; ++p)
-        {
-            if(a.ind[p] == row)
-            {
-                a.ind.erase(a.ind.begin() + p);
-                a.val.erase(a.val.begin() + p);
-                for(int32_t r = row + 1; r <= a.n; ++r)
-                    --a.ptr[r];
-                break;
-            }
-        }
-        return a;
-    }
-
-    template <Kind K, typename T>
-    void singular_case(rocsparse_handle      handle,
-                       const csr_matrix<T>&  a,
-                       const run_options&    opt,
-                       rocsparse_singularity want_singularity,
-                       int64_t               want_position)
-    {
-        dev_csr<T, int32_t, int32_t> d;
-        d.init(a, 1, true);
-        ASSERT_NE(d.A, nullptr);
-        run_result<T> out;
-        run_factorization<K, T>(handle, d.A, d.val, 1, opt, out);
-        EXPECT_EQ(out.compute_status, rocsparse_status_success);
-        EXPECT_EQ(out.singularity[0], want_singularity);
-        EXPECT_EQ(out.position[0], want_position);
-    }
-}
-
 TEST_F(Cov70PrecondGeneric, spilu0_spic0_symbolic_singularity)
 {
     const csr_matrix<double> a = without_diagonal(make_grid_matrix<double>(4, false), 5);
@@ -652,8 +1079,8 @@ TEST_F(Cov70PrecondGeneric, spilu0_exact_zero_pivot)
     for_all_types([&](auto tag) {
         using T = decltype(tag);
         auto a  = make_grid_matrix<T>(4, false);
-        // Row 3 has pivot exactly 0 once its diagonal is zeroed and nothing
-        // above it couples to row 3 through the lower triangle's updates.
+        // The diagonal entry of row 0 is zero, and row 0 has no row above it to
+        // change that, so its pivot is exactly 0.
         a.val[a.ptr[0]] = make_value<T>(0.0);
         run_options opt;
         singular_case<Kind::ilu, T>(handle, a, opt, rocsparse_singularity_numeric_exact, 0);
@@ -672,16 +1099,92 @@ TEST_F(Cov70PrecondGeneric, spilu0_spic0_near_singularity_tolerance)
 {
     for(const bool after : {false, true})
     {
-        run_options opt;
-        opt.set_sing_tol = true;
-        opt.sing_tol     = 1.0e3; // every pivot is within the tolerance
-        opt.tol_after    = after;
-        const auto a     = make_grid_matrix<double>(4, false);
-        singular_case<Kind::ilu, double>(handle, a, opt, rocsparse_singularity_numeric_near, 0);
-        singular_case<Kind::ic, double>(handle, a, opt, rocsparse_singularity_numeric_near, 0);
-        opt.sing_tol = 1.0e-12; // no pivot is
-        singular_case<Kind::ilu, double>(handle, a, opt, rocsparse_singularity_none, -1);
-        singular_case<Kind::ic, double>(handle, a, opt, rocsparse_singularity_none, -1);
+        const auto a = make_grid_matrix<double>(4, false);
+        // Every pivot is within the tolerance / no pivot is.
+        near_singular_case<Kind::ilu>(handle, a, 1.0e3, after, 0);
+        near_singular_case<Kind::ic>(handle, a, 1.0e3, after, 0);
+        near_singular_case<Kind::ilu>(handle, a, 1.0e-12, after, -1);
+        near_singular_case<Kind::ic>(handle, a, 1.0e-12, after, -1);
+    }
+}
+
+// ILU(0): a pivot is near-singular when |u_ii| <= tol (inclusive). The pivot of
+// row 0 is exactly 5 (nothing is subtracted from the diagonal entry of row 0), the
+// others are smaller and differ from it by far more than the rounding of the
+// factorization.
+TEST_F(Cov70PrecondGeneric, spilu0_near_singularity_tolerance_boundaries)
+{
+    const auto a      = make_grid_matrix<double>(4, false);
+    const auto pivots = pivots_of<Kind::ilu>(a);
+    ASSERT_EQ(pivots[0], 5.0);
+    const double min_pivot = *std::min_element(pivots.begin(), pivots.end());
+    ASSERT_LT(min_pivot, 4.9);
+    for(const bool after : {false, true})
+    {
+        // tol == pivot 0: flagged (<=), position 0.
+        near_singular_case<Kind::ilu>(handle, a, 5.0, after, 0);
+        // The largest tolerance below the row 0 pivot skips row 0: the first row whose
+        // pivot is at most that tolerance is reported instead.
+        const double  below = std::nextafter(5.0, 0.0);
+        const int64_t want  = first_pivot_at_most(pivots, below);
+        ASSERT_GT(want, 0);
+        near_singular_case<Kind::ilu>(handle, a, below, after, want);
+        // Between the smallest pivot and the others, and below all of them.
+        const double mid = 0.5 * (min_pivot + 5.0);
+        ASSERT_TRUE(clear_of_pivots(pivots, mid));
+        near_singular_case<Kind::ilu>(handle, a, mid, after, first_pivot_at_most(pivots, mid));
+        ASSERT_TRUE(clear_of_pivots(pivots, 0.5 * min_pivot));
+        near_singular_case<Kind::ilu>(handle, a, 0.5 * min_pivot, after, -1);
+    }
+}
+
+// IC(0): the test is l_ii^2 <= tol^2 on the pivot before the square root (the
+// row 0 pivot is 5): tol = 3 flags it (5 <= 9 although 5 > 3), tol = 2 does not
+// (5 > 4, and neither does any other pivot, which are all above 4).
+TEST_F(Cov70PrecondGeneric, spic0_near_singularity_tolerance_boundaries)
+{
+    const auto a      = make_grid_matrix<double>(4, false);
+    const auto pivots = pivots_of<Kind::ic>(a);
+    ASSERT_NEAR(pivots[0], 5.0, 1.0e-12);
+    const double min_pivot = *std::min_element(pivots.begin(), pivots.end());
+    ASSERT_GT(min_pivot, 4.0);
+    ASSERT_LT(min_pivot, 4.9);
+    for(const bool after : {false, true})
+    {
+        near_singular_case<Kind::ic>(handle, a, 3.0, after, 0);
+        near_singular_case<Kind::ic>(handle, a, 2.0, after, -1);
+        // Between the pivots: the pivot of row 0 is above tol^2 = 4.9, a later one is not.
+        const double  tol  = std::sqrt(4.9);
+        const int64_t want = first_pivot_at_most(pivots, tol * tol);
+        ASSERT_GT(want, 0);
+        ASSERT_TRUE(clear_of_pivots(pivots, tol * tol));
+        near_singular_case<Kind::ic>(handle, a, tol, after, want);
+    }
+}
+
+TEST_F(Cov70PrecondGeneric, spilu0_spic0_singularity_one_based)
+{
+    const rocsparse_index_base one = rocsparse_index_base_one;
+    run_options                opt;
+    // Symbolic singularity of row 5 (zero based) is reported as 6.
+    const csr_matrix<double> symbolic = without_diagonal(make_grid_matrix<double>(4, false), 5);
+    singular_case<Kind::ilu, double>(handle, symbolic, opt, rocsparse_singularity_symbolic, 5, one);
+    singular_case<Kind::ic, double>(handle, symbolic, opt, rocsparse_singularity_symbolic, 5, one);
+    // Exact zero pivot of row 0 is reported as 1.
+    auto zero_pivot                   = make_grid_matrix<double>(4, false);
+    zero_pivot.val[zero_pivot.ptr[0]] = 0.0;
+    singular_case<Kind::ilu, double>(
+        handle, zero_pivot, opt, rocsparse_singularity_numeric_exact, 0, one);
+    singular_case<Kind::ic, double>(
+        handle, zero_pivot, opt, rocsparse_singularity_numeric_exact, 0, one);
+    // Near singularity: the first flagged row (1 for row 0), and "none" stays -1.
+    const auto a = make_grid_matrix<double>(4, false);
+    for(const bool after : {false, true})
+    {
+        near_singular_case<Kind::ilu>(handle, a, 1.0e3, after, 0, one);
+        near_singular_case<Kind::ic>(handle, a, 1.0e3, after, 0, one);
+        near_singular_case<Kind::ilu>(handle, a, 1.0e-12, after, -1, one);
+        near_singular_case<Kind::ic>(handle, a, 1.0e-12, after, -1, one);
     }
 }
 
@@ -704,6 +1207,11 @@ TEST_F(Cov70PrecondGeneric, spilu0_bsr_block_dims)
     }
 }
 
+// The BSR IC(0) matrices are block tridiagonal with Hermitian diagonal blocks; the
+// scalar inner sums are non-zero (a scalar row shares columns with the rows it depends
+// on inside a block). The complex types have non-real products here and are compared
+// with the host factorization: the conjugation order problem of the csric0 kernels
+// (see spic0_csr_nonzero_inner_sums_hash) does not show in the bsric0 kernels.
 TEST_F(Cov70PrecondGeneric, spic0_bsr_block_dims)
 {
     for(const auto dir : {rocsparse_direction_row, rocsparse_direction_column})
@@ -720,15 +1228,38 @@ TEST_F(Cov70PrecondGeneric, spic0_bsr_block_dims)
     }
 }
 
+TEST_F(Cov70PrecondGeneric, spilu0_spic0_bsr_one_based)
+{
+    run_options opt;
+    for(const auto dir : {rocsparse_direction_row, rocsparse_direction_column})
+    {
+        check_bsr_case<Kind::ilu, double>(handle, 4, 3, dir, opt, true, rocsparse_index_base_one);
+        check_bsr_case<Kind::ic, double>(handle, 4, 3, dir, opt, true, rocsparse_index_base_one);
+        check_bsr_case<Kind::ilu, float>(handle, 3, 9, dir, opt, true, rocsparse_index_base_one);
+        check_bsr_case<Kind::ic, float>(handle, 3, 9, dir, opt, true, rocsparse_index_base_one);
+    }
+}
+
 // A handle that reports a 64 wide wavefront selects the specialised block
-// kernels (2_8 / 9_32 / 33_64 for ILU, 2_8_unrolled / 9_16 / 17_32 for IC).
-// They are written for 64 lanes: on this 32-lane hardware the kernels with
-// block_dim <= 4 still produce the exact factor (checked against the host
-// reference), while the wider ones produce non-finite values. For those the test only
-// asserts that the launch succeeds; the numeric result of the factorization is
-// covered by the wavefront-32 tests above.
+// kernels (2_8 / 9_32 / 33_64 for ILU, 2_8_unrolled / 2_8 / 9_16 / 17_32 for IC).
+// They are written for 64 lanes. Natively (a wave64 GPU) every case is checked
+// against the host reference. On a 32-lane GPU the override forces the 64-lane
+// instantiations: with block_dim <= 4 they still produce the exact factor
+// (checked), the wider ones produce non-finite values, so for those only the
+// structure is checked (see check_bsr_matrix); the numeric result of every block
+// dimension is covered by the wavefront-32 tests above.
+namespace
+{
+    // `native64` must be read from the handle BEFORE the override is applied.
+    bool values_checkable(bool native64, int32_t block_dim)
+    {
+        return native64 || block_dim <= 4;
+    }
+}
+
 TEST_F(Cov70PrecondGeneric, spilu0_bsr_wave64_kernels)
 {
+    const bool native64 = (handle->wavefront_size == 64);
     for(const auto dir : {rocsparse_direction_row, rocsparse_direction_column})
     {
         run_options opt;
@@ -742,16 +1273,20 @@ TEST_F(Cov70PrecondGeneric, spilu0_bsr_wave64_kernels)
         check_bsr_case<Kind::ilu, rocsparse_double_complex>(handle, 3, 2, dir, opt);
         for(const int32_t block_dim : {8, 9, 16, 32, 33, 64})
         {
-            check_bsr_case<Kind::ilu, double>(handle, 3, block_dim, dir, opt, false);
+            check_bsr_case<Kind::ilu, double>(
+                handle, 3, block_dim, dir, opt, values_checkable(native64, block_dim));
         }
-        check_bsr_case<Kind::ilu, float>(handle, 3, 20, dir, opt, false);
-        check_bsr_case<Kind::ilu, rocsparse_float_complex>(handle, 3, 12, dir, opt, false);
-        check_bsr_case<Kind::ilu, rocsparse_double_complex>(handle, 3, 20, dir, opt, false);
+        check_bsr_case<Kind::ilu, float>(handle, 3, 20, dir, opt, values_checkable(native64, 20));
+        check_bsr_case<Kind::ilu, rocsparse_float_complex>(
+            handle, 3, 12, dir, opt, values_checkable(native64, 12));
+        check_bsr_case<Kind::ilu, rocsparse_double_complex>(
+            handle, 3, 20, dir, opt, values_checkable(native64, 20));
     }
 }
 
 TEST_F(Cov70PrecondGeneric, spic0_bsr_wave64_kernels)
 {
+    const bool native64 = (handle->wavefront_size == 64);
     for(const auto dir : {rocsparse_direction_row, rocsparse_direction_column})
     {
         run_options opt;
@@ -765,11 +1300,50 @@ TEST_F(Cov70PrecondGeneric, spic0_bsr_wave64_kernels)
         check_bsr_case<Kind::ic, rocsparse_double_complex>(handle, 3, 2, dir, opt);
         for(const int32_t block_dim : {8, 9, 16, 17, 32})
         {
-            check_bsr_case<Kind::ic, double>(handle, 3, block_dim, dir, opt, false);
+            check_bsr_case<Kind::ic, double>(
+                handle, 3, block_dim, dir, opt, values_checkable(native64, block_dim));
         }
-        check_bsr_case<Kind::ic, float>(handle, 3, 24, dir, opt, false);
-        check_bsr_case<Kind::ic, rocsparse_float_complex>(handle, 3, 12, dir, opt, false);
-        check_bsr_case<Kind::ic, rocsparse_double_complex>(handle, 3, 20, dir, opt, false);
+        check_bsr_case<Kind::ic, float>(handle, 3, 24, dir, opt, values_checkable(native64, 24));
+        check_bsr_case<Kind::ic, rocsparse_float_complex>(
+            handle, 3, 12, dir, opt, values_checkable(native64, 12));
+        check_bsr_case<Kind::ic, rocsparse_double_complex>(
+            handle, 3, 20, dir, opt, values_checkable(native64, 20));
+    }
+}
+
+// Block rows of 33 to 128 blocks and block_dim <= 8 select the plain (not
+// unrolled) 2_8 bsric0 kernel on a 64 lane wavefront; the lower block pattern has a
+// last block row of `fat` blocks. The wavefront-32 (general) kernel is checked on
+// the same matrices. The 2_8 kernel forced onto 32 lanes gives wrong values even
+// for block_dim 2 (unlike the unrolled kernel for rows of at most 32 blocks), so
+// its values are compared only on a native wave64 GPU; elsewhere the structure
+// and the launch status are checked (see check_bsr_matrix).
+TEST_F(Cov70PrecondGeneric, spic0_bsr_wave64_long_block_rows)
+{
+    const bool  native64 = (handle->wavefront_size == 64);
+    run_options general;
+    run_options forced;
+    forced.wavefront = 64;
+    for(const auto dir : {rocsparse_direction_row, rocsparse_direction_column})
+    {
+        for(const int32_t block_dim : {2, 3, 4, 8})
+        {
+            const auto m    = make_fat_block_row_matrix<double>(40, block_dim, dir);
+            const auto what = "fat block row, block_dim=" + std::to_string(block_dim);
+            check_bsr_matrix<Kind::ic, double>(handle, m, general, true, what + " (default)");
+            check_bsr_matrix<Kind::ic, double>(handle, m, forced, native64, what + " (wave64)");
+        }
+        check_bsr_matrix<Kind::ic, float>(handle,
+                                          make_fat_block_row_matrix<float>(100, 3, dir),
+                                          forced,
+                                          native64,
+                                          "fat block row 100");
+        check_bsr_matrix<Kind::ic, rocsparse_double_complex>(
+            handle,
+            make_fat_block_row_matrix<rocsparse_double_complex>(40, 2, dir),
+            forced,
+            native64,
+            "fat block row, complex");
     }
 }
 
@@ -792,44 +1366,64 @@ TEST_F(Cov70PrecondGeneric, spilu0_bsr_numeric_boost)
 }
 
 // ---------------------------------------------------------------------------
-// Row-length regimes of IC(0) and ILDLT(0)
+// Row-length regimes of IC(0), ILU(0) and ILDLT(0)
 // ---------------------------------------------------------------------------
 TEST_F(Cov70PrecondGeneric, spic0_csr_binsearch_fat_row)
 {
-    // Rows longer than 512 entries select the binary-search IC(0) kernel.
+    // Rows longer than 512 entries select the binary-search IC(0) kernel. Band 3
+    // gives the inner sums of the long row several terms. The complex types use
+    // real-valued entries (see spic0_csr_nonzero_inner_sums_hash).
     run_options opt;
-    for_all_types([&](auto tag) {
-        using T = decltype(tag);
-        dev_csr<T, int32_t, int32_t> d;
-        // Real values: the library's complex IC(0) update is checked on the grid matrices.
-        d.init(make_fat_row_matrix<T>(520, false), 1, true);
-        ASSERT_NE(d.A, nullptr);
-        run_result<T> out;
-        run_factorization<Kind::ic, T>(handle, d.A, d.val, 1, opt, out);
-        ASSERT_EQ(out.compute_status, rocsparse_status_success);
-        check_factor<Kind::ic>(d.base, out.values, opt, "fat row");
-        EXPECT_EQ(out.singularity[0], rocsparse_singularity_none);
-        EXPECT_EQ(out.position[0], -1);
-    });
+    for(const int32_t fat : {520, 600})
+    {
+        check_csr_matrix<Kind::ic, float>(
+            handle, make_fat_row_matrix<float>(fat, false, 3), opt, "fat float");
+        check_csr_matrix<Kind::ic, double>(
+            handle, make_fat_row_matrix<double>(fat, false, 3), opt, "fat double");
+        check_csr_matrix<Kind::ic, rocsparse_float_complex>(
+            handle, make_fat_row_matrix<rocsparse_float_complex>(fat, false, 3), opt, "fat cf");
+        check_csr_matrix<Kind::ic, rocsparse_double_complex>(
+            handle, make_fat_row_matrix<rocsparse_double_complex>(fat, false, 3), opt, "fat cd");
+    }
+}
+
+// csrilu0 and csrildlt0 switch to their binary-search kernels for rows of 512 (ILU,
+// wavefront 32) / more than 512 (ILDLT) entries.
+TEST_F(Cov70PrecondGeneric, spilu0_spildlt0_csr_binsearch_fat_row)
+{
+    run_options opt;
+    for(const int32_t fat : {520, 600})
+    {
+        check_csr_matrix<Kind::ilu, float>(
+            handle, make_fat_row_matrix<float>(fat, true, 3), opt, "ilu float");
+        check_csr_matrix<Kind::ilu, double>(
+            handle, make_fat_row_matrix<double>(fat, true, 3), opt, "ilu double");
+        check_csr_matrix<Kind::ilu, rocsparse_double_complex>(
+            handle, make_fat_row_matrix<rocsparse_double_complex>(fat, true, 3), opt, "ilu cd");
+        check_csr_matrix<Kind::ildlt, float>(
+            handle, make_fat_row_matrix<float>(fat, true, 3), opt, "ildlt float");
+        check_csr_matrix<Kind::ildlt, double>(
+            handle, make_fat_row_matrix<double>(fat, true, 3), opt, "ildlt double");
+        check_csr_matrix<Kind::ildlt, rocsparse_double_complex>(
+            handle, make_fat_row_matrix<rocsparse_double_complex>(fat, true, 3), opt, "ildlt cd");
+    }
 }
 
 TEST_F(Cov70PrecondGeneric, spildlt0_csr_hash_row_lengths)
 {
     // Row lengths up to 512 select the hash kernel; the table size grows with the length.
     // The lengths stay below the table sizes (32, 64, ..., 512): a row that fills the
-    // whole shared-memory table makes the lookup of a missing key probe forever.
+    // whole shared-memory table makes the lookup of a missing key probe forever (the
+    // generator throws for those lengths).
     run_options opt;
     for(const int32_t fat : {8, 31, 33, 63, 65, 127, 129, 255, 257, 511})
     {
-        dev_csr<double, int32_t, int32_t> d;
-        d.init(make_fat_row_matrix<double>(fat), 1, true);
-        ASSERT_NE(d.A, nullptr);
-        run_result<double> out;
-        run_factorization<Kind::ildlt, double>(handle, d.A, d.val, 1, opt, out);
-        ASSERT_EQ(out.compute_status, rocsparse_status_success);
-        check_factor<Kind::ildlt>(d.base, out.values, opt, "fat=" + std::to_string(fat));
-        EXPECT_EQ(out.singularity[0], rocsparse_singularity_none);
-        EXPECT_EQ(out.position[0], -1);
+        check_csr_matrix<Kind::ildlt, double>(
+            handle, make_fat_row_matrix<double>(fat), opt, "fat=" + std::to_string(fat));
+        check_csr_matrix<Kind::ildlt, double>(handle,
+                                              make_fat_row_matrix<double>(fat, true, 3),
+                                              opt,
+                                              "band 3 fat=" + std::to_string(fat));
     }
 }
 
@@ -838,32 +1432,12 @@ TEST_F(Cov70PrecondGeneric, spildlt0_csr_hash_types_and_indices)
     run_options opt;
     for_all_types([&](auto tag) {
         using T = decltype(tag);
-        dev_csr<T, int32_t, int32_t> d;
-        d.init(make_fat_row_matrix<T>(40), 1, true);
-        ASSERT_NE(d.A, nullptr);
-        run_result<T> out;
-        run_factorization<Kind::ildlt, T>(handle, d.A, d.val, 1, opt, out);
-        ASSERT_EQ(out.compute_status, rocsparse_status_success);
-        check_factor<Kind::ildlt>(d.base, out.values, opt, "types");
+        check_csr_matrix<Kind::ildlt, T>(handle, make_fat_row_matrix<T>(40), opt, "types");
     });
-    {
-        dev_csr<float, int64_t, int32_t> d;
-        d.init(make_fat_row_matrix<float>(20), 1, true);
-        ASSERT_NE(d.A, nullptr);
-        run_result<float> out;
-        run_factorization<Kind::ildlt, float>(handle, d.A, d.val, 1, opt, out);
-        ASSERT_EQ(out.compute_status, rocsparse_status_success);
-        check_factor<Kind::ildlt>(d.base, out.values, opt, "i64/i32");
-    }
-    {
-        dev_csr<double, int64_t, int64_t> d;
-        d.init(make_fat_row_matrix<double>(20), 1, true);
-        ASSERT_NE(d.A, nullptr);
-        run_result<double> out;
-        run_factorization<Kind::ildlt, double>(handle, d.A, d.val, 1, opt, out);
-        ASSERT_EQ(out.compute_status, rocsparse_status_success);
-        check_factor<Kind::ildlt>(d.base, out.values, opt, "i64/i64");
-    }
+    check_csr_matrix<Kind::ildlt, float, int64_t, int32_t>(
+        handle, make_fat_row_matrix<float>(20), opt, "i64/i32");
+    check_csr_matrix<Kind::ildlt, double, int64_t, int64_t>(
+        handle, make_fat_row_matrix<double>(20), opt, "i64/i64");
 }
 
 TEST_F(Cov70PrecondGeneric, spildlt0_csr_singularity_outputs)
@@ -940,7 +1514,10 @@ namespace
         EXPECT_EQ(A::set(handle, descr, A::input(In::sing_tol), &value, 1),
                   rocsparse_status_invalid_value);
 
-        // Valid inputs: the boost tolerance may be a float or a double.
+        // Valid inputs: the boost tolerance may be given as a float or a double. The
+        // library stores the pointer and records the datatype as f64 whatever the
+        // size, so a float tolerance would be read as a double: it is only
+        // validated here, no factorization of this test uses it.
         const float ftol = 1.0f;
         EXPECT_EQ(A::set(handle, descr, A::input(In::boost_tol), &ftol, sizeof(float)),
                   rocsparse_status_success);
@@ -990,7 +1567,8 @@ namespace
         other.init(make_grid_matrix<double>(3, false), 1, true);
         ASSERT_NE(other.A, nullptr);
 
-        typename A::descr_t descr = nullptr;
+        descr_guard<K> guard(handle);
+        auto&          descr = guard.descr;
         ASSERT_EQ(A::create(handle, &descr), rocsparse_status_success);
 
         size_t size = 0;
@@ -1095,6 +1673,7 @@ namespace
                   rocsparse_status_invalid_value);
 
         EXPECT_EQ(A::destroy(handle, descr), rocsparse_status_success);
+        descr = nullptr;
     }
 }
 
