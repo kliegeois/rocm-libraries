@@ -34,7 +34,9 @@
 
 #include <deque>
 #include <memory>
+#include <set>
 #include <string>
+#include <tuple>
 
 using namespace cov70l2;
 
@@ -286,10 +288,13 @@ namespace
     class Cov70L2Csrmv : public rocsparse_ut::HandleTest
     {
     protected:
+        // The full cross product of operation, analysis mode, matrix type, index base
+        // and pointer mode; each one is an independent loop. A symmetric matrix is
+        // only checked with real data.
         template <typename T>
-        void sweep(bool all)
+        void sweep()
         {
-            int k = 0;
+            std::set<std::tuple<int, int, int, int, int>> seen;
             for(const auto trans : {rocsparse_operation_none,
                                     rocsparse_operation_transpose,
                                     rocsparse_operation_conjugate_transpose})
@@ -300,31 +305,40 @@ namespace
                         if(mtype == rocsparse_matrix_type_symmetric
                            && std::is_same<typename real_of<T>::type, T>::value == false)
                             continue; // symmetric products are only checked for real data
-                        if(!all && (k++ % 2) == 1)
-                            continue;
-                        csrmv_case c;
-                        c.trans     = trans;
-                        c.info_mode = info_mode;
-                        c.mtype     = mtype;
-                        c.device    = (info_mode == 1);
-                        c.base      = (trans == rocsparse_operation_transpose) ? 1 : 0;
-                        run_csrmv<T>(handle, c);
-                        if(::testing::Test::HasFailure())
-                            return;
+                        for(const int base : {0, 1})
+                            for(const bool device : {false, true})
+                            {
+                                seen.insert(std::make_tuple(static_cast<int>(trans),
+                                                            info_mode,
+                                                            static_cast<int>(mtype),
+                                                            base,
+                                                            device ? 1 : 0));
+                                csrmv_case c;
+                                c.trans     = trans;
+                                c.info_mode = info_mode;
+                                c.mtype     = mtype;
+                                c.device    = device;
+                                c.base      = base;
+                                run_csrmv<T>(handle, c);
+                                if(::testing::Test::HasFailure())
+                                    return;
+                            }
                     }
+            const bool real = std::is_same<typename real_of<T>::type, T>::value;
+            EXPECT_EQ(seen.size(), size_t{3 * 3 * (real ? 2 : 1) * 2 * 2});
         }
     };
 
     TEST_F(Cov70L2Csrmv, float_all_variants)
     {
-        sweep<float>(true);
+        sweep<float>();
     }
 
     TEST_F(Cov70L2Csrmv, double_and_complex)
     {
-        sweep<double>(false);
-        sweep<rocsparse_float_complex>(false);
-        sweep<rocsparse_double_complex>(false);
+        sweep<double>();
+        sweep<rocsparse_float_complex>();
+        sweep<rocsparse_double_complex>();
     }
 
     TEST_F(Cov70L2Csrmv, scalars_that_skip_or_scale)
@@ -755,10 +769,11 @@ namespace
     class Cov70L2V2Spmv : public rocsparse_ut::HandleTest
     {
     protected:
+        // Index base, pointer mode and (for nnzsplit) the starting block ids are
+        // independent loops, crossed with the algorithm, operation and extras.
         template <typename AT, typename CT, typename ST>
         void sweep(const std::vector<rocsparse_spmv_alg>& algs, int max_extras, bool both_trans)
         {
-            int k = 0;
             for(const auto alg : algs)
                 for(const auto trans : {rocsparse_operation_none, rocsparse_operation_transpose})
                 {
@@ -767,21 +782,26 @@ namespace
                                            || alg == rocsparse_spmv_alg_csr_nnzsplit);
                     if(trans != rocsparse_operation_none && (!trans_ok || !both_trans))
                         continue;
+                    const bool nnzsplit = (alg == rocsparse_spmv_alg_csr_nnzsplit);
                     for(int extras = 0; extras <= max_extras;
                         extras += (max_extras > 0 ? max_extras : 1))
-                    {
-                        v2_case c;
-                        c.alg          = alg;
-                        c.trans        = trans;
-                        c.extras       = extras;
-                        c.device       = ((k >> 1) & 1) != 0;
-                        c.base         = k & 1;
-                        c.starting_ids = (alg == rocsparse_spmv_alg_csr_nnzsplit) && (k % 3 == 0);
-                        ++k;
-                        run_v2<AT, CT, ST>(handle, c);
-                        if(::testing::Test::HasFailure())
-                            return;
-                    }
+                        for(const int base : {0, 1})
+                            for(const bool device : {false, true})
+                                for(const bool starting_ids : {false, true})
+                                {
+                                    if(starting_ids && !nnzsplit)
+                                        continue;
+                                    v2_case c;
+                                    c.alg          = alg;
+                                    c.trans        = trans;
+                                    c.extras       = extras;
+                                    c.device       = device;
+                                    c.base         = base;
+                                    c.starting_ids = starting_ids;
+                                    run_v2<AT, CT, ST>(handle, c);
+                                    if(::testing::Test::HasFailure())
+                                        return;
+                                }
                 }
         }
     };

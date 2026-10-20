@@ -32,14 +32,20 @@
 // general kernel when handle->wavefront_size == 32 (gfx1201). The kernels
 // specialised for 2x2, 3x3, 4x4, 5x5, 8x8, 16x16 and 17..32 are selected only
 // for another wavefront size, so the tests report wavefront 64 on the handle
-// while the call runs. Those kernels are not built on the wave size, except:
+// while the call runs (a no-op on a GPU whose wavefront really is 64: the same
+// kernels are then reached by the unmodified handle). The kernels do not depend
+// on the wave size, except:
 //   * blocks_per_row >= 64 selects a 64-lane logical wavefront (2x2, 3x3, 4x4)
 //     which does not exist on a wave32 GPU, so it is not exercised here;
-//   * the float 5x5 and 8x8 kernels then use 64 lane warps, so those two
-//     dimensions are checked with double and complex data only.
+//   * the 8x8 kernels (all precisions) and the 5x5 kernels of double and complex
+//     data reduce through shared memory without a barrier and need a real 64
+//     lane wavefront, so they are not run under the forced wavefront;
+//   * the float 5x5 kernel does work under the forced wavefront and is checked.
 //
 #include "unit_test_device_cov70_level2_common.hpp"
 
+#include <algorithm>
+#include <limits>
 #include <sstream>
 #include <string>
 
@@ -195,16 +201,28 @@ namespace
                        int                 base,
                        T                   alpha,
                        T                   beta,
-                       bool                device_mode)
+                       bool                device_mode,
+                       bool                poison = false)
     {
         SCOPED_TRACE(describe("gebsrmv", rbd, cbd, bpr, static_cast<int>(dir), base));
 
-        const host_bsr<T>    A  = make_bsr<T>(mb, nb, bpr, rbd, cbd, dir, base);
-        const std::vector<T> x  = make_vector<T>(static_cast<size_t>(nb) * cbd, 1);
+        host_bsr<T>          A  = make_bsr<T>(mb, nb, bpr, rbd, cbd, dir, base);
+        std::vector<T>       x  = make_vector<T>(static_cast<size_t>(nb) * cbd, 1);
         const std::vector<T> y0 = make_vector<T>(static_cast<size_t>(mb) * rbd, 5);
         std::vector<int32_t> rows;
         all_rows(mb, rows);
-        const std::vector<T> want = bsr_gemv(A, rows, {}, alpha, x, beta, y0);
+        std::vector<T> want = bsr_gemv(A, rows, {}, alpha, x, beta, y0);
+        if(poison)
+        {
+            // Only meaningful for alpha == 0 and beta == 1: y must come back untouched
+            // without the matrix and x being read, so a computation of
+            // beta * y + 0 * A * x would turn y into NaN.
+            ASSERT_TRUE(alpha == T{} && beta == rocsparse_ut::scalar<T>(1.0f));
+            const T nan = rocsparse_ut::scalar<T>(std::numeric_limits<float>::quiet_NaN());
+            std::fill(A.val.begin(), A.val.end(), nan);
+            std::fill(x.begin(), x.end(), nan);
+            want = y0;
+        }
 
         mat_descr descr;
         ASSERT_NE(descr.d, nullptr);
@@ -320,17 +338,54 @@ namespace
         sweep<rocsparse_double_complex>({1, 3, 8}, {5, 2}, {5}, true);
     }
 
-    TEST_F(Cov70L2Gebsrmv, alpha_zero_beta_one_is_identity)
+    TEST_F(Cov70L2Gebsrmv, alpha_zero_beta_one_leaves_y_untouched)
     {
-        // alpha == 0 and beta == 1 leaves y untouched (device scalars bypass the
-        // host side early return, so the kernels' own check is exercised too).
+        // alpha == 0 and beta == 1 leaves y untouched. The matrix values and x are NaN,
+        // so a product that is computed (0 * NaN) shows. Device scalars bypass the
+        // host side early return, so the kernels' own handling is exercised too.
+        for(const int32_t rbd : {1, 3, 6, 18})
+        {
+            const int32_t cbd = (rbd == 3) ? 2 : 5;
+            for(const bool device : {false, true})
+                for(const int base : {0, 1})
+                {
+                    check_gebsrmv<float>(handle,
+                                         rocsparse_direction_row,
+                                         4,
+                                         9,
+                                         3,
+                                         rbd,
+                                         cbd,
+                                         base,
+                                         0.0f,
+                                         1.0f,
+                                         device,
+                                         true);
+                    check_gebsrmv<float>(handle,
+                                         rocsparse_direction_column,
+                                         4,
+                                         9,
+                                         3,
+                                         rbd,
+                                         cbd,
+                                         base,
+                                         0.0f,
+                                         1.0f,
+                                         device,
+                                         true);
+                }
+        }
+    }
+
+    TEST_F(Cov70L2Gebsrmv, alpha_zero_beta_zero_clears_y)
+    {
         for(const int32_t rbd : {1, 3, 6, 18})
         {
             const int32_t cbd = (rbd == 3) ? 2 : 5;
             for(const bool device : {false, true})
             {
                 check_gebsrmv<float>(
-                    handle, rocsparse_direction_row, 4, 9, 3, rbd, cbd, 0, 0.0f, 1.0f, device);
+                    handle, rocsparse_direction_row, 4, 9, 3, rbd, cbd, 0, 0.0f, 0.0f, device);
                 check_gebsrmv<float>(
                     handle, rocsparse_direction_column, 4, 9, 3, rbd, cbd, 1, 0.0f, 0.0f, device);
             }
@@ -562,11 +617,12 @@ namespace
         }
     };
 
-    TEST_F(Cov70L2Bsrxmv, general_kernel_wave32)
+    TEST_F(Cov70L2Bsrxmv, general_kernels_native_wavefront)
     {
-        // Wavefront 32 (the real device): every block dimension is handled by the
-        // general kernel. 1 and 2 use the tight 2x2 launch, 3..4 the 4x4 launch,
-        // 5..8 the 8x8, 9..16 the 16x16 and everything above the 32x32 launch.
+        // The handle keeps the wavefront size of the device. On a wave32 GPU every block
+        // dimension is handled by the general kernel (1 and 2 use the tight 2x2 launch,
+        // 3..4 the 4x4 launch, 5..8 the 8x8, 9..16 the 16x16 and everything above the
+        // 32x32 launch); on a wave64 GPU the specialised kernels are reached instead.
         sweep_xmv<float>({2, 3, 4, 5, 6, 7, 8, 9, 12, 16, 17, 24, 32, 33}, {3});
         sweep_xmv<double>({2, 4, 8, 16, 20}, {9});
         sweep_xmv<rocsparse_float_complex>({3, 5, 10}, {4});
@@ -588,8 +644,9 @@ namespace
     {
         const scoped_wavefront wave(handle, 64);
         // 16x16 and 17..32 do not depend on the wavefront size, float included. The
-        // 5x5 and 8x8 kernels of double and complex data reduce through shared memory
-        // without a barrier and need a real 64 lane wavefront, so they are not run.
+        // 8x8 kernels and the 5x5 kernels of double and complex data reduce through
+        // shared memory without a barrier and need a real 64 lane wavefront, so they
+        // are not run (the float 5x5 kernel is run below).
         sweep_xmv<float>({16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32}, {3});
         sweep_xmv<double>({16, 19, 32}, {7});
         sweep_xmv<rocsparse_float_complex>({16, 17, 25}, {2});
@@ -598,7 +655,9 @@ namespace
 
     TEST_F(Cov70L2Bsrxmv, float_5x5_wave64_dispatch)
     {
-        // The single precision 8x8 kernel needs a real 64 lane wavefront.
+        // The single precision 5x5 kernel works under the forced wavefront (the 8x8
+        // kernel and the 5x5 kernels of the other precisions need a real 64 lane
+        // wavefront and are not run).
         const scoped_wavefront wave(handle, 64);
         sweep_xmv<float>({5}, {3, 9});
     }
@@ -610,8 +669,9 @@ namespace
         const float one = 1.0f;
 
         device_vector<int32_t> ptr(std::vector<int32_t>{0, 1}), ind(std::vector<int32_t>{0});
-        device_vector<float>   val(std::vector<float>(4, 1.0f));
-        device_vector<float>   x(std::vector<float>(2, 1.0f)), y(std::vector<float>(2, 1.0f));
+        const float            nan = std::numeric_limits<float>::quiet_NaN();
+        device_vector<float>   val(std::vector<float>(4, nan));
+        device_vector<float>   x(std::vector<float>(2, nan)), y(std::vector<float>(2, 1.0f));
         ASSERT_TRUE(ptr.ptr && ind.ptr && val.ptr && x.ptr && y.ptr);
 
         // block_dim == 1 has no bsrxmv kernel.
@@ -654,7 +714,8 @@ namespace
                          &one,
                          y.ptr),
                   rocsparse_status_not_implemented);
-        // alpha == 0 with beta == 1 returns before touching y (host pointer mode).
+        // alpha == 0 with beta == 1 returns before touching y (host pointer mode); the
+        // matrix values and x are NaN, so computing beta * y + 0 * A * x shows.
         const float zero = 0.0f;
         EXPECT_EQ(bsrxmv(handle,
                          rocsparse_direction_row,
@@ -761,7 +822,7 @@ namespace
     {
     };
 
-    TEST_F(Cov70L2Bsrmv, general_kernel_wave32)
+    TEST_F(Cov70L2Bsrmv, general_kernels_native_wavefront)
     {
         sweep_mv<float>({2, 3, 4, 5, 6, 8, 11, 16, 17, 32, 34}, {4}, false);
         sweep_mv<double>({3, 9}, {5}, false);
@@ -772,8 +833,9 @@ namespace
         const scoped_wavefront wave(handle, 64);
         sweep_mv<float>({2, 3, 4}, {2, 10, 20}, false);
         sweep_mv<float>({16, 17, 20, 25, 32}, {3}, false);
-        // The 5x5 and 8x8 kernels of the other precisions reduce through shared memory
-        // without a barrier; they need a real 64 lane wavefront and are not run here.
+        // The 5x5 and 8x8 kernels (except the float 5x5 one) reduce through shared
+        // memory without a barrier; they need a real 64 lane wavefront and are not run
+        // here.
         sweep_mv<double>({2, 3, 4, 16, 18}, {6}, false);
         sweep_mv<rocsparse_float_complex>({3, 4}, {3}, false);
         sweep_mv<rocsparse_double_complex>({2, 17}, {3}, false);

@@ -80,26 +80,34 @@ namespace cov70l2
         return static_cast<double>(std::abs(v));
     }
 
-    // Deterministic values: multiples of 1/4 in [-1, 1]. Never zero for odd
-    // `n` so that they can be used for diagonal entries when `nonzero` is set.
+    // Deterministic values: multiples of 1/16 in [-1.875, 1.875]. The real part has
+    // period 61 and the imaginary part period 53 (both prime), so the sequence
+    // does not repeat for any block size or row length used by the tests, and
+    // an index that is off by a small multiple of a block dimension reads a
+    // different value. All sums and products of these values (a few thousand
+    // terms at most) are exact in single precision, which keeps the results of
+    // atomic reductions independent of the summation order.
+    // The value is zero for one `n` in 61 (a deliberate sprinkling of zeros);
+    // with `nonzero` set the zero is replaced, so the value can be used for a
+    // diagonal entry.
     template <typename T>
     inline T value_of(int64_t n, bool nonzero = false)
     {
-        int64_t k = (n * 7 + 3) % 9 - 4;
+        int64_t k = (n * 37 + 11) % 61 - 30;
         if(nonzero && k == 0)
-            k = 3;
-        return rocsparse_ut::scalar<T>(static_cast<float>(k) / 4.0f);
+            k = 7;
+        return rocsparse_ut::scalar<T>(static_cast<float>(k) / 16.0f);
     }
     template <>
     inline rocsparse_float_complex value_of<rocsparse_float_complex>(int64_t n, bool nonzero)
     {
-        const float im = static_cast<float>((n * 5 + 1) % 7 - 3) / 4.0f;
+        const float im = static_cast<float>((n * 23 + 5) % 53 - 26) / 16.0f;
         return rocsparse_float_complex(value_of<float>(n, nonzero), im);
     }
     template <>
     inline rocsparse_double_complex value_of<rocsparse_double_complex>(int64_t n, bool nonzero)
     {
-        const double im = static_cast<double>((n * 5 + 1) % 7 - 3) / 4.0;
+        const double im = static_cast<double>((n * 23 + 5) % 53 - 26) / 16.0;
         return rocsparse_double_complex(value_of<double>(n, nonzero), im);
     }
 
@@ -179,27 +187,6 @@ namespace cov70l2
                   operator rocsparse_mat_info() const
         {
             return d;
-        }
-    };
-
-    struct handle_guard
-    {
-        rocsparse_handle h = nullptr;
-        handle_guard()
-        {
-            if(rocsparse_create_handle(&h) != rocsparse_status_success)
-                h = nullptr;
-        }
-        ~handle_guard()
-        {
-            if(h)
-                (void)rocsparse_destroy_handle(h);
-        }
-        handle_guard(const handle_guard&) = delete;
-        handle_guard& operator=(const handle_guard&) = delete;
-                      operator rocsparse_handle() const
-        {
-            return h;
         }
     };
 
@@ -349,7 +336,10 @@ namespace cov70l2
     // dominant, so triangular solves are well conditioned.
     //   lower / upper: keep only that triangle (plus the diagonal),
     //   both:          keep the full pattern.
-    // `unit` omits the diagonal entries (unit diagonal storage).
+    // `with_diag` false omits the diagonal entries (the pattern of a matrix with an
+    // implicit unit diagonal).
+    // Every off-diagonal entry is non-zero. The magnitude of the diagonal exceeds
+    // the sum of the magnitudes of one triangle by a wide margin.
     template <typename T>
     inline host_csr<T> make_triangular_pattern(int32_t n,
                                                int32_t per_row,
@@ -396,7 +386,7 @@ namespace cov70l2
                 {
                     // dominant diagonal, real part positive
                     T d = value_of<T>(counter++, true);
-                    d   = rocsparse_ut::scalar<T>(static_cast<float>(2 * per_row + 2)) + d;
+                    d   = rocsparse_ut::scalar<T>(static_cast<float>(4 * per_row + 2)) + d;
                     a.val.push_back(d);
                 }
                 else

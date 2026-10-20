@@ -24,13 +24,16 @@
 
 //
 // Device unit tests of the generic triangular solve rocsparse_spsv for the
-// CSC, COO and ELL storage formats (the CSR path is covered elsewhere).
+// CSC, COO and (with ROCSPARSE_WITH_ELL_TRSV) ELL storage formats; the CSR path is
+// covered elsewhere.
 // Every solve is compared with a host substitution on a dense copy.
 //
 #include "unit_test_device_cov70_level2_common.hpp"
 
 #include <memory>
+#include <set>
 #include <string>
+#include <tuple>
 
 using namespace cov70l2;
 
@@ -39,13 +42,20 @@ namespace
     enum class sp_format
     {
         csc,
-        coo,
+        coo
+#ifdef ROCSPARSE_WITH_ELL_TRSV
+        ,
         ell
+#endif
     };
 
     inline const char* format_name(sp_format f)
     {
-        return f == sp_format::csc ? "csc" : (f == sp_format::coo ? "coo" : "ell");
+#ifdef ROCSPARSE_WITH_ELL_TRSV
+        if(f == sp_format::ell)
+            return "ell";
+#endif
+        return f == sp_format::csc ? "csc" : "coo";
     }
 
     // CSC arrays of A (the CSR arrays of A^T), same index base as A.
@@ -123,8 +133,12 @@ namespace
         // The device arrays must outlive the descriptor.
         host_csr<T>                              csc;
         std::unique_ptr<device_csr<T, Idx, Idx>> dcsc;
-        std::unique_ptr<device_vector<Idx>>      drow, dcol, dell_col;
-        std::unique_ptr<device_vector<T>>        dval, dell_val;
+        std::unique_ptr<device_vector<Idx>>      drow, dcol;
+        std::unique_ptr<device_vector<T>>        dval;
+#ifdef ROCSPARSE_WITH_ELL_TRSV
+        std::unique_ptr<device_vector<Idx>> dell_col;
+        std::unique_ptr<device_vector<T>>   dell_val;
+#endif
 
         switch(c.format)
         {
@@ -174,6 +188,7 @@ namespace
                       rocsparse_status_success);
             break;
         }
+#ifdef ROCSPARSE_WITH_ELL_TRSV
         case sp_format::ell:
         {
             int32_t width = 0;
@@ -205,6 +220,7 @@ namespace
                       rocsparse_status_success);
             break;
         }
+#endif
         }
 
         dnvec_guard vx, vy;
@@ -259,32 +275,51 @@ namespace
     class Cov70L2Spsv : public rocsparse_ut::HandleTest
     {
     protected:
+        // Every (fill mode, diagonal, operation, base, pointer mode) combination is run:
+        // the base and the pointer mode are independent loops, not derived from the
+        // other parameters.
         template <typename T, typename Idx>
         void sweep(sp_format format, bool all_trans)
         {
+            std::set<std::tuple<int, int, int, int, int>> seen;
             for(const auto fill : {rocsparse_fill_mode_lower, rocsparse_fill_mode_upper})
                 for(const auto diag : {rocsparse_diag_type_non_unit, rocsparse_diag_type_unit})
                     for(const auto trans : {rocsparse_operation_none,
                                             rocsparse_operation_transpose,
                                             rocsparse_operation_conjugate_transpose})
                     {
+#ifdef ROCSPARSE_WITH_ELL_TRSV
                         if(format == sp_format::ell && trans != rocsparse_operation_none)
                             continue; // ELL has no transposed solve (error path below)
+#endif
                         if(!all_trans && trans == rocsparse_operation_transpose)
                             continue;
-                        spsv_case c;
-                        c.format    = format;
-                        c.fill      = fill;
-                        c.diag      = diag;
-                        c.trans     = trans;
-                        const int k = static_cast<int>(fill) + 2 * static_cast<int>(diag)
-                                      + 4 * static_cast<int>(trans);
-                        c.base   = k & 1;
-                        c.device = ((k >> 1) & 1) != 0;
-                        run_spsv<T, Idx>(handle, c);
-                        if(::testing::Test::HasFailure())
-                            return;
+                        for(const int base : {0, 1})
+                            for(const bool device : {false, true})
+                            {
+                                seen.insert(std::make_tuple(static_cast<int>(fill),
+                                                            static_cast<int>(diag),
+                                                            static_cast<int>(trans),
+                                                            base,
+                                                            device ? 1 : 0));
+                                spsv_case c;
+                                c.format = format;
+                                c.fill   = fill;
+                                c.diag   = diag;
+                                c.trans  = trans;
+                                c.base   = base;
+                                c.device = device;
+                                run_spsv<T, Idx>(handle, c);
+                                if(::testing::Test::HasFailure())
+                                    return;
+                            }
                     }
+            size_t transes = all_trans ? 3 : 2;
+#ifdef ROCSPARSE_WITH_ELL_TRSV
+            if(format == sp_format::ell)
+                transes = 1;
+#endif
+            EXPECT_EQ(seen.size(), 2 * 2 * transes * 2 * 2);
         }
     };
 
@@ -310,6 +345,7 @@ namespace
         sweep<rocsparse_double_complex, int32_t>(sp_format::coo, false);
     }
 
+#ifdef ROCSPARSE_WITH_ELL_TRSV
     TEST_F(Cov70L2Spsv, ell_float_i32)
     {
         sweep<float, int32_t>(sp_format::ell, true);
@@ -320,11 +356,14 @@ namespace
         sweep<double, int64_t>(sp_format::ell, false);
         sweep<rocsparse_float_complex, int32_t>(sp_format::ell, false);
     }
+#endif
 
     TEST_F(Cov70L2Spsv, csc_transposed_solves_share_one_descriptor)
     {
-        // The CSC analysis is cached per (operation, fill mode): analyse the same
-        // descriptor for each operation, then solve with all of them.
+        // One matrix descriptor is analysed and solved with a different operation each
+        // time (none, transpose, none again, conjugate transpose): every result must
+        // match the host solve of its own operation, whatever analysis the descriptor
+        // held before.
         const spsv_case    base_case;
         const auto         A = make_spsv_matrix<double>(base_case);
         const auto         C = to_csc_arrays(A);
@@ -392,6 +431,7 @@ namespace
     }
 
     // ----- error paths --------------------------------------------------------------
+#ifdef ROCSPARSE_WITH_ELL_TRSV
     TEST_F(Cov70L2Spsv, ell_error_paths)
     {
         const spsv_case c;
@@ -487,9 +527,12 @@ namespace
                   rocsparse_status_success);
         EXPECT_EQ(call(rocsparse_operation_none, rect.d, vx.d), rocsparse_status_invalid_size);
     }
+#endif
 
-    TEST_F(Cov70L2Spsv, argument_checks_all_formats)
+    TEST_F(Cov70L2Spsv, argument_checks_csc)
     {
+        // The argument validation does not depend on the storage format; it is
+        // exercised through a CSC descriptor.
         const spsv_case      c;
         const auto           A = make_spsv_matrix<float>(c);
         const auto           C = to_csc_arrays(A);
