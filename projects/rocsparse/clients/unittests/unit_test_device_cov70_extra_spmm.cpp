@@ -38,6 +38,8 @@
 //
 #include "unit_test_cov70_extra_common.hpp"
 
+#include <limits>
+
 using namespace cov70;
 
 namespace
@@ -51,22 +53,25 @@ namespace
 
     struct SpmmCase
     {
-        SFmt                fmt        = SFmt::csr;
-        rocsparse_spmm_alg  alg        = rocsparse_spmm_alg_default;
-        rocsparse_operation opA        = rocsparse_operation_none;
-        rocsparse_operation opB        = rocsparse_operation_none;
-        rocsparse_order     order_B    = rocsparse_order_column;
-        rocsparse_order     order_C    = rocsparse_order_column;
-        int64_t             m          = 9; // rows of the stored A
-        int64_t             k          = 7; // columns of the stored A
-        int64_t             n          = 5; // columns of op(B) / C
-        int64_t             max_nnz    = 4; // max non-zeros per row
-        bool                device     = false;
-        cplx                alpha      = cplx(2.0, 0.0);
-        cplx                beta       = cplx(-1.0, 0.0);
-        bool                preprocess = true;
-        bool                long_rows  = false; // one row touching all columns, one empty row
-        int64_t             ld_pad     = 3;
+        SFmt                 fmt        = SFmt::csr;
+        rocsparse_spmm_alg   alg        = rocsparse_spmm_alg_default;
+        rocsparse_operation  opA        = rocsparse_operation_none;
+        rocsparse_operation  opB        = rocsparse_operation_none;
+        rocsparse_order      order_B    = rocsparse_order_column;
+        rocsparse_order      order_C    = rocsparse_order_column;
+        int64_t              m          = 9; // rows of the stored A
+        int64_t              k          = 7; // columns of the stored A
+        int64_t              n          = 5; // columns of op(B) / C
+        int64_t              max_nnz    = 4; // max non-zeros per row
+        bool                 device     = false;
+        cplx                 alpha      = cplx(2.0, 0.0);
+        cplx                 beta       = cplx(-1.0, 0.0);
+        bool                 preprocess = true;
+        bool                 long_rows  = false; // one row touching all columns, one empty row
+        int64_t              ld_pad     = 3;
+        rocsparse_index_base base       = rocsparse_index_base_zero;
+        // C holds NaN on input; only meaningful with beta == 0, where C must not be read.
+        bool nan_C = false;
     };
 
     std::string describe(const SpmmCase& c)
@@ -77,8 +82,9 @@ namespace
                + " opB=" + std::to_string(static_cast<int>(c.opB))
                + " oB=" + std::to_string(static_cast<int>(c.order_B))
                + " oC=" + std::to_string(static_cast<int>(c.order_C)) + " m=" + std::to_string(c.m)
-               + " k=" + std::to_string(c.k) + " n=" + std::to_string(c.n)
-               + " dev=" + std::to_string(c.device);
+               + " k=" + std::to_string(c.k) + " n=" + std::to_string(c.n) + " dev="
+               + std::to_string(c.device) + " base=" + std::to_string(static_cast<int>(c.base))
+               + " nan_C=" + std::to_string(c.nan_C);
     }
 
     // Device storage + descriptor of the sparse operand.
@@ -93,21 +99,25 @@ namespace
     };
 
     template <typename T, typename I, typename J>
-    void make_sparse(DevSparse<T, I, J>& d, SFmt fmt, const Csr& A)
+    void make_sparse(DevSparse<T, I, J>&  d,
+                     SFmt                 fmt,
+                     const Csr&           A,
+                     rocsparse_index_base base = rocsparse_index_base_zero)
     {
         const rocsparse_datatype dt = rocsparse_ut::dt_of<T>();
+        const int64_t            b  = static_cast<int64_t>(base);
         switch(fmt)
         {
         case SFmt::csr:
         {
-            make_csr_descr<T, I, J>(d.h, A, d.ptr, d.ind, d.val);
+            make_csr_descr<T, I, J>(d.h, A, d.ptr, d.ind, d.val, base);
             return;
         }
         case SFmt::csc:
         {
             const Csr At = transpose(A);
-            d.ptr        = up_idx<I>(At.ptr);
-            d.ind        = up_idx<J>(At.col);
+            d.ptr        = up_idx<I>(At.ptr, b);
+            d.ind        = up_idx<J>(At.col, b);
             d.val        = up_val<T>(At.val);
             ASSERT_TRUE(d.ptr.ptr && d.ind.ptr && d.val.ptr);
             ASSERT_EQ(rocsparse_create_csc_descr(&d.h.p,
@@ -119,7 +129,7 @@ namespace
                                                  d.val.ptr,
                                                  rocsparse_ut::it_of<I>(),
                                                  rocsparse_ut::it_of<J>(),
-                                                 rocsparse_index_base_zero,
+                                                 base,
                                                  dt),
                       rocsparse_status_success);
             return;
@@ -132,8 +142,8 @@ namespace
                     p < A.ptr[static_cast<size_t>(i) + 1];
                     ++p)
                     rows.push_back(i);
-            d.ptr     = up_idx<I>(rows);
-            d.coo_col = up_idx<I>(A.col);
+            d.ptr     = up_idx<I>(rows, b);
+            d.coo_col = up_idx<I>(A.col, b);
             d.val     = up_val<T>(A.val);
             ASSERT_TRUE(d.ptr.ptr && d.coo_col.ptr && d.val.ptr);
             ASSERT_EQ(rocsparse_create_coo_descr(&d.h.p,
@@ -144,7 +154,7 @@ namespace
                                                  d.coo_col.ptr,
                                                  d.val.ptr,
                                                  rocsparse_ut::it_of<I>(),
-                                                 rocsparse_index_base_zero,
+                                                 base,
                                                  dt),
                       rocsparse_status_success);
             return;
@@ -179,7 +189,17 @@ namespace
         const Dense opB_logical = random_dense<T>(K, c.n, rng);
         // apply_op is an involution, so applying it gives the stored operand.
         const Dense B_stored = apply_op(opB_logical, c.opB);
-        const Dense C0       = random_dense<T>(M, c.n, rng);
+        Dense       C0       = random_dense<T>(M, c.n, rng);
+        if(c.nan_C)
+        {
+            // beta == 0: the reference does not read C.
+            ASSERT_EQ(c.beta, cplx(0.0, 0.0));
+        }
+        const Dense C_ref = c.nan_C ? Dense(M, c.n) : C0;
+        if(c.nan_C)
+            for(auto& x : C0.v)
+                x = cplx(std::numeric_limits<double>::quiet_NaN(),
+                         is_complex_t<T>::value ? std::numeric_limits<double>::quiet_NaN() : 0.0);
 
         const int64_t ldb = min_ld(B_stored, c.order_B) + c.ld_pad;
         const int64_t ldc = min_ld(C0, c.order_C) + c.ld_pad;
@@ -189,7 +209,7 @@ namespace
         ASSERT_TRUE(dB.ptr && dC.ptr);
 
         DevSparse<T, I, J> sp;
-        make_sparse<T, I, J>(sp, c.fmt, A);
+        make_sparse<T, I, J>(sp, c.fmt, A, c.base);
         if(::testing::Test::HasFatalFailure())
             return;
 
@@ -257,7 +277,7 @@ namespace
         const Dense want = axpby(to_c<T>(alpha.h),
                                  matmul(apply_op(dense_of(A), c.opA), opB_logical),
                                  to_c<T>(beta.h),
-                                 C0);
+                                 C_ref);
         expect_dense_equal<T>(dC.host(), want, c.order_C, ldc, "C");
         // B is an input only.
         expect_dense_equal<T>(dB.host(), B_stored, c.order_B, ldb, "B");
@@ -436,6 +456,77 @@ TEST_F(SpmmCov70, scalar_combinations)
 }
 
 // ---------------------------------------------------------------------------
+// beta == 0: C is not read, NaN values in C must not reach the result (for
+// every format, algorithm and kernel family).
+// ---------------------------------------------------------------------------
+TEST_F(SpmmCov70, beta_zero_ignores_nan_in_C)
+{
+    struct FmtAlgs
+    {
+        SFmt                            fmt;
+        std::vector<rocsparse_spmm_alg> algs;
+    };
+    const std::vector<FmtAlgs> sets
+        = {{SFmt::csr, csr_alg_list},
+           {SFmt::csc, {rocsparse_spmm_alg_default, rocsparse_spmm_alg_csr_row_split}},
+           {SFmt::coo,
+            {rocsparse_spmm_alg_default,
+             rocsparse_spmm_alg_coo_segmented,
+             rocsparse_spmm_alg_coo_atomic,
+             rocsparse_spmm_alg_coo_segmented_atomic}}};
+    for(const FmtAlgs& fa : sets)
+        for(rocsparse_spmm_alg alg : fa.algs)
+            for(bool device : {false, true})
+                for(rocsparse_operation opA :
+                    {rocsparse_operation_none, rocsparse_operation_transpose})
+                {
+                    SpmmCase c;
+                    c.fmt       = fa.fmt;
+                    c.alg       = alg;
+                    c.opA       = opA;
+                    c.device    = device;
+                    c.beta      = cplx(0.0, 0.0);
+                    c.nan_C     = true;
+                    c.long_rows = true;
+                    run_spmm<float, int32_t, int32_t>(handle, c);
+                    if(HasFatalFailure())
+                        return;
+                    run_spmm<rocsparse_double_complex, int32_t, int32_t>(handle, c);
+                    if(HasFatalFailure())
+                        return;
+                }
+}
+
+// ---------------------------------------------------------------------------
+// Index base one.
+// ---------------------------------------------------------------------------
+TEST_F(SpmmCov70, index_base_one)
+{
+    for(SFmt f : {SFmt::csr, SFmt::csc, SFmt::coo})
+        for(bool device : {false, true})
+            for(rocsparse_operation opA : {rocsparse_operation_none, rocsparse_operation_transpose})
+            {
+                SpmmCase c;
+                c.fmt       = f;
+                c.opA       = opA;
+                c.device    = device;
+                c.base      = rocsparse_index_base_one;
+                c.long_rows = true;
+                run_spmm<float, int32_t, int32_t>(handle, c);
+                if(HasFatalFailure())
+                    return;
+                run_spmm<double, int64_t, int32_t>(handle, c);
+                if(HasFatalFailure())
+                    return;
+                c.alg = (f == SFmt::coo) ? rocsparse_spmm_alg_coo_atomic
+                                         : rocsparse_spmm_alg_csr_row_split;
+                run_spmm<rocsparse_float_complex, int32_t, int32_t>(handle, c);
+                if(HasFatalFailure())
+                    return;
+            }
+}
+
+// ---------------------------------------------------------------------------
 // The preprocess stage is optional; a second preprocess / re-compute reuses the
 // cached row profile.
 // ---------------------------------------------------------------------------
@@ -597,50 +688,57 @@ TEST_F(SpmmCov70, row_split_column_sweep_transposed_and_types)
 // ---------------------------------------------------------------------------
 TEST_F(SpmmCov70, legacy_csrmm_values_and_errors)
 {
-    Rng             rng(21);
-    const int64_t   m = 8, k = 6, n = 4;
-    const Csr       A = random_csr<float>(m, k, 4, rng);
-    MatDescrH       descr;
-    DevBuf<int32_t> dptr = up_idx<int32_t>(A.ptr);
-    DevBuf<int32_t> dcol = up_idx<int32_t>(A.col);
-    DevBuf<float>   dval = up_val<float>(A.val);
+    Rng                   rng(21);
+    const int64_t         m = 8, k = 6, n = 4;
+    const Csr             A = random_csr<float>(m, k, 4, rng);
+    MatDescrH             descr;
+    DevBuf<rocsparse_int> dptr = up_idx<rocsparse_int>(A.ptr);
+    DevBuf<rocsparse_int> dcol = up_idx<rocsparse_int>(A.col);
+    DevBuf<float>         dval = up_val<float>(A.val);
+    // The same matrix with index base one.
+    MatDescrH             descr1(rocsparse_index_base_one);
+    DevBuf<rocsparse_int> dptr1 = up_idx<rocsparse_int>(A.ptr, 1);
+    DevBuf<rocsparse_int> dcol1 = up_idx<rocsparse_int>(A.col, 1);
 
-    for(rocsparse_operation opA : {rocsparse_operation_none, rocsparse_operation_transpose})
-        for(rocsparse_operation opB : {rocsparse_operation_none, rocsparse_operation_transpose})
-        {
-            const int64_t M    = (opA == rocsparse_operation_none) ? m : k;
-            const int64_t K    = (opA == rocsparse_operation_none) ? k : m;
-            const Dense   opBl = random_dense<float>(K, n, rng);
-            const Dense   Bs   = apply_op(opBl, opB);
-            const Dense   C0   = random_dense<float>(M, n, rng);
-            const int64_t ldb  = min_ld(Bs, rocsparse_order_column) + 2;
-            const int64_t ldc  = min_ld(C0, rocsparse_order_column) + 2;
-            DevBuf<float> dB   = up_raw<float>(store_dense<float>(Bs, rocsparse_order_column, ldb));
-            DevBuf<float> dC   = up_raw<float>(store_dense<float>(C0, rocsparse_order_column, ldc));
-            const float   alpha = 1.5f, beta = 0.5f;
-            ASSERT_EQ(rocsparse_scsrmm(handle,
-                                       opA,
-                                       opB,
-                                       static_cast<rocsparse_int>(m),
-                                       static_cast<rocsparse_int>(n),
-                                       static_cast<rocsparse_int>(k),
-                                       static_cast<rocsparse_int>(A.nnz()),
-                                       &alpha,
-                                       descr.d,
-                                       dval.ptr,
-                                       dptr.ptr,
-                                       dcol.ptr,
-                                       dB.ptr,
-                                       static_cast<rocsparse_int>(ldb),
-                                       &beta,
-                                       dC.ptr,
-                                       static_cast<rocsparse_int>(ldc)),
-                      rocsparse_status_success);
-            ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
-            const Dense want = axpby(
-                cplx(alpha, 0), matmul(apply_op(dense_of(A), opA), opBl), cplx(beta, 0), C0);
-            expect_dense_equal<float>(dC.host(), want, rocsparse_order_column, ldc, "C");
-        }
+    for(int one_based = 0; one_based < 2; ++one_based)
+        for(rocsparse_operation opA : {rocsparse_operation_none, rocsparse_operation_transpose})
+            for(rocsparse_operation opB : {rocsparse_operation_none, rocsparse_operation_transpose})
+            {
+                const int64_t M    = (opA == rocsparse_operation_none) ? m : k;
+                const int64_t K    = (opA == rocsparse_operation_none) ? k : m;
+                const Dense   opBl = random_dense<float>(K, n, rng);
+                const Dense   Bs   = apply_op(opBl, opB);
+                const Dense   C0   = random_dense<float>(M, n, rng);
+                const int64_t ldb  = min_ld(Bs, rocsparse_order_column) + 2;
+                const int64_t ldc  = min_ld(C0, rocsparse_order_column) + 2;
+                DevBuf<float> dB
+                    = up_raw<float>(store_dense<float>(Bs, rocsparse_order_column, ldb));
+                DevBuf<float> dC
+                    = up_raw<float>(store_dense<float>(C0, rocsparse_order_column, ldc));
+                const float alpha = 1.5f, beta = 0.5f;
+                ASSERT_EQ(rocsparse_scsrmm(handle,
+                                           opA,
+                                           opB,
+                                           static_cast<rocsparse_int>(m),
+                                           static_cast<rocsparse_int>(n),
+                                           static_cast<rocsparse_int>(k),
+                                           static_cast<rocsparse_int>(A.nnz()),
+                                           &alpha,
+                                           one_based ? descr1.d : descr.d,
+                                           dval.ptr,
+                                           one_based ? dptr1.ptr : dptr.ptr,
+                                           one_based ? dcol1.ptr : dcol.ptr,
+                                           dB.ptr,
+                                           static_cast<rocsparse_int>(ldb),
+                                           &beta,
+                                           dC.ptr,
+                                           static_cast<rocsparse_int>(ldc)),
+                          rocsparse_status_success);
+                ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
+                const Dense want = axpby(
+                    cplx(alpha, 0), matmul(apply_op(dense_of(A), opA), opBl), cplx(beta, 0), C0);
+                expect_dense_equal<float>(dC.host(), want, rocsparse_order_column, ldc, "C");
+            }
 
     // argument checks
     DevBuf<float> dB(size_t{256}), dC(size_t{256});
