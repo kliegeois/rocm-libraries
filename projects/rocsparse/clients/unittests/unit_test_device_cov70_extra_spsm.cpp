@@ -37,6 +37,7 @@
 //
 #include "unit_test_cov70_extra_common.hpp"
 
+#include <limits>
 #include <memory>
 
 using namespace cov70;
@@ -52,19 +53,23 @@ namespace
 
     struct SpsmCase
     {
-        Fmt                 fmt     = Fmt::csr;
-        rocsparse_operation opA     = rocsparse_operation_none;
-        rocsparse_operation opB     = rocsparse_operation_none;
-        rocsparse_order     order_B = rocsparse_order_column;
-        rocsparse_order     order_C = rocsparse_order_column;
-        rocsparse_fill_mode fill    = rocsparse_fill_mode_lower;
-        rocsparse_diag_type diag    = rocsparse_diag_type_non_unit;
-        int64_t             m       = 11;
-        int64_t             nrhs    = 5;
-        bool                device  = false;
-        cplx                alpha   = cplx(2.0, 0.0);
-        int64_t             ld_pad  = 2;
-        uint64_t            seed    = 1;
+        Fmt                  fmt     = Fmt::csr;
+        rocsparse_operation  opA     = rocsparse_operation_none;
+        rocsparse_operation  opB     = rocsparse_operation_none;
+        rocsparse_order      order_B = rocsparse_order_column;
+        rocsparse_order      order_C = rocsparse_order_column;
+        rocsparse_fill_mode  fill    = rocsparse_fill_mode_lower;
+        rocsparse_diag_type  diag    = rocsparse_diag_type_non_unit;
+        int64_t              m       = 11;
+        int64_t              nrhs    = 5;
+        bool                 device  = false;
+        cplx                 alpha   = cplx(2.0, 0.0);
+        int64_t              ld_pad  = 2;
+        uint64_t             seed    = 1;
+        rocsparse_index_base base    = rocsparse_index_base_zero;
+        // Tolerance of the comparison with the host solution (relative to
+        // 1 + |value|); 0 is an exact comparison.
+        double tol = 0.0;
     };
 
     std::string describe(const SpsmCase& c)
@@ -76,7 +81,8 @@ namespace
                + " order_C=" + std::to_string(static_cast<int>(c.order_C))
                + " fill=" + std::to_string(static_cast<int>(c.fill))
                + " diag=" + std::to_string(static_cast<int>(c.diag)) + " m=" + std::to_string(c.m)
-               + " nrhs=" + std::to_string(c.nrhs) + " device=" + std::to_string(c.device);
+               + " nrhs=" + std::to_string(c.nrhs) + " device=" + std::to_string(c.device)
+               + " base=" + std::to_string(static_cast<int>(c.base));
     }
 
     // Well conditioned triangular matrix: up to three off-diagonal entries of
@@ -201,12 +207,13 @@ namespace
         void create_matrix()
         {
             const rocsparse_datatype dt = rocsparse_ut::dt_of<T>();
+            const int64_t            b  = static_cast<int64_t>(c.base);
             switch(c.fmt)
             {
             case Fmt::csr:
             {
-                ptr = up_idx<I>(A.ptr);
-                ind = up_idx<J>(A.col);
+                ptr = up_idx<I>(A.ptr, b);
+                ind = up_idx<J>(A.col, b);
                 val = up_val<T>(A.val);
                 ASSERT_TRUE(ptr.ptr && ind.ptr && val.ptr);
                 ASSERT_EQ(rocsparse_create_csr_descr(&sA.p,
@@ -218,7 +225,7 @@ namespace
                                                      val.ptr,
                                                      rocsparse_ut::it_of<I>(),
                                                      rocsparse_ut::it_of<J>(),
-                                                     rocsparse_index_base_zero,
+                                                     c.base,
                                                      dt),
                           rocsparse_status_success);
                 return;
@@ -226,8 +233,8 @@ namespace
             case Fmt::csc:
             {
                 const Csr At = transpose(A);
-                ptr          = up_idx<I>(At.ptr);
-                ind          = up_idx<J>(At.col);
+                ptr          = up_idx<I>(At.ptr, b);
+                ind          = up_idx<J>(At.col, b);
                 val          = up_val<T>(At.val);
                 ASSERT_TRUE(ptr.ptr && ind.ptr && val.ptr);
                 ASSERT_EQ(rocsparse_create_csc_descr(&sA.p,
@@ -239,7 +246,7 @@ namespace
                                                      val.ptr,
                                                      rocsparse_ut::it_of<I>(),
                                                      rocsparse_ut::it_of<J>(),
-                                                     rocsparse_index_base_zero,
+                                                     c.base,
                                                      dt),
                           rocsparse_status_success);
                 return;
@@ -252,8 +259,8 @@ namespace
                         p < A.ptr[static_cast<size_t>(i) + 1];
                         ++p)
                         rows.push_back(i);
-                ptr     = up_idx<I>(rows);
-                coo_col = up_idx<I>(A.col);
+                ptr     = up_idx<I>(rows, b);
+                coo_col = up_idx<I>(A.col, b);
                 val     = up_val<T>(A.val);
                 ASSERT_TRUE(ptr.ptr && coo_col.ptr && val.ptr);
                 ASSERT_EQ(rocsparse_create_coo_descr(&sA.p,
@@ -264,7 +271,7 @@ namespace
                                                      coo_col.ptr,
                                                      val.ptr,
                                                      rocsparse_ut::it_of<I>(),
-                                                     rocsparse_index_base_zero,
+                                                     c.base,
                                                      dt),
                           rocsparse_status_success);
                 return;
@@ -300,7 +307,7 @@ namespace
 
         void check()
         {
-            expect_dense_equal<T>(dC.host(), want, c.order_C, ldc, "C");
+            expect_dense_equal<T>(dC.host(), want, c.order_C, ldc, "C", cplx(-77.0, 0.0), c.tol);
             // B is an input only.
             expect_dense_equal<T>(dB.host(), B_stored, c.order_B, ldb, "B");
         }
@@ -322,34 +329,39 @@ namespace
                    const std::vector<rocsparse_operation>& opAs,
                    const std::vector<rocsparse_operation>& opBs,
                    bool                                    device,
-                   uint64_t                                seed)
+                   uint64_t                                seed,
+                   bool                                    all_order_pairs = true)
     {
+        // With !all_order_pairs only the combinations where B and C have a
+        // different storage order are run (both orders still appear for each
+        // of the two matrices); the full grid is run by the other types.
         const rocsparse_order orders[] = {rocsparse_order_column, rocsparse_order_row};
         for(Fmt f : fmts)
             for(rocsparse_operation opA : opAs)
                 for(rocsparse_operation opB : opBs)
                     for(rocsparse_order oB : orders)
                         for(rocsparse_order oC : orders)
-                            for(rocsparse_fill_mode fill :
-                                {rocsparse_fill_mode_lower, rocsparse_fill_mode_upper})
-                                for(rocsparse_diag_type diag :
-                                    {rocsparse_diag_type_non_unit, rocsparse_diag_type_unit})
-                                {
-                                    SpsmCase c;
-                                    c.fmt     = f;
-                                    c.opA     = opA;
-                                    c.opB     = opB;
-                                    c.order_B = oB;
-                                    c.order_C = oC;
-                                    c.fill    = fill;
-                                    c.diag    = diag;
-                                    c.device  = device;
-                                    c.alpha   = device ? cplx(-0.5, 0.0) : cplx(2.0, 0.0);
-                                    c.seed    = seed++;
-                                    run_spsm<T, I, J>(handle, c);
-                                    if(::testing::Test::HasFatalFailure())
-                                        return;
-                                }
+                            if(all_order_pairs || oB != oC)
+                                for(rocsparse_fill_mode fill :
+                                    {rocsparse_fill_mode_lower, rocsparse_fill_mode_upper})
+                                    for(rocsparse_diag_type diag :
+                                        {rocsparse_diag_type_non_unit, rocsparse_diag_type_unit})
+                                    {
+                                        SpsmCase c;
+                                        c.fmt     = f;
+                                        c.opA     = opA;
+                                        c.opB     = opB;
+                                        c.order_B = oB;
+                                        c.order_C = oC;
+                                        c.fill    = fill;
+                                        c.diag    = diag;
+                                        c.device  = device;
+                                        c.alpha   = device ? cplx(-0.5, 0.0) : cplx(2.0, 0.0);
+                                        c.seed    = seed++;
+                                        run_spsm<T, I, J>(handle, c);
+                                        if(::testing::Test::HasFatalFailure())
+                                            return;
+                                    }
     }
 
     const std::vector<Fmt>                 all_fmts = {Fmt::csr, Fmt::csc, Fmt::coo};
@@ -371,20 +383,21 @@ TEST_F(SpsmCov70, solve_float)
 
 TEST_F(SpsmCov70, solve_double_device_alpha)
 {
-    spsm_grid<double, int32_t, int32_t>(handle, all_fmts, real_ops, real_ops, true, 1001);
+    spsm_grid<double, int32_t, int32_t>(handle, all_fmts, real_ops, real_ops, true, 1001, false);
 }
 
 TEST_F(SpsmCov70, solve_complex)
 {
     spsm_grid<rocsparse_float_complex, int32_t, int32_t>(
-        handle, all_fmts, complex_ops, complex_ops, false, 2001);
+        handle, all_fmts, complex_ops, complex_ops, false, 2001, false);
     spsm_grid<rocsparse_double_complex, int32_t, int32_t>(
         handle,
         {Fmt::csr, Fmt::coo},
         {rocsparse_operation_none, rocsparse_operation_conjugate_transpose},
         {rocsparse_operation_none, rocsparse_operation_conjugate_transpose},
         true,
-        3001);
+        3001,
+        false);
 }
 
 TEST_F(SpsmCov70, index_types)
@@ -421,7 +434,37 @@ TEST_F(SpsmCov70, right_hand_side_counts_and_sizes)
                 c.opB  = (nrhs % 2 == 0) ? rocsparse_operation_transpose : rocsparse_operation_none;
                 c.order_C = (m % 2 == 0) ? rocsparse_order_row : rocsparse_order_column;
                 c.order_B = (nrhs > 3) ? rocsparse_order_row : rocsparse_order_column;
+                // The solution is not exactly representable for the larger
+                // systems (chains of divisions by 4 and 8 summed in a
+                // different order than on the host). Measured maximum error of
+                // this test: 5.8e-8 (relative to 1 + |value|), about half a
+                // float ulp; the bound allows 4 float epsilons.
+                c.tol = 4.0 * std::numeric_limits<float>::epsilon();
                 run_spsm<float, int32_t, int32_t>(handle, c);
+                if(HasFatalFailure())
+                    return;
+            }
+}
+
+TEST_F(SpsmCov70, index_base_one)
+{
+    uint64_t seed = 8000;
+    for(Fmt f : all_fmts)
+        for(rocsparse_operation opA : real_ops)
+            for(rocsparse_fill_mode fill : {rocsparse_fill_mode_lower, rocsparse_fill_mode_upper})
+            {
+                SpsmCase c;
+                c.fmt  = f;
+                c.opA  = opA;
+                c.fill = fill;
+                c.base = rocsparse_index_base_one;
+                c.seed = seed++;
+                run_spsm<float, int32_t, int32_t>(handle, c);
+                if(HasFatalFailure())
+                    return;
+                c.seed   = seed++;
+                c.device = true;
+                run_spsm<double, int64_t, int32_t>(handle, c);
                 if(HasFatalFailure())
                     return;
             }
@@ -556,7 +599,7 @@ TEST_F(SpsmCov70, argument_errors_and_unsupported_formats)
                                                  dt),
                   rocsparse_status_success);
 
-        // ELL with the width of the longest row (columns / values are never read).
+        // ELL with width 1 (columns / values are never read).
         const int64_t   width = 1;
         DevBuf<int32_t> ell_col(size_t(p.A.m * width));
         DevBuf<float>   ell_val(size_t(p.A.m * width));
