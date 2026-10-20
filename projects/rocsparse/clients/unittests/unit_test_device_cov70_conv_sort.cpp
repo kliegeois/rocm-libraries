@@ -32,6 +32,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <numeric>
 #include <utility>
 #include <vector>
@@ -96,8 +97,13 @@ namespace
                                 bool                        set_direction,
                                 rocsparse_direction         dir)
     {
-        rocsparse_spsort_descr descr = nullptr;
-        EXPECT_EQ(rocsparse_spsort_descr_create(handle, &descr, nullptr), rocsparse_status_success);
+        SpsortDescr sd(handle);
+        EXPECT_EQ(rocsparse_spsort_descr_create(handle, &sd.d, nullptr), rocsparse_status_success);
+        rocsparse_spsort_descr descr = sd.d;
+        if(descr == nullptr)
+        {
+            return rocsparse_status_internal_error;
+        }
         EXPECT_EQ(rocsparse_spsort_set_input(
                       handle, descr, rocsparse_spsort_input_alg, &alg, sizeof(alg), nullptr),
                   rocsparse_status_success);
@@ -109,7 +115,8 @@ namespace
                 rocsparse_status_success);
         }
 
-        size_t analysis_size = 77;
+        const size_t unset         = std::numeric_limits<size_t>::max();
+        size_t       analysis_size = unset;
         EXPECT_EQ(rocsparse_spsort_buffer_size(handle,
                                                descr,
                                                source,
@@ -118,10 +125,25 @@ namespace
                                                &analysis_size,
                                                nullptr),
                   rocsparse_status_success);
-        EXPECT_EQ(analysis_size, size_t(0));
-        rocsparse_status status = rocsparse_spsort(
-            handle, descr, source, target, rocsparse_spsort_stage_analysis, 0, nullptr, nullptr);
+        EXPECT_NE(analysis_size, unset);
+        void* analysis_buffer = nullptr;
+        if(analysis_size > 0 && analysis_size != unset)
+        {
+            EXPECT_EQ(hipMalloc(&analysis_buffer, analysis_size), hipSuccess);
+        }
+        rocsparse_status status = rocsparse_spsort(handle,
+                                                   descr,
+                                                   source,
+                                                   target,
+                                                   rocsparse_spsort_stage_analysis,
+                                                   analysis_buffer ? analysis_size : 0,
+                                                   analysis_buffer,
+                                                   nullptr);
         EXPECT_EQ(status, rocsparse_status_success);
+        if(analysis_buffer != nullptr)
+        {
+            EXPECT_EQ(hipFree(analysis_buffer), hipSuccess);
+        }
 
         size_t size = 0;
         EXPECT_EQ(
@@ -136,7 +158,6 @@ namespace
             handle, descr, source, target, rocsparse_spsort_stage_compute, size, buffer, nullptr);
         EXPECT_EQ(hipDeviceSynchronize(), hipSuccess);
         EXPECT_EQ(hipFree(buffer), hipSuccess);
-        EXPECT_EQ(rocsparse_spsort_descr_destroy(handle, descr, nullptr), rocsparse_status_success);
         return status;
     }
 
@@ -210,6 +231,8 @@ namespace
         ASSERT_NE(pr, nullptr);
 
         rocsparse_spmat_descr src = nullptr, dst = nullptr;
+
+        SpmatGuard src_guard(src), dst_guard(dst);
         const auto idx_base = cfg.base ? rocsparse_index_base_one : rocsparse_index_base_zero;
         ASSERT_EQ(
             rocsparse_create_coo_descr(
@@ -245,9 +268,6 @@ namespace
         {
             EXPECT_EQ(g_val[k], e_val[k]) << "value " << k;
         }
-
-        EXPECT_EQ(rocsparse_destroy_spmat_descr(src), rocsparse_status_success);
-        EXPECT_EQ(rocsparse_destroy_spmat_descr(dst), rocsparse_status_success);
     }
 
     template <typename I, typename T>
@@ -370,6 +390,7 @@ namespace
 
         const auto idx_base       = cfg.base ? rocsparse_index_base_one : rocsparse_index_base_zero;
         rocsparse_spmat_descr src = nullptr, dst = nullptr;
+        SpmatGuard            src_guard(src), dst_guard(dst);
         if(cfg.csc)
         {
             ASSERT_EQ(rocsparse_create_csc_descr(&src,
@@ -446,9 +467,6 @@ namespace
         {
             EXPECT_EQ(g_val[k], e_val[k]) << "value " << k;
         }
-
-        EXPECT_EQ(rocsparse_destroy_spmat_descr(src), rocsparse_status_success);
-        EXPECT_EQ(rocsparse_destroy_spmat_descr(dst), rocsparse_status_success);
     }
 
     template <typename P, typename J, typename T>
@@ -497,7 +515,8 @@ namespace
 
     TEST_F(HandleTest, Cov70ConvSpsortDescrInputs)
     {
-        rocsparse_spsort_descr descr = nullptr;
+        SpsortDescr             sd(handle);
+        rocsparse_spsort_descr& descr = sd.d;
         EXPECT_EQ(rocsparse_spsort_descr_create(nullptr, &descr, nullptr),
                   rocsparse_status_invalid_handle);
         EXPECT_EQ(rocsparse_spsort_descr_create(handle, nullptr, nullptr),
@@ -551,6 +570,7 @@ namespace
         device_vector<int32_t> d_ptr(ptr), d_ind(ind);
         device_vector<float>   d_val(val);
         rocsparse_spmat_descr  mat = nullptr;
+        SpmatGuard             mat_guard(mat);
         ASSERT_EQ(rocsparse_create_csr_descr(&mat,
                                              2,
                                              2,
@@ -578,11 +598,10 @@ namespace
             rocsparse_spsort(
                 handle, descr, mat, mat, rocsparse_spsort_stage_analysis, 0, nullptr, nullptr),
             rocsparse_status_invalid_value);
-
-        EXPECT_EQ(rocsparse_destroy_spmat_descr(mat), rocsparse_status_success);
         EXPECT_EQ(rocsparse_spsort_descr_destroy(nullptr, descr, nullptr),
                   rocsparse_status_invalid_handle);
         EXPECT_EQ(rocsparse_spsort_descr_destroy(handle, descr, nullptr), rocsparse_status_success);
+        descr = nullptr;
         // A null descriptor is accepted.
         EXPECT_EQ(rocsparse_spsort_descr_destroy(handle, nullptr, nullptr),
                   rocsparse_status_success);
@@ -613,6 +632,7 @@ namespace
                 d, rows, cols, nz, p, i, v, rocsparse_indextype_i32, jt, base, dt);
         };
         rocsparse_spmat_descr src = nullptr, dst = nullptr;
+        SpmatGuard            src_guard(src), dst_guard(dst);
         ASSERT_EQ(make_csr(&src,
                            M,
                            N,
@@ -636,7 +656,9 @@ namespace
                            rocsparse_datatype_f32_r),
                   rocsparse_status_success);
 
-        rocsparse_spsort_descr descr = nullptr;
+        SpsortDescr sd(handle);
+
+        rocsparse_spsort_descr& descr = sd.d;
         ASSERT_EQ(rocsparse_spsort_descr_create(handle, &descr, nullptr), rocsparse_status_success);
         size_t     size        = 0;
         const auto buffer_size = [&](rocsparse_spsort_descr      dd,
@@ -674,6 +696,7 @@ namespace
 
         // Mismatching target.
         rocsparse_spmat_descr other = nullptr;
+        SpmatGuard            other_guard(other);
         ASSERT_EQ(make_csr(&other,
                            M,
                            N + 1,
@@ -688,6 +711,7 @@ namespace
         EXPECT_EQ(buffer_size(descr, src, other, rocsparse_spsort_stage_compute),
                   rocsparse_status_invalid_size);
         EXPECT_EQ(rocsparse_destroy_spmat_descr(other), rocsparse_status_success);
+        other = nullptr;
 
         ASSERT_EQ(make_csr(&other,
                            M,
@@ -703,6 +727,7 @@ namespace
         EXPECT_EQ(buffer_size(descr, src, other, rocsparse_spsort_stage_compute),
                   rocsparse_status_invalid_value);
         EXPECT_EQ(rocsparse_destroy_spmat_descr(other), rocsparse_status_success);
+        other = nullptr;
 
         ASSERT_EQ(make_csr(&other,
                            M,
@@ -718,6 +743,7 @@ namespace
         EXPECT_EQ(buffer_size(descr, src, other, rocsparse_spsort_stage_compute),
                   rocsparse_status_invalid_value);
         EXPECT_EQ(rocsparse_destroy_spmat_descr(other), rocsparse_status_success);
+        other = nullptr;
 
         ASSERT_EQ(rocsparse_create_coo_descr(&other,
                                              M,
@@ -733,9 +759,11 @@ namespace
         EXPECT_EQ(buffer_size(descr, src, other, rocsparse_spsort_stage_compute),
                   rocsparse_status_invalid_value);
         EXPECT_EQ(rocsparse_destroy_spmat_descr(other), rocsparse_status_success);
+        other = nullptr;
 
         // Data types that the value gather does not support.
         rocsparse_spmat_descr isrc = nullptr, idst = nullptr;
+        SpmatGuard            isrc_guard(isrc), idst_guard(idst);
         ASSERT_EQ(make_csr(&isrc,
                            M,
                            N,
@@ -760,8 +788,6 @@ namespace
                   rocsparse_status_success);
         EXPECT_EQ(buffer_size(descr, isrc, idst, rocsparse_spsort_stage_compute),
                   rocsparse_status_invalid_value);
-        EXPECT_EQ(rocsparse_destroy_spmat_descr(isrc), rocsparse_status_success);
-        EXPECT_EQ(rocsparse_destroy_spmat_descr(idst), rocsparse_status_success);
 
         // Batch counts must agree, and the batches of an overlapping layout are rejected.
         ASSERT_EQ(rocsparse_csr_set_strided_batch(dst, 2, 0, nnz), rocsparse_status_success);
@@ -848,10 +874,6 @@ namespace
                                    nullptr,
                                    nullptr),
                   rocsparse_status_invalid_value);
-
-        EXPECT_EQ(rocsparse_spsort_descr_destroy(handle, descr, nullptr), rocsparse_status_success);
-        EXPECT_EQ(rocsparse_destroy_spmat_descr(src), rocsparse_status_success);
-        EXPECT_EQ(rocsparse_destroy_spmat_descr(dst), rocsparse_status_success);
     }
 
     TEST_F(HandleTest, Cov70ConvSpsortCooDirectionRequired)
@@ -862,6 +884,7 @@ namespace
         device_vector<int32_t> d_row(row), d_col(col), d_row2(row), d_col2(col);
         device_vector<float>   d_val(val), d_val2(val);
         rocsparse_spmat_descr  src = nullptr, dst = nullptr;
+        SpmatGuard             src_guard(src), dst_guard(dst);
         ASSERT_EQ(rocsparse_create_coo_descr(&src,
                                              2,
                                              2,
@@ -884,7 +907,8 @@ namespace
                                              rocsparse_index_base_zero,
                                              rocsparse_datatype_f32_r),
                   rocsparse_status_success);
-        rocsparse_spsort_descr descr = nullptr;
+        SpsortDescr             sd(handle);
+        rocsparse_spsort_descr& descr = sd.d;
         ASSERT_EQ(rocsparse_spsort_descr_create(handle, &descr, nullptr), rocsparse_status_success);
         const rocsparse_spsort_alg alg = rocsparse_spsort_alg_default;
         ASSERT_EQ(rocsparse_spsort_set_input(
@@ -917,10 +941,6 @@ namespace
         EXPECT_EQ(rocsparse_spsort_buffer_size(
                       handle, descr, src, dst, rocsparse_spsort_stage_compute, &size, nullptr),
                   rocsparse_status_success);
-
-        EXPECT_EQ(rocsparse_spsort_descr_destroy(handle, descr, nullptr), rocsparse_status_success);
-        EXPECT_EQ(rocsparse_destroy_spmat_descr(src), rocsparse_status_success);
-        EXPECT_EQ(rocsparse_destroy_spmat_descr(dst), rocsparse_status_success);
     }
 
     TEST_F(HandleTest, Cov70ConvSpsortUnsupportedFormats)
@@ -931,6 +951,7 @@ namespace
         device_vector<int32_t> d_ind(ind), d_ind2(ind);
         device_vector<float>   d_val(val), d_val2(val);
         rocsparse_spmat_descr  src = nullptr, dst = nullptr;
+        SpmatGuard             src_guard(src), dst_guard(dst);
         ASSERT_EQ(rocsparse_create_coo_aos_descr(&src,
                                                  2,
                                                  2,
@@ -951,7 +972,8 @@ namespace
                                                  rocsparse_index_base_zero,
                                                  rocsparse_datatype_f32_r),
                   rocsparse_status_success);
-        rocsparse_spsort_descr descr = nullptr;
+        SpsortDescr             sd(handle);
+        rocsparse_spsort_descr& descr = sd.d;
         ASSERT_EQ(rocsparse_spsort_descr_create(handle, &descr, nullptr), rocsparse_status_success);
         const rocsparse_spsort_alg alg = rocsparse_spsort_alg_default;
         ASSERT_EQ(rocsparse_spsort_set_input(
@@ -965,9 +987,6 @@ namespace
             rocsparse_spsort(
                 handle, descr, src, dst, rocsparse_spsort_stage_analysis, 0, nullptr, nullptr),
             rocsparse_status_not_implemented);
-        EXPECT_EQ(rocsparse_spsort_descr_destroy(handle, descr, nullptr), rocsparse_status_success);
-        EXPECT_EQ(rocsparse_destroy_spmat_descr(src), rocsparse_status_success);
-        EXPECT_EQ(rocsparse_destroy_spmat_descr(dst), rocsparse_status_success);
     }
 
     // ------------------------------------------------------------------

@@ -401,7 +401,7 @@ namespace cov70conv
         {
             if(d != nullptr)
             {
-                (void)rocsparse_destroy_spmat_descr(d);
+                EXPECT_EQ(rocsparse_destroy_spmat_descr(d), rocsparse_status_success);
             }
         }
     };

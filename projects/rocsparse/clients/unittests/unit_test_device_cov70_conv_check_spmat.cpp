@@ -299,11 +299,29 @@ TEST_F(Cov70ConvCheckSpmat, DefectsDoubleComplexInt64)
     check_defects<rocsparse_double_complex, int64_t>(handle, rocsparse_index_base_one);
 }
 
-// Invalid fill mode of a triangular / symmetric matrix: the dense matrix has
-// entries on both sides of the diagonal.
-TEST_F(Cov70ConvCheckSpmat, InvalidFill)
+// Fill mode of a triangular / symmetric matrix. The full dense matrix has entries
+// on both sides of the diagonal, so it is invalid for either fill mode. A matrix
+// that only holds the lower (upper) triangle is valid for the lower (upper) fill
+// mode and invalid for the opposite one.
+TEST_F(Cov70ConvCheckSpmat, FillMode)
 {
-    const std::vector<double> dense = make_dense<double>();
+    const std::vector<double> full = make_dense<double>();
+    // Keeps the entries on and below (lower) or on and above (upper) the diagonal.
+    const auto triangle = [&](rocsparse_fill_mode fill) {
+        std::vector<double> t(full);
+        for(int64_t i = 0; i < M; ++i)
+            for(int64_t j = 0; j < N; ++j)
+                if((fill == rocsparse_fill_mode_lower) ? (j > i) : (j < i))
+                    t[i * N + j] = 0.0;
+        return t;
+    };
+    const std::vector<double> lower = triangle(rocsparse_fill_mode_lower);
+    const std::vector<double> upper = triangle(rocsparse_fill_mode_upper);
+    // The triangles are proper: both lose entries and keep entries.
+    ASSERT_NE(lower, full);
+    ASSERT_NE(upper, full);
+    ASSERT_NE(lower, upper);
+
     for(rocsparse_format f : {rocsparse_format_csr, rocsparse_format_csc, rocsparse_format_coo})
     {
         for(rocsparse_matrix_type type :
@@ -314,13 +332,43 @@ TEST_F(Cov70ConvCheckSpmat, InvalidFill)
                 SCOPED_TRACE(std::string(format_name(f))
                              + " type=" + std::to_string(static_cast<int>(type))
                              + " fill=" + std::to_string(static_cast<int>(fill)));
-                const HostMat<double, int32_t> h = build<double, int32_t>(
-                    f, rocsparse_index_base_zero, 3, rocsparse_direction_row, dense);
                 Attributes attributes;
                 attributes.type = type;
                 attributes.fill = fill;
-                EXPECT_EQ((check_matrix<double, int32_t>(handle, h, attributes)),
-                          rocsparse_data_status_invalid_fill);
+
+                const auto status_of = [&](const std::vector<double>& dense) {
+                    const HostMat<double, int32_t> h = build<double, int32_t>(
+                        f, rocsparse_index_base_zero, 3, rocsparse_direction_row, dense);
+                    return check_matrix<double, int32_t>(handle, h, attributes);
+                };
+
+                // Entries on both sides of the diagonal: invalid.
+                EXPECT_EQ(status_of(full), rocsparse_data_status_invalid_fill);
+
+                // Positive control: a triangle that matches the fill mode is valid and
+                // the opposite triangle is invalid. CSC is special: the library checks
+                // the column pointer / row index arrays with the CSR checker (the
+                // matrix is treated as the CSR matrix of its transpose) and passes the
+                // fill mode on unchanged, so for CSC the fill mode refers to the
+                // transposed matrix: a lower triangular CSC matrix is rejected for
+                // fill_mode_lower and accepted for fill_mode_upper (observed). That
+                // convention looks unintended, so it is not pinned: for CSC only
+                // require that exactly one of the two triangles is accepted.
+                const rocsparse_data_status s_lower = status_of(lower);
+                const rocsparse_data_status s_upper = status_of(upper);
+                if(f == rocsparse_format_csc)
+                {
+                    const bool lower_ok = (s_lower == rocsparse_data_status_success);
+                    const bool upper_ok = (s_upper == rocsparse_data_status_success);
+                    EXPECT_NE(lower_ok, upper_ok);
+                    EXPECT_EQ(lower_ok ? s_upper : s_lower, rocsparse_data_status_invalid_fill);
+                }
+                else
+                {
+                    const bool want_lower = (fill == rocsparse_fill_mode_lower);
+                    EXPECT_EQ(want_lower ? s_lower : s_upper, rocsparse_data_status_success);
+                    EXPECT_EQ(want_lower ? s_upper : s_lower, rocsparse_data_status_invalid_fill);
+                }
             }
         }
     }
