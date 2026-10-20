@@ -396,14 +396,14 @@ TEST_F(HandleTest, Cov70ConvSparseToSparseBaseMismatch)
                           rocsparse_status_success);
                 EXPECT_EQ(rocsparse_sparse_to_sparse_permissive(s2s), rocsparse_status_success);
                 size_t buffer_size = 0;
-                EXPECT_EQ(rocsparse_sparse_to_sparse_buffer_size(
-                              handle,
-                              s2s,
-                              source.d,
-                              target.d,
-                              rocsparse_sparse_to_sparse_stage_analysis,
-                              &buffer_size),
-                          rocsparse_status_type_mismatch);
+                // Differing index bases are not documented as supported or unsupported.
+                COV70_EXPECT_REJECTED(rocsparse_sparse_to_sparse_buffer_size(
+                    handle,
+                    s2s,
+                    source.d,
+                    target.d,
+                    rocsparse_sparse_to_sparse_stage_analysis,
+                    &buffer_size));
             }
         }
     }
@@ -469,16 +469,14 @@ TEST_F(HandleTest, Cov70ConvSparseToSparseNotPermissive)
                   &s2s, source.d, target.d, rocsparse_sparse_to_sparse_alg_default),
               rocsparse_status_success);
     size_t buffer_size = 0;
-    EXPECT_EQ(rocsparse_sparse_to_sparse_buffer_size(handle,
-                                                     s2s,
-                                                     source.d,
-                                                     target.d,
-                                                     rocsparse_sparse_to_sparse_stage_analysis,
-                                                     &buffer_size),
-              rocsparse_status_not_implemented);
+    // The header does not document the status of a refused conversion.
+    COV70_EXPECT_REJECTED(rocsparse_sparse_to_sparse_buffer_size(
+        handle, s2s, source.d, target.d, rocsparse_sparse_to_sparse_stage_analysis, &buffer_size));
 }
 
-// Blocked ELL is not supported by sparse_to_sparse, in either direction.
+// Blocked ELL is documented as not supported by sparse_to_sparse, in either
+// direction. The header does not say which status is returned: only an error is
+// required.
 TEST_F(HandleTest, Cov70ConvSparseToSparseBellNotImplemented)
 {
     using T = float;
@@ -543,17 +541,17 @@ TEST_F(HandleTest, Cov70ConvSparseToSparseBellNotImplemented)
         {
             SpDescr bell;
             ASSERT_EQ(make_bell(bell), rocsparse_status_success);
-            EXPECT_EQ(status_of(other_descr.d, bell.d), rocsparse_status_not_implemented);
+            COV70_EXPECT_REJECTED(status_of(other_descr.d, bell.d));
         }
         {
             SpDescr bell;
             ASSERT_EQ(make_bell(bell), rocsparse_status_success);
-            EXPECT_EQ(status_of(bell.d, other_descr.d), rocsparse_status_not_implemented);
+            COV70_EXPECT_REJECTED(status_of(bell.d, other_descr.d));
         }
     }
 
     SpDescr b0, b1;
     ASSERT_EQ(make_bell(b0), rocsparse_status_success);
     ASSERT_EQ(make_bell(b1), rocsparse_status_success);
-    EXPECT_EQ(status_of(b0.d, b1.d), rocsparse_status_not_implemented);
+    COV70_EXPECT_REJECTED(status_of(b0.d, b1.d));
 }

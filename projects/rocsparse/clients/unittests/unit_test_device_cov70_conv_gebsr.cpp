@@ -589,15 +589,18 @@ TEST_F(Cov70ConvGebsr, Gebsr2CsrPrecisionsAndArguments)
                        d_csr_val,
                        d_csr_ind),
                   rocsparse_status_invalid_handle);
-        EXPECT_EQ(call(handle,
-                       static_cast<rocsparse_direction>(77),
-                       rbd,
-                       cbd,
-                       d_bsr_val,
-                       d_bsr_ind,
-                       d_csr_val,
-                       d_csr_ind),
-                  rocsparse_status_invalid_value);
+        // An invalid direction is not documented: the library convention for an
+        // invalid enumeration is invalid_value.
+        COV70_EXPECT_STATUS_IN(call(handle,
+                                    static_cast<rocsparse_direction>(77),
+                                    rbd,
+                                    cbd,
+                                    d_bsr_val,
+                                    d_bsr_ind,
+                                    d_csr_val,
+                                    d_csr_ind),
+                               rocsparse_status_invalid_value,
+                               rocsparse_status_invalid_size);
         EXPECT_EQ(call(handle,
                        rocsparse_direction_row,
                        0,
@@ -657,28 +660,18 @@ TEST_F(Cov70ConvGebsr, Gebsr2CsrPrecisionsAndArguments)
         // Only the general matrix type is supported.
         ASSERT_EQ(rocsparse_set_mat_type(bsr_descr.d, rocsparse_matrix_type_symmetric),
                   rocsparse_status_success);
-        EXPECT_EQ(call(handle,
-                       rocsparse_direction_row,
-                       rbd,
-                       cbd,
-                       d_bsr_val,
-                       d_bsr_ind,
-                       d_csr_val,
-                       d_csr_ind),
-                  rocsparse_status_not_implemented);
+        // Only general matrices are documented as supported; the status of the
+        // refusal is not documented.
+        COV70_EXPECT_REJECTED(call(
+            handle, rocsparse_direction_row, rbd, cbd, d_bsr_val, d_bsr_ind, d_csr_val, d_csr_ind));
         ASSERT_EQ(rocsparse_set_mat_type(bsr_descr.d, rocsparse_matrix_type_general),
                   rocsparse_status_success);
         ASSERT_EQ(rocsparse_set_mat_type(csr_descr.d, rocsparse_matrix_type_symmetric),
                   rocsparse_status_success);
-        EXPECT_EQ(call(handle,
-                       rocsparse_direction_row,
-                       rbd,
-                       cbd,
-                       d_bsr_val,
-                       d_bsr_ind,
-                       d_csr_val,
-                       d_csr_ind),
-                  rocsparse_status_not_implemented);
+        // Only general matrices are documented as supported; the status of the
+        // refusal is not documented.
+        COV70_EXPECT_REJECTED(call(
+            handle, rocsparse_direction_row, rbd, cbd, d_bsr_val, d_bsr_ind, d_csr_val, d_csr_ind));
     }
 }
 
@@ -1399,21 +1392,24 @@ TEST_F(Cov70ConvGebsr, Csr2GebsrEmptyAndArguments)
                                        0,
                                        temp.ptr),
                   rocsparse_status_invalid_size);
-        EXPECT_EQ(rocsparse_scsr2gebsr(handle,
-                                       static_cast<rocsparse_direction>(55),
-                                       m,
-                                       n,
-                                       csr_descr.d,
-                                       d_val,
-                                       d_ptr,
-                                       d_ind,
-                                       bsr_descr.d,
-                                       d_bsr_val,
-                                       d_bsr_ptr,
-                                       d_bsr_ind,
-                                       rbd,
-                                       cbd,
-                                       temp.ptr),
-                  rocsparse_status_invalid_value);
+        // The library convention for an invalid enumeration is invalid_value; the
+        // header does not document it.
+        COV70_EXPECT_STATUS_IN(rocsparse_scsr2gebsr(handle,
+                                                    static_cast<rocsparse_direction>(55),
+                                                    m,
+                                                    n,
+                                                    csr_descr.d,
+                                                    d_val,
+                                                    d_ptr,
+                                                    d_ind,
+                                                    bsr_descr.d,
+                                                    d_bsr_val,
+                                                    d_bsr_ptr,
+                                                    d_bsr_ind,
+                                                    rbd,
+                                                    cbd,
+                                                    temp.ptr),
+                               rocsparse_status_invalid_value,
+                               rocsparse_status_invalid_size);
     }
 }

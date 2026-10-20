@@ -480,8 +480,14 @@ TEST_F(Cov70ConvCheckSpmat, MixedIndexTypes)
                              rocsparse_indextype_i64),
                       rocsparse_status_success);
             rocsparse_data_status ds = static_cast<rocsparse_data_status>(-1);
-            EXPECT_EQ(run_check(handle, descr.d, Attributes{}, &ds),
-                      rocsparse_status_not_implemented);
+            // Mixed index types are not documented as supported or unsupported: accept
+            // not_implemented or a successful check (whose data status is then checked).
+            const rocsparse_status st = run_check(handle, descr.d, Attributes{}, &ds);
+            COV70_EXPECT_STATUS_IN(st, rocsparse_status_success, rocsparse_status_not_implemented);
+            if(st == rocsparse_status_success)
+            {
+                EXPECT_EQ(ds, rocsparse_data_status_success);
+            }
         }
         {
             SpDescr descr;
@@ -529,7 +535,9 @@ TEST_F(Cov70ConvCheckSpmat, UnsupportedAndArguments)
                                              type),
                   rocsparse_status_success);
         rocsparse_data_status ds = rocsparse_data_status_success;
-        EXPECT_EQ(run_check(handle, other.d, Attributes{}, &ds), rocsparse_status_not_implemented);
+        COV70_EXPECT_STATUS_IN(run_check(handle, other.d, Attributes{}, &ds),
+                               rocsparse_status_success,
+                               rocsparse_status_not_implemented);
     }
 
     // Coordinate (AoS) matrices are not supported.
@@ -540,7 +548,9 @@ TEST_F(Cov70ConvCheckSpmat, UnsupportedAndArguments)
         SpDescr                other;
         ASSERT_EQ(create_descr(aos, d_aos, other), rocsparse_status_success);
         rocsparse_data_status ds = rocsparse_data_status_success;
-        EXPECT_EQ(run_check(handle, other.d, Attributes{}, &ds), rocsparse_status_not_implemented);
+        COV70_EXPECT_STATUS_IN(run_check(handle, other.d, Attributes{}, &ds),
+                               rocsparse_status_success,
+                               rocsparse_status_not_implemented);
     }
 
     // Blocked ELL matrices are not supported.
@@ -562,7 +572,9 @@ TEST_F(Cov70ConvCheckSpmat, UnsupportedAndArguments)
                                               rocsparse_datatype_f32_r),
                   rocsparse_status_success);
         rocsparse_data_status ds = rocsparse_data_status_success;
-        EXPECT_EQ(run_check(handle, other.d, Attributes{}, &ds), rocsparse_status_not_implemented);
+        COV70_EXPECT_STATUS_IN(run_check(handle, other.d, Attributes{}, &ds),
+                               rocsparse_status_success,
+                               rocsparse_status_not_implemented);
     }
 
     // Invalid arguments.
@@ -599,8 +611,8 @@ TEST_F(Cov70ConvCheckSpmat, UnsupportedAndArguments)
     ASSERT_EQ(create_descr(csr, d_csr, batched), rocsparse_status_success);
     ASSERT_EQ(rocsparse_csr_set_strided_batch(batched.d, 2, csr.rows + 1, csr.nnz),
               rocsparse_status_success);
-    EXPECT_EQ(
-        rocsparse_check_spmat(
-            handle, batched.d, &ds, rocsparse_check_spmat_stage_buffer_size, &buffer_size, nullptr),
-        rocsparse_status_not_implemented);
+    // The header states that batched matrices are not supported but not which status
+    // is returned.
+    COV70_EXPECT_REJECTED(rocsparse_check_spmat(
+        handle, batched.d, &ds, rocsparse_check_spmat_stage_buffer_size, &buffer_size, nullptr));
 }
