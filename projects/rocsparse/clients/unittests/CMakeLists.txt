@@ -340,6 +340,14 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_SOURCES
   unit_test_device_cov70_conv_prune.cpp
   unit_test_device_cov70_conv_gebsr.cpp
   unit_test_device_cov70_conv_check_spmat.cpp
+  # cov70 extra
+  unit_test_device_cov70_extra_spmat_scale.cpp
+  unit_test_device_cov70_extra_spmm.cpp
+  unit_test_device_cov70_extra_bsrgeam.cpp
+  unit_test_device_cov70_extra_gemm.cpp
+  unit_test_device_cov70_extra_spgeam.cpp
+  unit_test_device_cov70_extra_spsm.cpp
+  unit_test_device_cov70_extra_sddmm.cpp
 )
 
 # Host building-block library translation units under test by the
