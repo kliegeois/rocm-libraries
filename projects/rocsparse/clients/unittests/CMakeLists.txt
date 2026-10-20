@@ -327,6 +327,11 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_SOURCES
   unit_test_device_conversion_prune_extract.cpp
   unit_test_device_cov_gap.cpp
   unit_test_device_cov_81.cpp
+  # cov70 precond
+  unit_test_device_cov70_precond_generic.cpp
+  unit_test_device_cov70_precond_gtsv.cpp
+  unit_test_device_cov70_precond_itilu0.cpp
+  unit_test_device_cov70_precond_legacy.cpp
 )
 
 # Host building-block library translation units under test by the
