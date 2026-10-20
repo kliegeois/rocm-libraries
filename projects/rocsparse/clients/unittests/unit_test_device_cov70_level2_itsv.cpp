@@ -33,8 +33,10 @@
 //
 #include "unit_test_device_cov70_level2_common.hpp"
 
+#include <set>
 #include <sstream>
 #include <string>
+#include <tuple>
 
 using namespace cov70l2;
 
@@ -150,7 +152,49 @@ namespace
         bool                  ex      = true;
         int32_t               m       = 20;
         int32_t               per_row = 3;
+        // Analysis calls made before the solve (each one with its own policy).
+        std::vector<rocsparse_analysis_policy> policies = {rocsparse_analysis_policy_force};
     };
+
+    // The iteration controls that do not need to be crossed with the matrix
+    // description: they are derived from a running counter instead.
+    inline void vary_controls(itsv_case& c, int n)
+    {
+        c.nfree = n % 3;
+        c.tol   = (n % 4) != 3; // a tolerance is given in three cases out of four
+        c.hist  = (n % 3) != 1;
+        c.ex    = c.nfree != 0 || (n % 2) == 0; // free iterations need solve_ex
+    }
+
+    // Checks the convergence history and the iteration count written by a solve.
+    template <typename R>
+    void check_history(
+        const itsv_case& c, const std::vector<R>& history, int32_t nmax, int32_t nmax_in, R tol)
+    {
+        const bool stopped = c.tol && nmax < nmax_in;
+        if(!stopped)
+        {
+            // No tolerance, or never reached: all the iterations ran.
+            EXPECT_EQ(nmax, nmax_in);
+        }
+        if(!c.hist)
+            return;
+        // The first entry is the norm after the first step: a non zero vector.
+        EXPECT_GT(history[0], R(0));
+        // Entries 0 .. nmax were recorded (all of them if the loop never stopped).
+        const int32_t recorded = stopped ? nmax + 1 : nmax_in;
+        for(int32_t i = 0; i < recorded; ++i)
+            EXPECT_GE(history[i], R(0)) << "history[" << i << "] was not recorded";
+        if(c.tol)
+        {
+            // The loop stops at the first entry within the tolerance and not before.
+            const int32_t above = stopped ? nmax : nmax_in;
+            for(int32_t i = 0; i < above; ++i)
+                EXPECT_GT(history[i], tol) << "history[" << i << "]";
+            if(stopped)
+                EXPECT_LE(history[nmax], tol);
+        }
+    }
 
     inline std::string describe(const itsv_case& c)
     {
@@ -224,19 +268,22 @@ namespace
         device_vector<char> dbuf(bytes);
         ASSERT_TRUE(dbuf.ptr);
 
-        ASSERT_EQ(itsv_analysis(handle,
-                                c.trans,
-                                m,
-                                A.nnz(),
-                                descr,
-                                dA.val,
-                                dA.ptr,
-                                dA.ind,
-                                info,
-                                rocsparse_analysis_policy_force,
-                                rocsparse_solve_policy_auto,
-                                dbuf),
-                  rocsparse_status_success);
+        for(const auto policy : c.policies)
+        {
+            ASSERT_EQ(itsv_analysis(handle,
+                                    c.trans,
+                                    m,
+                                    A.nnz(),
+                                    descr,
+                                    dA.val,
+                                    dA.ptr,
+                                    dA.ind,
+                                    info,
+                                    policy,
+                                    rocsparse_solve_policy_auto,
+                                    dbuf),
+                      rocsparse_status_success);
+        }
 
         const int32_t  nmax_in = 60;
         int32_t        nmax    = nmax_in;
@@ -269,23 +316,7 @@ namespace
         }
         EXPECT_TRUE(expect_near(want, to_host(dy), "csritsv y"));
 
-        if(c.hist)
-            EXPECT_GE(history[0], R(0));
-        if(c.tol && nmax < nmax_in)
-        {
-            // The loop stopped early: the recorded norm is within the tolerance.
-            if(c.hist)
-                EXPECT_LE(history[nmax], tol);
-        }
-        else if(c.tol)
-        {
-            // Never stopped early, so it ran all the iterations.
-            EXPECT_EQ(nmax, nmax_in);
-        }
-        else
-        {
-            EXPECT_EQ(nmax, nmax_in);
-        }
+        check_history(c, history, nmax, nmax_in, tol);
 
         rocsparse_int position = -2;
         EXPECT_EQ(rocsparse_csritsv_zero_pivot(handle, descr, info, &position),
@@ -297,37 +328,47 @@ namespace
     class Cov70L2Csritsv : public rocsparse_ut::HandleTest
     {
     protected:
+        // Every (matrix type, fill mode, diagonal, base, pointer mode) combination runs
+        // for each precision. `all_trans` runs every operation for each of them; otherwise
+        // the operation cycles through the three with the combination counter.
         template <typename T>
-        void sweep(bool full)
+        void sweep(bool all_trans)
         {
+            const rocsparse_operation                     ops[] = {rocsparse_operation_none,
+                                               rocsparse_operation_transpose,
+                                               rocsparse_operation_conjugate_transpose};
+            std::set<std::tuple<int, int, int, int, int>> seen;
+            int                                           n = 0;
             for(const auto mtype :
                 {rocsparse_matrix_type_general, rocsparse_matrix_type_triangular})
                 for(const auto fill : {rocsparse_fill_mode_lower, rocsparse_fill_mode_upper})
                     for(const auto diag : {rocsparse_diag_type_non_unit, rocsparse_diag_type_unit})
-                        for(const auto trans : {rocsparse_operation_none,
-                                                rocsparse_operation_transpose,
-                                                rocsparse_operation_conjugate_transpose})
-                        {
-                            if(!full && trans == rocsparse_operation_transpose)
-                                continue;
-                            itsv_case c;
-                            c.mtype     = mtype;
-                            c.fill      = fill;
-                            c.diag      = diag;
-                            c.trans     = trans;
-                            const int k = static_cast<int>(mtype) + 2 * static_cast<int>(fill)
-                                          + 4 * static_cast<int>(diag)
-                                          + 8 * static_cast<int>(trans);
-                            c.base   = k & 1;
-                            c.device = ((k >> 1) & 1) != 0;
-                            c.nfree  = (k >> 2) % 3;
-                            c.tol    = ((k >> 3) & 1) == 0;
-                            c.hist   = ((k >> 1) % 3) != 0;
-                            c.ex     = ((k >> 2) & 1) != 0 || c.nfree != 0;
-                            run_csritsv<T>(handle, c);
-                            if(::testing::Test::HasFailure())
-                                return;
-                        }
+                        for(const int base : {0, 1})
+                            for(const bool device : {false, true})
+                            {
+                                seen.insert(std::make_tuple(static_cast<int>(mtype),
+                                                            static_cast<int>(fill),
+                                                            static_cast<int>(diag),
+                                                            base,
+                                                            device ? 1 : 0));
+                                for(int o = 0; o < 3; ++o)
+                                {
+                                    if(!all_trans && o != n % 3)
+                                        continue;
+                                    itsv_case c;
+                                    c.mtype  = mtype;
+                                    c.fill   = fill;
+                                    c.diag   = diag;
+                                    c.trans  = ops[o];
+                                    c.base   = base;
+                                    c.device = device;
+                                    vary_controls(c, n++);
+                                    run_csritsv<T>(handle, c);
+                                    if(::testing::Test::HasFailure())
+                                        return;
+                                }
+                            }
+            EXPECT_EQ(seen.size(), size_t{32});
         }
     };
 
@@ -349,50 +390,29 @@ namespace
 
     TEST_F(Cov70L2Csritsv, solve_both_apis_and_reuse_policy)
     {
-        // The legacy solve entry (no free iterations) next to solve_ex, and a second
-        // analysis with the reuse policy that keeps the first one.
+        // The legacy solve entry (no free iterations) next to solve_ex, each one after
+        // repeated analyses: a force analysis followed by reuse analyses (which keep
+        // the first one), and reuse analyses on an info object never analysed.
+        const std::vector<std::vector<rocsparse_analysis_policy>> sequences
+            = {{rocsparse_analysis_policy_force,
+                rocsparse_analysis_policy_reuse,
+                rocsparse_analysis_policy_reuse,
+                rocsparse_analysis_policy_force},
+               {rocsparse_analysis_policy_reuse, rocsparse_analysis_policy_reuse}};
         for(const bool ex : {false, true})
-        {
-            itsv_case c;
-            c.ex    = ex;
-            c.fill  = rocsparse_fill_mode_upper;
-            c.mtype = rocsparse_matrix_type_triangular;
-            run_csritsv<double>(handle, c);
-
-            const host_csr<double> A = make_matrix<double>(c);
-            mat_descr              descr;
-            mat_info               info;
-            ASSERT_TRUE(descr.d && info.d);
-            set_descr<double>(descr, c);
-            device_csr<double> dA(A);
-            ASSERT_TRUE(dA.ok());
-            size_t bytes = 0;
-            ASSERT_EQ(
-                itsv_buffer_size(
-                    handle, c.trans, A.m, A.nnz(), descr, dA.val, dA.ptr, dA.ind, info, &bytes),
-                rocsparse_status_success);
-            device_vector<char> dbuf(bytes);
-            ASSERT_TRUE(dbuf.ptr);
-            for(const auto policy : {rocsparse_analysis_policy_force,
-                                     rocsparse_analysis_policy_reuse,
-                                     rocsparse_analysis_policy_reuse,
-                                     rocsparse_analysis_policy_force})
-            {
-                EXPECT_EQ(itsv_analysis(handle,
-                                        c.trans,
-                                        A.m,
-                                        A.nnz(),
-                                        descr,
-                                        dA.val,
-                                        dA.ptr,
-                                        dA.ind,
-                                        info,
-                                        policy,
-                                        rocsparse_solve_policy_auto,
-                                        dbuf),
-                          rocsparse_status_success);
-            }
-        }
+            for(const auto& sequence : sequences)
+                for(const auto diag : {rocsparse_diag_type_non_unit, rocsparse_diag_type_unit})
+                {
+                    itsv_case c;
+                    c.ex       = ex;
+                    c.fill     = rocsparse_fill_mode_upper;
+                    c.diag     = diag;
+                    c.mtype    = rocsparse_matrix_type_triangular;
+                    c.policies = sequence;
+                    run_csritsv<double>(handle, c);
+                    if(::testing::Test::HasFailure())
+                        return;
+                }
     }
 
     // A matrix whose diagonal entry of row `p` is missing (`zero_value` false) or
@@ -641,6 +661,8 @@ namespace
                                         dbuf),
                           rocsparse_status_success);
 
+                // The tolerance must be given: with nnz == 0 and a unit diagonal the library
+                // reads host_tol[0] unconditionally, a null tolerance crashes it.
                 const float tol = 1.0e-6f;
                 // y starts at zero, so one step is needed.
                 {
@@ -1231,45 +1253,52 @@ namespace
         ASSERT_EQ(call(rocsparse_spitsv_stage_preprocess, nullptr, dbuf), rocsparse_status_success);
         ASSERT_EQ(call(rocsparse_spitsv_stage_compute, nullptr, dbuf), rocsparse_status_success);
         EXPECT_TRUE(expect_near(want, to_host(dy), "spitsv y"));
-        if(c.tol && nmax < nmax_in && c.hist)
-            EXPECT_LE(history[nmax], tol);
+        check_history(c, history, nmax, nmax_in, tol);
     }
 
-    TEST(Cov70L2Spitsv, types_and_modes)
+    class Cov70L2Spitsv : public rocsparse_ut::HandleTest
     {
-        rocsparse_handle handle = nullptr;
-        ASSERT_EQ(rocsparse_create_handle(&handle), rocsparse_status_success);
+    };
+
+    TEST_F(Cov70L2Spitsv, types_and_modes)
+    {
+        // Every (matrix type, fill mode, diagonal, base, pointer mode) combination for
+        // each of four type / index type combinations; the operation alternates.
+        std::set<std::tuple<int, int, int, int, int>> seen;
+        int                                           n = 0;
         for(const auto mtype : {rocsparse_matrix_type_general, rocsparse_matrix_type_triangular})
             for(const auto fill : {rocsparse_fill_mode_lower, rocsparse_fill_mode_upper})
                 for(const auto diag : {rocsparse_diag_type_non_unit, rocsparse_diag_type_unit})
-                    for(const auto trans :
-                        {rocsparse_operation_none, rocsparse_operation_transpose})
-                    {
-                        itsv_case c;
-                        c.mtype     = mtype;
-                        c.fill      = fill;
-                        c.diag      = diag;
-                        c.trans     = trans;
-                        const int k = static_cast<int>(mtype) + 2 * static_cast<int>(fill)
-                                      + 4 * static_cast<int>(diag) + 8 * static_cast<int>(trans);
-                        c.base   = k & 1;
-                        c.device = ((k >> 1) & 1) != 0;
-                        c.tol    = ((k >> 3) & 1) == 0;
-                        c.hist   = ((k >> 2) & 1) == 0;
-                        run_spitsv<float, int32_t, int32_t>(handle, c);
-                        run_spitsv<double, int64_t, int32_t>(handle, c);
-                        run_spitsv<rocsparse_float_complex, int64_t, int64_t>(handle, c);
-                        run_spitsv<rocsparse_double_complex, int32_t, int32_t>(handle, c);
-                        if(::testing::Test::HasFailure())
+                    for(const int base : {0, 1})
+                        for(const bool device : {false, true})
                         {
-                            EXPECT_EQ(rocsparse_destroy_handle(handle), rocsparse_status_success);
-                            return;
+                            seen.insert(std::make_tuple(static_cast<int>(mtype),
+                                                        static_cast<int>(fill),
+                                                        static_cast<int>(diag),
+                                                        base,
+                                                        device ? 1 : 0));
+                            itsv_case c;
+                            c.mtype  = mtype;
+                            c.fill   = fill;
+                            c.diag   = diag;
+                            c.trans  = (n % 2 == 0) ? rocsparse_operation_none
+                                                    : rocsparse_operation_transpose;
+                            c.base   = base;
+                            c.device = device;
+                            c.tol    = (n % 4) != 3;
+                            c.hist   = (n % 3) != 1;
+                            ++n;
+                            run_spitsv<float, int32_t, int32_t>(handle, c);
+                            run_spitsv<double, int64_t, int32_t>(handle, c);
+                            run_spitsv<rocsparse_float_complex, int64_t, int64_t>(handle, c);
+                            run_spitsv<rocsparse_double_complex, int32_t, int32_t>(handle, c);
+                            if(::testing::Test::HasFailure())
+                                return;
                         }
-                    }
-        EXPECT_EQ(rocsparse_destroy_handle(handle), rocsparse_status_success);
+        EXPECT_EQ(seen.size(), size_t{32});
     }
 
-    TEST_F(Cov70L2Csritsv, spitsv_argument_checks)
+    TEST_F(Cov70L2Spitsv, argument_checks)
     {
         const int32_t m = 6;
         itsv_case     c;
