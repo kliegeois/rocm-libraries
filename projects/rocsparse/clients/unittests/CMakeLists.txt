@@ -361,6 +361,7 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_SOURCES
   unit_test_device_cov80_conv_check.cpp
   unit_test_device_cov80_conv_blocks.cpp
   unit_test_device_cov80_conv_generic.cpp
+  unit_test_device_cov80_conv_dense.cpp
 )
 
 # Host building-block library translation units under test by the
