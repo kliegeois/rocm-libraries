@@ -24,7 +24,10 @@
 // rocsparse_sparse_to_sparse over the complete matrix of source/target formats
 // (coo, coo_aos, csr, csc, ell, bsr). Every conversion is checked on the full
 // output: the target is read back, expanded to a dense matrix on the host and
-// compared against the dense matrix the source was built from.
+// compared against the dense matrix the source was built from. The number of
+// stored entries of the target is checked against the host count as well, so
+// superfluous stored zeros are detected. Source and target may use different BSR
+// block sizes / directions; the library requires the same index base for both.
 
 #include "unit_test_device_cov70_conv_spmat.hpp"
 
@@ -96,8 +99,10 @@ namespace
         }
         case rocsparse_format_bsr:
         {
-            // The descriptor nnz of a BSR matrix counts scalar entries, the number of
-            // blocks is read from the row pointer.
+            // Observed library behavior (not verified to be the intended contract): the
+            // descriptor nnz of a BSR matrix counts scalar entries (nnzb * bd^2) while
+            // the target was created with a block count. The number of blocks is
+            // therefore taken from the row pointer.
             h.ptr              = to_host(d.ptr.ptr, M / bd + 1);
             const int64_t nnzb = static_cast<int64_t>(h.ptr.back()) - static_cast<int64_t>(base);
             EXPECT_EQ(nnz, nnzb * bd * bd);
@@ -122,6 +127,7 @@ namespace
                  DevMat<T, I>&               target_dev)
     {
         rocsparse_sparse_to_sparse_descr s2s = nullptr;
+        S2sGuard                         s2s_guard(s2s);
         EXPECT_EQ(rocsparse_create_sparse_to_sparse_descr(
                       &s2s, source, target.d, rocsparse_sparse_to_sparse_alg_default),
                   rocsparse_status_success);
@@ -165,36 +171,130 @@ namespace
                           rocsparse_status_success);
             }
         }
-        EXPECT_EQ(rocsparse_destroy_sparse_to_sparse_descr(s2s), rocsparse_status_success);
         return ok;
     }
 
+    // Source and target description of a sweep over all format pairs.
+    struct PairCfg
+    {
+        rocsparse_index_base base_s;
+        int64_t              bd_s;
+        rocsparse_direction  dir_s;
+        rocsparse_index_base base_t;
+        int64_t              bd_t;
+        rocsparse_direction  dir_t;
+    };
+
+    template <typename T>
+    int64_t count_nonzeros(const std::vector<T>& dense)
+    {
+        return std::count_if(dense.begin(), dense.end(), [](const T& v) { return v != T{}; });
+    }
+
+    // Longest row of the matrix (at least one: the ELL width cannot be zero).
+    template <typename T>
+    int64_t max_row_length(const std::vector<T>& dense)
+    {
+        int64_t width = 1;
+        for(int64_t i = 0; i < M; ++i)
+        {
+            int64_t cnt = 0;
+            for(int64_t j = 0; j < N; ++j)
+                cnt += (dense[i * N + j] != T{}) ? 1 : 0;
+            width = std::max(width, cnt);
+        }
+        return width;
+    }
+
+    // Number of bd x bd blocks that contain a nonzero.
+    template <typename T>
+    int64_t count_blocks(const std::vector<T>& dense, int64_t bd)
+    {
+        int64_t cnt = 0;
+        for(int64_t ib = 0; ib < M / bd; ++ib)
+            for(int64_t jb = 0; jb < N / bd; ++jb)
+            {
+                bool any = false;
+                for(int64_t r = 0; r < bd && !any; ++r)
+                    for(int64_t c = 0; c < bd && !any; ++c)
+                        any = dense[(ib * bd + r) * N + jb * bd + c] != T{};
+                cnt += any ? 1 : 0;
+            }
+        return cnt;
+    }
+
+    // The converted matrix must hold exactly the nonzeros of the dense matrix. A BSR
+    // source stores explicit zeros inside its blocks and the library is free to keep
+    // or drop them, so for a BSR source only a lower bound is checked.
     template <typename T, typename I>
-    void run_all_pairs(rocsparse_handle     handle,
-                       rocsparse_index_base base,
-                       int64_t              bd,
-                       rocsparse_direction  dir)
+    void expect_stored_entries(const HostMat<T, I>&  out,
+                               const std::vector<T>& dense,
+                               rocsparse_format      source_format,
+                               int64_t               bd_t)
+    {
+        const bool exact = (source_format != rocsparse_format_bsr);
+        int64_t    expected;
+        switch(out.format)
+        {
+        case rocsparse_format_ell:
+            expected = max_row_length(dense) * M;
+            break;
+        case rocsparse_format_bsr:
+            expected = count_blocks(dense, bd_t);
+            break;
+        default:
+            expected = count_nonzeros(dense);
+            break;
+        }
+        if(exact)
+        {
+            EXPECT_EQ(out.nnz, expected)
+                << "stored entries of the " << format_name(out.format) << " target";
+        }
+        else
+        {
+            EXPECT_GE(out.nnz, expected)
+                << "stored entries of the " << format_name(out.format) << " target";
+        }
+    }
+
+    template <typename T, typename I>
+    void run_all_pairs(rocsparse_handle handle, const PairCfg& cfg)
     {
         const std::vector<T> dense = make_dense<T>();
 
         for(rocsparse_format sf : s_formats)
         {
-            const HostMat<T, I> src = build<T, I>(sf, base, bd, dir, dense);
+            const HostMat<T, I> src = build<T, I>(sf, cfg.base_s, cfg.bd_s, cfg.dir_s, dense);
             ASSERT_EQ(to_dense(src), dense) << "builder " << format_name(sf);
 
             for(rocsparse_format tf : s_formats)
             {
+                // BSR -> BSR is a plain copy of the arrays in the library
+                // (FUNCTION_CONVERT(bsr, bsr) transfers them as they are); it does not
+                // re-block or change the direction, so it is only a conversion when the
+                // block size and direction agree. A differing request is not exercised
+                // so that no behavior that looks unintended is pinned.
+                if(sf == rocsparse_format_bsr && tf == rocsparse_format_bsr
+                   && (cfg.bd_s != cfg.bd_t || cfg.dir_s != cfg.dir_t))
+                {
+                    continue;
+                }
                 SCOPED_TRACE(std::string(format_name(sf)) + " -> " + format_name(tf)
-                             + " base=" + std::to_string(static_cast<int>(base))
-                             + " bd=" + std::to_string(bd));
+                             + " base=" + std::to_string(static_cast<int>(cfg.base_s)) + "->"
+                             + std::to_string(static_cast<int>(cfg.base_t))
+                             + " bd=" + std::to_string(cfg.bd_s) + "->" + std::to_string(cfg.bd_t)
+                             + " dir=" + std::to_string(static_cast<int>(cfg.dir_s)) + "->"
+                             + std::to_string(static_cast<int>(cfg.dir_t)));
 
                 DevMat<T, I> dsrc(src);
                 SpDescr      source;
                 ASSERT_EQ(create_descr(src, dsrc, source), rocsparse_status_success);
 
-                const HostMat<T, I> meta = target_meta<T, I>(tf, base, bd, dir, src);
-                DevMat<T, I>        dtgt;
-                SpDescr             target;
+                const HostMat<T, I> meta
+                    = target_meta<T, I>(tf, cfg.base_t, cfg.bd_t, cfg.dir_t, src);
+                DevMat<T, I> dtgt;
+                SpDescr      target;
                 ASSERT_EQ(create_descr(meta, dtgt, target), rocsparse_status_success);
 
                 if(!convert<T, I>(handle, source.d, target, tf, dtgt))
@@ -202,11 +302,13 @@ namespace
                     continue;
                 }
 
-                const HostMat<T, I> out = read_back<T, I>(target, tf, dtgt, base, bd, dir);
+                const HostMat<T, I> out
+                    = read_back<T, I>(target, tf, dtgt, cfg.base_t, cfg.bd_t, cfg.dir_t);
                 EXPECT_EQ(to_dense(out), dense)
                     << "nnz=" << out.nnz << " width=" << out.width << " ptr_size=" << out.ptr.size()
                     << " ptr0=" << (out.ptr.empty() ? -1 : static_cast<int64_t>(out.ptr[0]))
                     << " ptrN=" << (out.ptr.empty() ? -1 : static_cast<int64_t>(out.ptr.back()));
+                expect_stored_entries(out, dense, sf, cfg.bd_t);
             }
         }
     }
@@ -214,24 +316,131 @@ namespace
 
 TEST_F(HandleTest, Cov70ConvSparseToSparseMatrixDoubleInt32)
 {
-    run_all_pairs<double, int32_t>(handle, rocsparse_index_base_zero, 2, rocsparse_direction_row);
+    run_all_pairs<double, int32_t>(handle,
+                                   {rocsparse_index_base_zero,
+                                    2,
+                                    rocsparse_direction_row,
+                                    rocsparse_index_base_zero,
+                                    2,
+                                    rocsparse_direction_row});
 }
 
 TEST_F(HandleTest, Cov70ConvSparseToSparseMatrixFloatInt64)
 {
-    run_all_pairs<float, int64_t>(handle, rocsparse_index_base_one, 3, rocsparse_direction_column);
+    run_all_pairs<float, int64_t>(handle,
+                                  {rocsparse_index_base_one,
+                                   3,
+                                   rocsparse_direction_column,
+                                   rocsparse_index_base_one,
+                                   3,
+                                   rocsparse_direction_column});
 }
 
 TEST_F(HandleTest, Cov70ConvSparseToSparseMatrixFloatComplexInt32)
 {
-    run_all_pairs<rocsparse_float_complex, int32_t>(
-        handle, rocsparse_index_base_one, 4, rocsparse_direction_row);
+    run_all_pairs<rocsparse_float_complex, int32_t>(handle,
+                                                    {rocsparse_index_base_one,
+                                                     4,
+                                                     rocsparse_direction_row,
+                                                     rocsparse_index_base_one,
+                                                     4,
+                                                     rocsparse_direction_row});
 }
 
 TEST_F(HandleTest, Cov70ConvSparseToSparseMatrixDoubleComplexInt64)
 {
-    run_all_pairs<rocsparse_double_complex, int64_t>(
-        handle, rocsparse_index_base_zero, 2, rocsparse_direction_column);
+    run_all_pairs<rocsparse_double_complex, int64_t>(handle,
+                                                     {rocsparse_index_base_zero,
+                                                      2,
+                                                      rocsparse_direction_column,
+                                                      rocsparse_index_base_zero,
+                                                      2,
+                                                      rocsparse_direction_column});
+}
+
+// The source and the target descriptor must use the same index base: the library
+// rejects a conversion between different bases with rocsparse_status_type_mismatch
+// (rocsparse_mat_descr_are_same), so a base translation cannot be requested.
+TEST_F(HandleTest, Cov70ConvSparseToSparseBaseMismatch)
+{
+    using T = double;
+    using I = int32_t;
+
+    const std::vector<T> dense = make_dense<T>();
+    for(rocsparse_index_base base_s : {rocsparse_index_base_zero, rocsparse_index_base_one})
+    {
+        const rocsparse_index_base base_t = (base_s == rocsparse_index_base_zero)
+                                                ? rocsparse_index_base_one
+                                                : rocsparse_index_base_zero;
+        for(rocsparse_format sf : s_formats)
+        {
+            const HostMat<T, I> src = build<T, I>(sf, base_s, 2, rocsparse_direction_row, dense);
+            DevMat<T, I>        dsrc(src);
+            SpDescr             source;
+            ASSERT_EQ(create_descr(src, dsrc, source), rocsparse_status_success);
+            for(rocsparse_format tf : s_formats)
+            {
+                SCOPED_TRACE(std::string(format_name(sf)) + " -> " + format_name(tf)
+                             + " base=" + std::to_string(static_cast<int>(base_s)) + "->"
+                             + std::to_string(static_cast<int>(base_t)));
+                const HostMat<T, I> meta
+                    = target_meta<T, I>(tf, base_t, 2, rocsparse_direction_row, src);
+                DevMat<T, I> dtgt;
+                SpDescr      target;
+                ASSERT_EQ(create_descr(meta, dtgt, target), rocsparse_status_success);
+
+                rocsparse_sparse_to_sparse_descr s2s = nullptr;
+                S2sGuard                         s2s_guard(s2s);
+                ASSERT_EQ(rocsparse_create_sparse_to_sparse_descr(
+                              &s2s, source.d, target.d, rocsparse_sparse_to_sparse_alg_default),
+                          rocsparse_status_success);
+                EXPECT_EQ(rocsparse_sparse_to_sparse_permissive(s2s), rocsparse_status_success);
+                size_t buffer_size = 0;
+                EXPECT_EQ(rocsparse_sparse_to_sparse_buffer_size(
+                              handle,
+                              s2s,
+                              source.d,
+                              target.d,
+                              rocsparse_sparse_to_sparse_stage_analysis,
+                              &buffer_size),
+                          rocsparse_status_type_mismatch);
+            }
+        }
+    }
+}
+
+// A BSR source and a BSR target with different block size / direction, going
+// through the other formats: BSR -> {coo, csr, ...} with the source block layout
+// and {coo, csr, ...} -> BSR with a different target block layout, both verified
+// against the dense matrix. BSR -> BSR itself is skipped when the block layout
+// differs (the library only copies the arrays in that case). The index base of the
+// source and the target is the same (see Cov70ConvSparseToSparseBaseMismatch).
+TEST_F(HandleTest, Cov70ConvSparseToSparseReblock)
+{
+    // Different block size and direction.
+    run_all_pairs<double, int32_t>(handle,
+                                   {rocsparse_index_base_zero,
+                                    2,
+                                    rocsparse_direction_row,
+                                    rocsparse_index_base_zero,
+                                    3,
+                                    rocsparse_direction_column});
+    // Same block size, direction change only.
+    run_all_pairs<float, int32_t>(handle,
+                                  {rocsparse_index_base_zero,
+                                   3,
+                                   rocsparse_direction_row,
+                                   rocsparse_index_base_zero,
+                                   3,
+                                   rocsparse_direction_column});
+    // Larger block size, complex values, base one.
+    run_all_pairs<rocsparse_float_complex, int64_t>(handle,
+                                                    {rocsparse_index_base_one,
+                                                     4,
+                                                     rocsparse_direction_column,
+                                                     rocsparse_index_base_one,
+                                                     2,
+                                                     rocsparse_direction_row});
 }
 
 // Conversions that need an intermediate CSR matrix are refused unless the
@@ -255,6 +464,7 @@ TEST_F(HandleTest, Cov70ConvSparseToSparseNotPermissive)
     ASSERT_EQ(create_descr(meta, dtgt, target), rocsparse_status_success);
 
     rocsparse_sparse_to_sparse_descr s2s = nullptr;
+    S2sGuard                         s2s_guard(s2s);
     ASSERT_EQ(rocsparse_create_sparse_to_sparse_descr(
                   &s2s, source.d, target.d, rocsparse_sparse_to_sparse_alg_default),
               rocsparse_status_success);
@@ -266,7 +476,6 @@ TEST_F(HandleTest, Cov70ConvSparseToSparseNotPermissive)
                                                      rocsparse_sparse_to_sparse_stage_analysis,
                                                      &buffer_size),
               rocsparse_status_not_implemented);
-    EXPECT_EQ(rocsparse_destroy_sparse_to_sparse_descr(s2s), rocsparse_status_success);
 }
 
 // Blocked ELL is not supported by sparse_to_sparse, in either direction.
@@ -297,7 +506,8 @@ TEST_F(HandleTest, Cov70ConvSparseToSparseBellNotImplemented)
 
     auto status_of = [&](rocsparse_const_spmat_descr source, rocsparse_spmat_descr target) {
         rocsparse_sparse_to_sparse_descr s2s = nullptr;
-        rocsparse_status                 st  = rocsparse_create_sparse_to_sparse_descr(
+        S2sGuard                         s2s_guard(s2s);
+        rocsparse_status                 st = rocsparse_create_sparse_to_sparse_descr(
             &s2s, source, target, rocsparse_sparse_to_sparse_alg_default);
         if(st != rocsparse_status_success)
         {
@@ -317,7 +527,6 @@ TEST_F(HandleTest, Cov70ConvSparseToSparseBellNotImplemented)
                                             buffer_size,
                                             buffer.ptr);
         }
-        (void)rocsparse_destroy_sparse_to_sparse_descr(s2s);
         return st;
     };
 
