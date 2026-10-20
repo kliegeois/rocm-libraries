@@ -1,0 +1,897 @@
+/*! \file */
+/* ************************************************************************
+ * Copyright (C) 2026 Advanced Micro Devices, Inc. All rights Reserved.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ *
+ * ************************************************************************ */
+
+//
+// Shared helpers for the "cov70 extra" device unit tests: small host reference
+// types (sparse / dense matrices computed in double-complex precision),
+// deterministic matrix generators, RAII wrappers for the generic-API
+// descriptors, and output comparison helpers.
+//
+// Every test built on these helpers uploads a small matrix, calls the public C
+// API, and compares the COMPLETE output with a host reference.
+//
+#pragma once
+
+#include "unit_test_utils.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <complex>
+#include <cstdint>
+#include <set>
+#include <string>
+#include <vector>
+
+namespace cov70
+{
+    using cplx = std::complex<double>;
+
+    // ----- value conversions ------------------------------------------------
+    template <typename T>
+    inline cplx to_c(T v)
+    {
+        return cplx(static_cast<double>(v), 0.0);
+    }
+    template <>
+    inline cplx to_c<rocsparse_float_complex>(rocsparse_float_complex v)
+    {
+        return cplx(std::real(v), std::imag(v));
+    }
+    template <>
+    inline cplx to_c<rocsparse_double_complex>(rocsparse_double_complex v)
+    {
+        return cplx(std::real(v), std::imag(v));
+    }
+
+    template <typename T>
+    inline T from_c(cplx c)
+    {
+        return static_cast<T>(c.real());
+    }
+    template <>
+    inline rocsparse_float_complex from_c<rocsparse_float_complex>(cplx c)
+    {
+        return rocsparse_float_complex(static_cast<float>(c.real()), static_cast<float>(c.imag()));
+    }
+    template <>
+    inline rocsparse_double_complex from_c<rocsparse_double_complex>(cplx c)
+    {
+        return rocsparse_double_complex(c.real(), c.imag());
+    }
+
+    template <typename T>
+    struct is_complex_t
+    {
+        static constexpr bool value = false;
+    };
+    template <>
+    struct is_complex_t<rocsparse_float_complex>
+    {
+        static constexpr bool value = true;
+    };
+    template <>
+    struct is_complex_t<rocsparse_double_complex>
+    {
+        static constexpr bool value = true;
+    };
+
+    template <typename T>
+    struct is_single_t
+    {
+        static constexpr bool value = false;
+    };
+    template <>
+    struct is_single_t<float>
+    {
+        static constexpr bool value = true;
+    };
+    template <>
+    struct is_single_t<rocsparse_float_complex>
+    {
+        static constexpr bool value = true;
+    };
+
+    template <typename T>
+    inline double rel_tol()
+    {
+        return is_single_t<T>::value ? 1.0e-4 : 1.0e-10;
+    }
+
+    // Round a value to what T can represent, so the host reference uses exactly
+    // the numbers the device sees.
+    template <typename T>
+    inline cplx round_to(cplx c)
+    {
+        return to_c<T>(from_c<T>(c));
+    }
+
+    // ----- deterministic generator -----------------------------------------
+    struct Rng
+    {
+        uint64_t s;
+        explicit Rng(uint64_t seed = 1)
+            : s(seed * 6364136223846793005ULL + 1442695040888963407ULL)
+        {
+        }
+        uint32_t next()
+        {
+            s = s * 6364136223846793005ULL + 1442695040888963407ULL;
+            return static_cast<uint32_t>(s >> 33);
+        }
+        int64_t range(int64_t lo, int64_t hi) // inclusive
+        {
+            return lo + static_cast<int64_t>(next() % static_cast<uint64_t>(hi - lo + 1));
+        }
+    };
+
+    // Non-zero small value (so that sums/products are exactly representable).
+    template <typename T>
+    inline cplx rand_val(Rng& rng)
+    {
+        const double re = static_cast<double>(rng.range(1, 4)) * (rng.range(0, 1) ? 1.0 : -1.0);
+        const double im = is_complex_t<T>::value ? static_cast<double>(rng.range(1, 3))
+                                                       * (rng.range(0, 1) ? 1.0 : -1.0)
+                                                 : 0.0;
+        return cplx(re, im);
+    }
+
+    // ----- host sparse matrix (CSR, zero based, double complex values) -----
+    struct Csr
+    {
+        int64_t              m = 0, n = 0;
+        std::vector<int64_t> ptr; // m + 1
+        std::vector<int64_t> col;
+        std::vector<cplx>    val;
+        int64_t              nnz() const
+        {
+            return static_cast<int64_t>(col.size());
+        }
+    };
+
+    // Matrix with the given number of non-zeros in each row (sorted, distinct
+    // columns, random positions).
+    template <typename T>
+    inline Csr csr_with_row_lengths(int64_t m, int64_t n, const std::vector<int64_t>& len, Rng& rng)
+    {
+        Csr A;
+        A.m = m;
+        A.n = n;
+        A.ptr.assign(static_cast<size_t>(m) + 1, 0);
+        for(int64_t i = 0; i < m; ++i)
+        {
+            const int64_t     l = std::min<int64_t>(len[static_cast<size_t>(i)], n);
+            std::set<int64_t> cols;
+            if(l == n)
+            {
+                for(int64_t j = 0; j < n; ++j)
+                    cols.insert(j);
+            }
+            else
+            {
+                while(static_cast<int64_t>(cols.size()) < l)
+                    cols.insert(rng.range(0, n - 1));
+            }
+            for(int64_t j : cols)
+            {
+                A.col.push_back(j);
+                A.val.push_back(round_to<T>(rand_val<T>(rng)));
+            }
+            A.ptr[static_cast<size_t>(i) + 1] = static_cast<int64_t>(A.col.size());
+        }
+        return A;
+    }
+
+    template <typename T>
+    inline Csr random_csr(int64_t m, int64_t n, int64_t max_row_nnz, Rng& rng)
+    {
+        std::vector<int64_t> len(static_cast<size_t>(m));
+        for(auto& l : len)
+            l = rng.range(0, max_row_nnz);
+        return csr_with_row_lengths<T>(m, n, len, rng);
+    }
+
+    inline Csr transpose(const Csr& A)
+    {
+        Csr T;
+        T.m = A.n;
+        T.n = A.m;
+        T.ptr.assign(static_cast<size_t>(A.n) + 1, 0);
+        for(int64_t c : A.col)
+            ++T.ptr[static_cast<size_t>(c) + 1];
+        for(int64_t j = 0; j < A.n; ++j)
+            T.ptr[static_cast<size_t>(j) + 1] += T.ptr[static_cast<size_t>(j)];
+        T.col.resize(A.col.size());
+        T.val.resize(A.col.size());
+        std::vector<int64_t> pos(T.ptr.begin(), T.ptr.end() - 1);
+        for(int64_t i = 0; i < A.m; ++i)
+            for(int64_t p = A.ptr[static_cast<size_t>(i)]; p < A.ptr[static_cast<size_t>(i) + 1];
+                ++p)
+            {
+                const int64_t d = pos[static_cast<size_t>(A.col[static_cast<size_t>(p)])]++;
+                T.col[static_cast<size_t>(d)] = i;
+                T.val[static_cast<size_t>(d)] = A.val[static_cast<size_t>(p)];
+            }
+        return T;
+    }
+
+    // Row-major m x n dense expansion.
+    inline std::vector<cplx> to_dense(const Csr& A)
+    {
+        std::vector<cplx> D(static_cast<size_t>(A.m * A.n), cplx(0.0, 0.0));
+        for(int64_t i = 0; i < A.m; ++i)
+            for(int64_t p = A.ptr[static_cast<size_t>(i)]; p < A.ptr[static_cast<size_t>(i) + 1];
+                ++p)
+                D[static_cast<size_t>(i * A.n + A.col[static_cast<size_t>(p)])]
+                    += A.val[static_cast<size_t>(p)];
+        return D;
+    }
+
+    // ----- host dense reference matrices -----------------------------------
+    struct Dense
+    {
+        int64_t           rows = 0, cols = 0;
+        std::vector<cplx> v; // row-major logical
+        Dense() = default;
+        Dense(int64_t r, int64_t c)
+            : rows(r)
+            , cols(c)
+            , v(static_cast<size_t>(r * c), cplx(0.0, 0.0))
+        {
+        }
+        cplx& at(int64_t i, int64_t j)
+        {
+            return v[static_cast<size_t>(i * cols + j)];
+        }
+        const cplx& at(int64_t i, int64_t j) const
+        {
+            return v[static_cast<size_t>(i * cols + j)];
+        }
+    };
+
+    inline Dense dense_of(const Csr& A)
+    {
+        Dense D;
+        D.rows = A.m;
+        D.cols = A.n;
+        D.v    = to_dense(A);
+        return D;
+    }
+
+    inline Dense apply_op(const Dense& A, rocsparse_operation op)
+    {
+        if(op == rocsparse_operation_none)
+            return A;
+        Dense R(A.cols, A.rows);
+        for(int64_t i = 0; i < A.rows; ++i)
+            for(int64_t j = 0; j < A.cols; ++j)
+                R.at(j, i) = (op == rocsparse_operation_conjugate_transpose) ? std::conj(A.at(i, j))
+                                                                             : A.at(i, j);
+        return R;
+    }
+
+    inline Dense matmul(const Dense& A, const Dense& B)
+    {
+        Dense C(A.rows, B.cols);
+        for(int64_t i = 0; i < A.rows; ++i)
+            for(int64_t k = 0; k < A.cols; ++k)
+            {
+                const cplx a = A.at(i, k);
+                if(a == cplx(0.0, 0.0))
+                    continue;
+                for(int64_t j = 0; j < B.cols; ++j)
+                    C.at(i, j) += a * B.at(k, j);
+            }
+        return C;
+    }
+
+    inline Dense axpby(cplx alpha, const Dense& X, cplx beta, const Dense& Y)
+    {
+        Dense R(X.rows, X.cols);
+        for(size_t i = 0; i < R.v.size(); ++i)
+            R.v[i] = alpha * X.v[i] + beta * Y.v[i];
+        return R;
+    }
+
+    // Random dense matrix with entries rounded to T.
+    template <typename T>
+    inline Dense random_dense(int64_t r, int64_t c, Rng& rng)
+    {
+        Dense D(r, c);
+        for(auto& x : D.v)
+            x = round_to<T>(rand_val<T>(rng));
+        return D;
+    }
+
+    // Storage of a logical dense matrix with order / leading dimension. The
+    // padding between rows/columns is filled with `pad` so tests can check that
+    // the library does not write outside the logical matrix.
+    template <typename T>
+    inline std::vector<T>
+        store_dense(const Dense& D, rocsparse_order order, int64_t ld, cplx pad = cplx(-77.0, 0.0))
+    {
+        const int64_t  lines = (order == rocsparse_order_column) ? D.cols : D.rows;
+        std::vector<T> out(static_cast<size_t>(std::max<int64_t>(ld * lines, 1)), from_c<T>(pad));
+        for(int64_t i = 0; i < D.rows; ++i)
+            for(int64_t j = 0; j < D.cols; ++j)
+            {
+                const int64_t idx = (order == rocsparse_order_column) ? j * ld + i : i * ld + j;
+                out[static_cast<size_t>(idx)] = from_c<T>(D.at(i, j));
+            }
+        return out;
+    }
+
+    inline int64_t min_ld(const Dense& D, rocsparse_order order)
+    {
+        return std::max<int64_t>(1, (order == rocsparse_order_column) ? D.rows : D.cols);
+    }
+
+    // ----- comparison ------------------------------------------------------
+    template <typename T>
+    inline bool close(T got, cplx want)
+    {
+        const cplx   g = to_c<T>(got);
+        const double e = std::abs(g - want);
+        return std::isfinite(e) && e <= rel_tol<T>() * (1.0 + std::abs(want));
+    }
+
+    // Compare the whole logical matrix (and the untouched padding) of a dense
+    // matrix read back from the device.
+    template <typename T>
+    inline void expect_dense_equal(const std::vector<T>& got,
+                                   const Dense&          want,
+                                   rocsparse_order       order,
+                                   int64_t               ld,
+                                   const char*           what,
+                                   cplx                  pad = cplx(-77.0, 0.0))
+    {
+        const int64_t lines = (order == rocsparse_order_column) ? want.cols : want.rows;
+        ASSERT_GE(static_cast<int64_t>(got.size()), std::max<int64_t>(ld * lines, 1)) << what;
+        int bad = 0;
+        for(int64_t i = 0; i < want.rows && bad < 5; ++i)
+            for(int64_t j = 0; j < want.cols && bad < 5; ++j)
+            {
+                const int64_t idx = (order == rocsparse_order_column) ? j * ld + i : i * ld + j;
+                if(!close<T>(got[static_cast<size_t>(idx)], want.at(i, j)))
+                {
+                    ++bad;
+                    ADD_FAILURE() << what << "(" << i << "," << j
+                                  << ") = " << to_c<T>(got[static_cast<size_t>(idx)])
+                                  << " expected " << want.at(i, j);
+                }
+            }
+        // padding rows must keep their sentinel
+        const int64_t inner = (order == rocsparse_order_column) ? want.rows : want.cols;
+        for(int64_t l = 0; l < lines && bad < 5; ++l)
+            for(int64_t p = inner; p < ld && bad < 5; ++p)
+            {
+                const size_t idx = static_cast<size_t>(l * ld + p);
+                if(!close<T>(got[idx], pad))
+                {
+                    ++bad;
+                    ADD_FAILURE() << what << " padding at line " << l << " pos " << p
+                                  << " was modified";
+                }
+            }
+    }
+
+    template <typename T>
+    inline void
+        expect_vec_equal(const std::vector<T>& got, const std::vector<cplx>& want, const char* what)
+    {
+        ASSERT_GE(got.size(), want.size()) << what;
+        int bad = 0;
+        for(size_t i = 0; i < want.size() && bad < 5; ++i)
+            if(!close<T>(got[i], want[i]))
+            {
+                ++bad;
+                ADD_FAILURE() << what << "[" << i << "] = " << to_c<T>(got[i]) << " expected "
+                              << want[i];
+            }
+    }
+
+    template <typename I>
+    inline void expect_idx_equal(const std::vector<I>&       got,
+                                 const std::vector<int64_t>& want,
+                                 int64_t                     base,
+                                 const char*                 what)
+    {
+        ASSERT_GE(got.size(), want.size()) << what;
+        int bad = 0;
+        for(size_t i = 0; i < want.size() && bad < 5; ++i)
+            if(static_cast<int64_t>(got[i]) - base != want[i])
+            {
+                ++bad;
+                ADD_FAILURE() << what << "[" << i << "] = " << static_cast<int64_t>(got[i]) - base
+                              << " expected " << want[i];
+            }
+    }
+
+    // ----- movable device buffer -----------------------------------------
+    template <typename T>
+    struct DevBuf
+    {
+        T*     ptr = nullptr;
+        size_t n   = 0;
+        DevBuf()   = default;
+        explicit DevBuf(const std::vector<T>& h)
+            : n(std::max<size_t>(h.size(), 1))
+        {
+            std::vector<T> tmp(n);
+            std::copy(h.begin(), h.end(), tmp.begin());
+            if(hipMalloc(&ptr, n * sizeof(T)) != hipSuccess)
+            {
+                ptr = nullptr;
+                return;
+            }
+            (void)hipMemcpy(ptr, tmp.data(), n * sizeof(T), hipMemcpyHostToDevice);
+        }
+        explicit DevBuf(size_t count)
+            : n(std::max<size_t>(count, 1))
+        {
+            if(hipMalloc(&ptr, n * sizeof(T)) != hipSuccess)
+                ptr = nullptr;
+            else
+                (void)hipMemset(ptr, 0, n * sizeof(T));
+        }
+        DevBuf(const DevBuf&) = delete;
+        DevBuf& operator=(const DevBuf&) = delete;
+        DevBuf(DevBuf&& o) noexcept
+            : ptr(o.ptr)
+            , n(o.n)
+        {
+            o.ptr = nullptr;
+            o.n   = 0;
+        }
+        DevBuf& operator=(DevBuf&& o) noexcept
+        {
+            if(this != &o)
+            {
+                if(ptr)
+                    (void)hipFree(ptr);
+                ptr   = o.ptr;
+                n     = o.n;
+                o.ptr = nullptr;
+                o.n   = 0;
+            }
+            return *this;
+        }
+        ~DevBuf()
+        {
+            if(ptr)
+                (void)hipFree(ptr);
+        }
+        std::vector<T> host() const
+        {
+            std::vector<T> h(n);
+            if(ptr)
+                (void)hipMemcpy(h.data(), ptr, n * sizeof(T), hipMemcpyDeviceToHost);
+            return h;
+        }
+    };
+
+    // ----- uploads ---------------------------------------------------------
+    // Device buffers always hold at least one element so the pointers stay valid.
+    template <typename T>
+    inline DevBuf<T> up_val(const std::vector<cplx>& v)
+    {
+        std::vector<T> h(v.size());
+        for(size_t i = 0; i < v.size(); ++i)
+            h[i] = from_c<T>(v[i]);
+        return DevBuf<T>(h);
+    }
+
+    template <typename I>
+    inline DevBuf<I> up_idx(const std::vector<int64_t>& v, int64_t base = 0)
+    {
+        std::vector<I> h(v.size());
+        for(size_t i = 0; i < v.size(); ++i)
+            h[i] = static_cast<I>(v[i] + base);
+        return DevBuf<I>(h);
+    }
+
+    template <typename T>
+    inline DevBuf<T> up_raw(const std::vector<T>& h)
+    {
+        return DevBuf<T>(h);
+    }
+
+    // ----- RAII descriptors -------------------------------------------------
+    struct SpmatH
+    {
+        rocsparse_spmat_descr p = nullptr;
+        SpmatH()                = default;
+        SpmatH(const SpmatH&)   = delete;
+        SpmatH& operator=(const SpmatH&) = delete;
+        ~SpmatH()
+        {
+            if(p)
+                (void)rocsparse_destroy_spmat_descr(p);
+        }
+    };
+
+    struct DnmatH
+    {
+        rocsparse_dnmat_descr p = nullptr;
+        DnmatH()                = default;
+        DnmatH(const DnmatH&)   = delete;
+        DnmatH& operator=(const DnmatH&) = delete;
+        ~DnmatH()
+        {
+            if(p)
+                (void)rocsparse_destroy_dnmat_descr(p);
+        }
+    };
+
+    struct DnvecH
+    {
+        rocsparse_dnvec_descr p = nullptr;
+        DnvecH()                = default;
+        DnvecH(const DnvecH&)   = delete;
+        DnvecH& operator=(const DnvecH&) = delete;
+        ~DnvecH()
+        {
+            if(p)
+                (void)rocsparse_destroy_dnvec_descr(p);
+        }
+    };
+
+    struct MatDescrH
+    {
+        rocsparse_mat_descr d = nullptr;
+        explicit MatDescrH(rocsparse_index_base base = rocsparse_index_base_zero)
+        {
+            (void)rocsparse_create_mat_descr(&d);
+            (void)rocsparse_set_mat_index_base(d, base);
+        }
+        MatDescrH(const MatDescrH&) = delete;
+        MatDescrH& operator=(const MatDescrH&) = delete;
+        ~MatDescrH()
+        {
+            if(d)
+                (void)rocsparse_destroy_mat_descr(d);
+        }
+    };
+
+    struct MatInfoH
+    {
+        rocsparse_mat_info i = nullptr;
+        MatInfoH()
+        {
+            (void)rocsparse_create_mat_info(&i);
+        }
+        MatInfoH(const MatInfoH&) = delete;
+        MatInfoH& operator=(const MatInfoH&) = delete;
+        ~MatInfoH()
+        {
+            if(i)
+                (void)rocsparse_destroy_mat_info(i);
+        }
+    };
+
+    struct PointerModeGuard
+    {
+        rocsparse_handle       handle = nullptr;
+        rocsparse_pointer_mode prev   = rocsparse_pointer_mode_host;
+        PointerModeGuard(rocsparse_handle h, rocsparse_pointer_mode mode)
+            : handle(h)
+        {
+            (void)rocsparse_get_pointer_mode(handle, &prev);
+            (void)rocsparse_set_pointer_mode(handle, mode);
+        }
+        PointerModeGuard(const PointerModeGuard&) = delete;
+        PointerModeGuard& operator=(const PointerModeGuard&) = delete;
+        ~PointerModeGuard()
+        {
+            (void)rocsparse_set_pointer_mode(handle, prev);
+        }
+    };
+
+    // Scalars that are either host values or device pointers, depending on the
+    // handle pointer mode that the caller selected.
+    template <typename T>
+    struct Scalar
+    {
+        T         h;
+        DevBuf<T> d;
+        bool      device;
+        Scalar(cplx v, bool dev)
+            : h(from_c<T>(v))
+            , d(std::vector<T>{h})
+            , device(dev)
+        {
+        }
+        const void* get() const
+        {
+            return device ? static_cast<const void*>(d.ptr) : static_cast<const void*>(&h);
+        }
+        const T* typed() const
+        {
+            return device ? d.ptr : &h;
+        }
+    };
+
+    inline rocsparse_pointer_mode mode_of(bool device)
+    {
+        return device ? rocsparse_pointer_mode_device : rocsparse_pointer_mode_host;
+    }
+
+    // Create a CSR descriptor from a host matrix on given index types / base.
+    template <typename T, typename I, typename J>
+    inline void make_csr_descr(SpmatH&              out,
+                               const Csr&           A,
+                               DevBuf<I>&           dptr,
+                               DevBuf<J>&           dcol,
+                               DevBuf<T>&           dval,
+                               rocsparse_index_base base = rocsparse_index_base_zero)
+    {
+        dptr = up_idx<I>(A.ptr, static_cast<int64_t>(base));
+        dcol = up_idx<J>(A.col, static_cast<int64_t>(base));
+        dval = up_val<T>(A.val);
+        ASSERT_TRUE(dptr.ptr && dcol.ptr && dval.ptr);
+        ASSERT_EQ(rocsparse_create_csr_descr(&out.p,
+                                             A.m,
+                                             A.n,
+                                             A.nnz(),
+                                             dptr.ptr,
+                                             dcol.ptr,
+                                             dval.ptr,
+                                             rocsparse_ut::it_of<I>(),
+                                             rocsparse_ut::it_of<J>(),
+                                             base,
+                                             rocsparse_ut::dt_of<T>()),
+                  rocsparse_status_success);
+    }
+
+    // ----- host block sparse matrix (BSR, zero based) ------------------------
+    // Blocks are stored row-major (logical layout); bsr_pack() / bsr_unpack()
+    // convert to and from the device layout of a given block direction.
+    struct Bsr
+    {
+        int64_t              mb = 0, nb = 0, bd = 1;
+        std::vector<int64_t> ptr; // mb + 1
+        std::vector<int64_t> col;
+        std::vector<cplx>    val; // nnzb * bd * bd
+        int64_t              nnzb() const
+        {
+            return static_cast<int64_t>(col.size());
+        }
+    };
+
+    template <typename T>
+    inline Bsr random_bsr(int64_t mb, int64_t nb, int64_t bd, int64_t max_row_nnzb, Rng& rng)
+    {
+        const Csr pattern = random_csr<T>(mb, nb, max_row_nnzb, rng);
+        Bsr       B;
+        B.mb  = mb;
+        B.nb  = nb;
+        B.bd  = bd;
+        B.ptr = pattern.ptr;
+        B.col = pattern.col;
+        B.val.resize(static_cast<size_t>(pattern.nnz() * bd * bd));
+        for(auto& v : B.val)
+            v = round_to<T>(rand_val<T>(rng));
+        return B;
+    }
+
+    inline Bsr bsr_from_csr(const Csr& A)
+    {
+        Bsr B;
+        B.mb  = A.m;
+        B.nb  = A.n;
+        B.bd  = 1;
+        B.ptr = A.ptr;
+        B.col = A.col;
+        B.val = A.val;
+        return B;
+    }
+
+    template <typename T>
+    inline std::vector<T> bsr_pack(const Bsr& B, rocsparse_direction dir)
+    {
+        const int64_t  bd = B.bd;
+        std::vector<T> out(B.val.size());
+        for(int64_t p = 0; p < B.nnzb(); ++p)
+            for(int64_t r = 0; r < bd; ++r)
+                for(int64_t c = 0; c < bd; ++c)
+                {
+                    const size_t dst = static_cast<size_t>(
+                        p * bd * bd + (dir == rocsparse_direction_row ? r * bd + c : c * bd + r));
+                    out[dst] = from_c<T>(B.val[static_cast<size_t>(p * bd * bd + r * bd + c)]);
+                }
+        return out;
+    }
+
+    template <typename T>
+    inline std::vector<cplx>
+        bsr_unpack(const std::vector<T>& dev, int64_t nnzb, int64_t bd, rocsparse_direction dir)
+    {
+        std::vector<cplx> out(static_cast<size_t>(nnzb * bd * bd));
+        for(int64_t p = 0; p < nnzb; ++p)
+            for(int64_t r = 0; r < bd; ++r)
+                for(int64_t c = 0; c < bd; ++c)
+                    out[static_cast<size_t>(p * bd * bd + r * bd + c)]
+                        = to_c<T>(dev[static_cast<size_t>(
+                            p * bd * bd
+                            + (dir == rocsparse_direction_row ? r * bd + c : c * bd + r))]);
+        return out;
+    }
+
+    // C = alpha * A + beta * B (block pattern = union of both patterns).
+    inline Bsr bsr_geam(cplx alpha, const Bsr& A, cplx beta, const Bsr& B)
+    {
+        const int64_t bd = A.bd;
+        Bsr           C;
+        C.mb = A.mb;
+        C.nb = A.nb;
+        C.bd = bd;
+        C.ptr.assign(static_cast<size_t>(A.mb) + 1, 0);
+        for(int64_t i = 0; i < A.mb; ++i)
+        {
+            std::vector<std::pair<int64_t, std::vector<cplx>>> row;
+            auto                                               add_row = [&](const Bsr& M, cplx s) {
+                for(int64_t p = M.ptr[static_cast<size_t>(i)];
+                    p < M.ptr[static_cast<size_t>(i) + 1];
+                    ++p)
+                {
+                    const int64_t j = M.col[static_cast<size_t>(p)];
+                    auto          it = std::find_if(
+                        row.begin(), row.end(), [&](const auto& e) { return e.first == j; });
+                    if(it == row.end())
+                    {
+                        row.emplace_back(j, std::vector<cplx>(static_cast<size_t>(bd * bd)));
+                        it = row.end() - 1;
+                    }
+                    for(int64_t e = 0; e < bd * bd; ++e)
+                        it->second[static_cast<size_t>(e)]
+                            += s * M.val[static_cast<size_t>(p * bd * bd + e)];
+                }
+            };
+            add_row(A, alpha);
+            add_row(B, beta);
+            std::sort(row.begin(), row.end(), [](const auto& a, const auto& b) {
+                return a.first < b.first;
+            });
+            for(const auto& e : row)
+            {
+                C.col.push_back(e.first);
+                C.val.insert(C.val.end(), e.second.begin(), e.second.end());
+            }
+            C.ptr[static_cast<size_t>(i) + 1] = static_cast<int64_t>(C.col.size());
+        }
+        return C;
+    }
+
+    // C = alpha * A * B + beta * D, where `mul` / `add` select the terms.
+    inline Bsr bsr_gemm(bool       mul,
+                        cplx       alpha,
+                        const Bsr& A,
+                        const Bsr& B,
+                        bool       add,
+                        cplx       beta,
+                        const Bsr& D,
+                        int64_t    mb,
+                        int64_t    nb)
+    {
+        const int64_t bd = D.bd;
+        Bsr           C;
+        C.mb = mb;
+        C.nb = nb;
+        C.bd = bd;
+        C.ptr.assign(static_cast<size_t>(mb) + 1, 0);
+        for(int64_t i = 0; i < mb; ++i)
+        {
+            std::vector<std::pair<int64_t, std::vector<cplx>>> row;
+            auto slot = [&](int64_t j) -> std::vector<cplx>& {
+                for(auto& e : row)
+                    if(e.first == j)
+                        return e.second;
+                row.emplace_back(j, std::vector<cplx>(static_cast<size_t>(bd * bd)));
+                return row.back().second;
+            };
+            if(mul)
+            {
+                for(int64_t pa = A.ptr[static_cast<size_t>(i)];
+                    pa < A.ptr[static_cast<size_t>(i) + 1];
+                    ++pa)
+                {
+                    const int64_t kk = A.col[static_cast<size_t>(pa)];
+                    for(int64_t pb = B.ptr[static_cast<size_t>(kk)];
+                        pb < B.ptr[static_cast<size_t>(kk) + 1];
+                        ++pb)
+                    {
+                        std::vector<cplx>& blk = slot(B.col[static_cast<size_t>(pb)]);
+                        for(int64_t r = 0; r < bd; ++r)
+                            for(int64_t c = 0; c < bd; ++c)
+                                for(int64_t t = 0; t < bd; ++t)
+                                    blk[static_cast<size_t>(r * bd + c)]
+                                        += alpha
+                                           * A.val[static_cast<size_t>(pa * bd * bd + r * bd + t)]
+                                           * B.val[static_cast<size_t>(pb * bd * bd + t * bd + c)];
+                    }
+                }
+            }
+            if(add)
+            {
+                for(int64_t p = D.ptr[static_cast<size_t>(i)];
+                    p < D.ptr[static_cast<size_t>(i) + 1];
+                    ++p)
+                {
+                    std::vector<cplx>& blk = slot(D.col[static_cast<size_t>(p)]);
+                    for(int64_t e = 0; e < bd * bd; ++e)
+                        blk[static_cast<size_t>(e)]
+                            += beta * D.val[static_cast<size_t>(p * bd * bd + e)];
+                }
+            }
+            std::sort(row.begin(), row.end(), [](const auto& a, const auto& b) {
+                return a.first < b.first;
+            });
+            for(const auto& e : row)
+            {
+                C.col.push_back(e.first);
+                C.val.insert(C.val.end(), e.second.begin(), e.second.end());
+            }
+            C.ptr[static_cast<size_t>(i) + 1] = static_cast<int64_t>(C.col.size());
+        }
+        return C;
+    }
+
+    // Typed access to the legacy s/d/c/z entry points.
+    template <typename T>
+    struct Api;
+#define COV70_API(TYPE, P)                                   \
+    template <>                                              \
+    struct Api<TYPE>                                         \
+    {                                                        \
+        template <typename... A>                             \
+        static rocsparse_status csrgemm_buffer_size(A... a)  \
+        {                                                    \
+            return rocsparse_##P##csrgemm_buffer_size(a...); \
+        }                                                    \
+        template <typename... A>                             \
+        static rocsparse_status csrgemm(A... a)              \
+        {                                                    \
+            return rocsparse_##P##csrgemm(a...);             \
+        }                                                    \
+        template <typename... A>                             \
+        static rocsparse_status bsrgemm_buffer_size(A... a)  \
+        {                                                    \
+            return rocsparse_##P##bsrgemm_buffer_size(a...); \
+        }                                                    \
+        template <typename... A>                             \
+        static rocsparse_status bsrgemm(A... a)              \
+        {                                                    \
+            return rocsparse_##P##bsrgemm(a...);             \
+        }                                                    \
+        template <typename... A>                             \
+        static rocsparse_status bsrgeam(A... a)              \
+        {                                                    \
+            return rocsparse_##P##bsrgeam(a...);             \
+        }                                                    \
+    }
+    COV70_API(float, s);
+    COV70_API(double, d);
+    COV70_API(rocsparse_float_complex, c);
+    COV70_API(rocsparse_double_complex, z);
+#undef COV70_API
+}
