@@ -378,6 +378,15 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_SOURCES
   unit_test_device_cov80_precond_dense.cpp
   unit_test_device_cov80_precond_singularity.cpp
   unit_test_device_cov80_precond_auxiliary.cpp
+  # cov80 extra
+  unit_test_device_cov80_extra_bell.cpp
+  unit_test_device_cov80_extra_bsrsm.cpp
+  unit_test_device_cov80_extra_geam.cpp
+  unit_test_device_cov80_extra_gebsrmm.cpp
+  unit_test_device_cov80_extra_gemmi.cpp
+  unit_test_device_cov80_extra_spgemm.cpp
+  unit_test_device_cov80_extra_spmm.cpp
+  unit_test_device_cov80_extra_sptrsm.cpp
 )
 
 # Host building-block library translation units under test by the
