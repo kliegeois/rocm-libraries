@@ -231,103 +231,98 @@ TEST_F(BsrgeamCov70, wide_rows)
     }
 }
 
-// Quick returns: nothing to compute.
+// Quick returns: C is empty, nothing to compute.
+//  - rocsparse_bsrgeam_nnzb reports nnzb_C = 0 (host or device pointer) and
+//    fills the row pointer of C with the index base of C (the row pointer has
+//    mb + 1 entries, the sentinel value is overwritten),
+//  - rocsparse_sbsrgeam returns success and does not touch C at all (row
+//    pointer, column indices and values keep their sentinel values).
 TEST_F(BsrgeamCov70, quick_returns)
 {
-    MatDescrH             descr;
-    DevBuf<rocsparse_int> ptr(std::vector<rocsparse_int>{0, 0, 0});
-    DevBuf<rocsparse_int> col(size_t{1});
-    DevBuf<float>         val(size_t{1});
-    DevBuf<rocsparse_int> pC(std::vector<rocsparse_int>{7, 7, 7});
-    const float           alpha = 1.f, beta = 1.f;
-    // both inputs empty
-    rocsparse_int nnzb = -1;
-    EXPECT_EQ(rocsparse_bsrgeam_nnzb(handle,
-                                     rocsparse_direction_row,
-                                     2,
-                                     2,
-                                     2,
-                                     descr.d,
-                                     0,
-                                     ptr.ptr,
-                                     col.ptr,
-                                     descr.d,
-                                     0,
-                                     ptr.ptr,
-                                     col.ptr,
-                                     descr.d,
-                                     pC.ptr,
-                                     &nnzb),
-              rocsparse_status_success);
-    ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
-    EXPECT_EQ(nnzb, 0);
-    EXPECT_EQ(rocsparse_sbsrgeam(handle,
-                                 rocsparse_direction_row,
-                                 2,
-                                 2,
-                                 2,
-                                 &alpha,
-                                 descr.d,
-                                 0,
-                                 val.ptr,
-                                 ptr.ptr,
-                                 col.ptr,
-                                 &beta,
-                                 descr.d,
-                                 0,
-                                 val.ptr,
-                                 ptr.ptr,
-                                 col.ptr,
-                                 descr.d,
-                                 val.ptr,
-                                 pC.ptr,
-                                 col.ptr),
-              rocsparse_status_success);
-    // mb == 0 and nb == 0
-    EXPECT_EQ(rocsparse_sbsrgeam(handle,
-                                 rocsparse_direction_row,
-                                 0,
-                                 2,
-                                 2,
-                                 &alpha,
-                                 descr.d,
-                                 1,
-                                 val.ptr,
-                                 ptr.ptr,
-                                 col.ptr,
-                                 &beta,
-                                 descr.d,
-                                 1,
-                                 val.ptr,
-                                 ptr.ptr,
-                                 col.ptr,
-                                 descr.d,
-                                 val.ptr,
-                                 pC.ptr,
-                                 col.ptr),
-              rocsparse_status_success);
-    EXPECT_EQ(rocsparse_sbsrgeam(handle,
-                                 rocsparse_direction_row,
-                                 2,
-                                 0,
-                                 2,
-                                 &alpha,
-                                 descr.d,
-                                 1,
-                                 val.ptr,
-                                 ptr.ptr,
-                                 col.ptr,
-                                 &beta,
-                                 descr.d,
-                                 1,
-                                 val.ptr,
-                                 ptr.ptr,
-                                 col.ptr,
-                                 descr.d,
-                                 val.ptr,
-                                 pC.ptr,
-                                 col.ptr),
-              rocsparse_status_success);
+    struct Dim
+    {
+        rocsparse_int mb, nb;
+    };
+    // both inputs empty, all rows empty; mb == 0 and nb == 0 (an empty
+    // matrix has no entries).
+    const Dim dims[] = {{2, 2}, {3, 0}, {0, 2}};
+
+    for(bool device : {false, true})
+        for(rocsparse_index_base base : {rocsparse_index_base_zero, rocsparse_index_base_one})
+            for(const Dim& d : dims)
+            {
+                SCOPED_TRACE(testing::Message() << "device=" << device << " base=" << base
+                                                << " mb=" << d.mb << " nb=" << d.nb);
+                const rocsparse_int sentinel = 7;
+                MatDescrH           descr(base);
+                // A and B are empty: row pointers hold the index base.
+                DevBuf<rocsparse_int> ptr
+                    = up_idx<rocsparse_int>(std::vector<int64_t>(size_t(d.mb) + 1, 0), base);
+                DevBuf<rocsparse_int> col(std::vector<rocsparse_int>{-5});
+                DevBuf<float>         val(std::vector<float>{-5.f});
+                DevBuf<rocsparse_int> pC(std::vector<rocsparse_int>(size_t(d.mb) + 1, sentinel));
+                DevBuf<rocsparse_int> cC(std::vector<rocsparse_int>{sentinel});
+                DevBuf<float>         vC(std::vector<float>{-7.f});
+                PointerModeGuard      mode(handle, mode_of(device));
+                const Scalar<float>   alpha(cplx(1.0, 0.0), device), beta(cplx(1.0, 0.0), device);
+
+                rocsparse_int         nnzb_host = -1;
+                DevBuf<rocsparse_int> nnzb_dev(std::vector<rocsparse_int>{-1});
+                ASSERT_EQ(rocsparse_bsrgeam_nnzb(handle,
+                                                 rocsparse_direction_row,
+                                                 d.mb,
+                                                 d.nb,
+                                                 2,
+                                                 descr.d,
+                                                 0,
+                                                 ptr.ptr,
+                                                 col.ptr,
+                                                 descr.d,
+                                                 0,
+                                                 ptr.ptr,
+                                                 col.ptr,
+                                                 descr.d,
+                                                 pC.ptr,
+                                                 device ? nnzb_dev.ptr : &nnzb_host),
+                          rocsparse_status_success);
+                ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
+                EXPECT_EQ(device ? nnzb_dev.host()[0] : nnzb_host, 0);
+                expect_idx_equal<rocsparse_int>(pC.host(),
+                                                std::vector<int64_t>(size_t(d.mb) + 1, 0),
+                                                base,
+                                                "row_ptr_C after nnzb");
+
+                // The compute routine has nothing to do and leaves C alone.
+                EXPECT_EQ(rocsparse_sbsrgeam(handle,
+                                             rocsparse_direction_row,
+                                             d.mb,
+                                             d.nb,
+                                             2,
+                                             alpha.typed(),
+                                             descr.d,
+                                             0,
+                                             val.ptr,
+                                             ptr.ptr,
+                                             col.ptr,
+                                             beta.typed(),
+                                             descr.d,
+                                             0,
+                                             val.ptr,
+                                             ptr.ptr,
+                                             col.ptr,
+                                             descr.d,
+                                             vC.ptr,
+                                             pC.ptr,
+                                             cC.ptr),
+                          rocsparse_status_success);
+                ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
+                expect_idx_equal<rocsparse_int>(pC.host(),
+                                                std::vector<int64_t>(size_t(d.mb) + 1, 0),
+                                                base,
+                                                "row_ptr_C after bsrgeam");
+                EXPECT_EQ(cC.host()[0], sentinel);
+                EXPECT_EQ(vC.host()[0], -7.f);
+            }
 }
 
 // One invalid argument at a time.

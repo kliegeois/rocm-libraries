@@ -29,8 +29,11 @@
 //  - the combined analysis/compute flow and the split symbolic/numeric flow,
 //  - the output matrix C created before or after the analysis,
 //  - host and device scalars, scalar types different from the compute type,
-//  - the complete stage state machine (every previous stage against every
-//    next stage), and
+//  - the numeric-only flow (numeric analysis + numeric compute on a fresh
+//    descriptor with a user supplied sparsity pattern of C),
+//  - index base one (and mixed bases) for A, B and C,
+//  - the stage state machine (each stage against the stages that can follow
+//    the listed stage sequences), and
 //  - the argument checks.
 // Every successful flow compares the whole C (row pointer, column indices and
 // values) against a host reference C = alpha * A + beta * B.
@@ -77,6 +80,20 @@ namespace
         return s == SA || s == AN;
     }
 
+    // RAII owner of a bare SpGEAM descriptor.
+    struct DescrH
+    {
+        rocsparse_spgeam_descr d = nullptr;
+        DescrH()                 = default;
+        DescrH(const DescrH&)    = delete;
+        DescrH& operator=(const DescrH&) = delete;
+        ~DescrH()
+        {
+            if(d != nullptr)
+                (void)rocsparse_destroy_spgeam_descr(d);
+        }
+    };
+
     // One SpGEAM problem: A, B (CSR), optional C (CSR) and the descriptor.
     template <typename T, typename S, typename I, typename J>
     struct Geam
@@ -90,6 +107,9 @@ namespace
         DevBuf<T>              vA, vB, vC;
         SpmatH                 sA, sB, sC;
         DevBuf<char>           tmp;
+
+        rocsparse_index_base bA = rocsparse_index_base_zero, bB = rocsparse_index_base_zero,
+                             bC = rocsparse_index_base_zero;
 
         std::unique_ptr<Scalar<S>>        alpha, beta;
         std::unique_ptr<PointerModeGuard> mode;
@@ -122,8 +142,8 @@ namespace
                 new Scalar<S>(is_complex_t<S>::value ? cplx(-1.0, 0.5) : cplx(-1.0, 0.0), device));
             want = bsr_geam(to_c<S>(alpha->h), bsr_from_csr(A), to_c<S>(beta->h), bsr_from_csr(B));
 
-            ASSERT_NO_FATAL_FAILURE((make_csr_descr<T, I, J>(sA, A, pA, cA, vA)));
-            ASSERT_NO_FATAL_FAILURE((make_csr_descr<T, I, J>(sB, B, pB, cB, vB)));
+            ASSERT_NO_FATAL_FAILURE((make_csr_descr<T, I, J>(sA, A, pA, cA, vA, bA)));
+            ASSERT_NO_FATAL_FAILURE((make_csr_descr<T, I, J>(sB, B, pB, cB, vB, bB)));
 
             ASSERT_EQ(rocsparse_create_spgeam_descr(&descr), rocsparse_status_success);
             set_inputs(descr);
@@ -177,11 +197,22 @@ namespace
         }
 
         // C with room for nnz entries (the library fills the row pointer).
-        void create_C(int64_t nnz)
+        // With `with_pattern` the user supplies the final sparsity pattern
+        // instead (numeric-only flow: no symbolic stage fills it).
+        void create_C(int64_t nnz, bool with_pattern = false)
         {
             ASSERT_EQ(sC.p, nullptr);
-            pC = DevBuf<I>(static_cast<size_t>(A.m) + 1);
-            cC = DevBuf<J>(static_cast<size_t>(nnz));
+            if(with_pattern)
+            {
+                ASSERT_EQ(nnz, want.nnzb());
+                pC = up_idx<I>(want.ptr, static_cast<int64_t>(bC));
+                cC = up_idx<J>(want.col, static_cast<int64_t>(bC));
+            }
+            else
+            {
+                pC = DevBuf<I>(static_cast<size_t>(A.m) + 1);
+                cC = DevBuf<J>(static_cast<size_t>(nnz));
+            }
             vC = DevBuf<T>(static_cast<size_t>(nnz));
             ASSERT_TRUE(pC.ptr && cC.ptr && vC.ptr);
             ASSERT_EQ(rocsparse_create_csr_descr(&sC.p,
@@ -193,7 +224,7 @@ namespace
                                                  vC.ptr,
                                                  rocsparse_ut::it_of<I>(),
                                                  rocsparse_ut::it_of<J>(),
-                                                 rocsparse_index_base_zero,
+                                                 bC,
                                                  rocsparse_ut::dt_of<T>()),
                       rocsparse_status_success);
         }
@@ -259,8 +290,8 @@ namespace
             ASSERT_NE(sC.p, nullptr);
             const std::vector<I> hp = pC.host();
             const std::vector<J> hc = cC.host();
-            expect_idx_equal<I>(hp, want.ptr, 0, "C row_ptr");
-            expect_idx_equal<J>(hc, want.col, 0, "C col_ind");
+            expect_idx_equal<I>(hp, want.ptr, static_cast<int64_t>(bC), "C row_ptr");
+            expect_idx_equal<J>(hc, want.col, static_cast<int64_t>(bC), "C col_ind");
         }
 
         void check_C()
@@ -273,19 +304,37 @@ namespace
         }
     };
 
+    struct Bases
+    {
+        rocsparse_index_base a = rocsparse_index_base_zero, b = rocsparse_index_base_zero,
+                             c = rocsparse_index_base_zero;
+    };
+
+    constexpr rocsparse_index_base Z = rocsparse_index_base_zero;
+    constexpr rocsparse_index_base O = rocsparse_index_base_one;
+
     // kind 0: analysis (C created afterwards) + compute
     // kind 1: symbolic / numeric split flow with repeated numeric stages
     // kind 2: C created first, analysis + compute
     // kind 3: C created first, symbolic / numeric split flow
     template <typename T, typename S, typename I, typename J>
-    void flow(rocsparse_handle handle, bool device, int kind, uint64_t seed, bool verify_values)
+    void flow(rocsparse_handle handle,
+              bool             device,
+              int              kind,
+              uint64_t         seed,
+              bool             verify_values,
+              Bases            bases = Bases())
     {
         SCOPED_TRACE(testing::Message()
                      << "device=" << device << " kind=" << kind
                      << " compute_type=" << static_cast<int>(rocsparse_ut::dt_of<T>())
-                     << " scalar_type=" << static_cast<int>(rocsparse_ut::dt_of<S>()));
+                     << " scalar_type=" << static_cast<int>(rocsparse_ut::dt_of<S>())
+                     << " bases=" << bases.a << bases.b << bases.c);
         Geam<T, S, I, J> g;
         g.verify_values = verify_values;
+        g.bA            = bases.a;
+        g.bB            = bases.b;
+        g.bC            = bases.c;
         ASSERT_NO_FATAL_FAILURE(g.init(handle, device, seed));
         const bool c_first = kind >= 2;
         if(c_first)
@@ -315,15 +364,43 @@ namespace
     }
 
     template <typename T, typename S, typename I, typename J>
-    void flows(rocsparse_handle handle, uint64_t seed, bool verify_values = true)
+    void flows(rocsparse_handle handle,
+               uint64_t         seed,
+               bool             verify_values = true,
+               Bases            bases         = Bases())
     {
         for(int device = 0; device < 2; ++device)
             for(int kind = 0; kind < 4; ++kind)
             {
                 ASSERT_NO_FATAL_FAILURE(
-                    (flow<T, S, I, J>(handle, device != 0, kind, seed, verify_values)));
+                    (flow<T, S, I, J>(handle, device != 0, kind, seed, verify_values, bases)));
                 ++seed;
             }
+    }
+
+    // Numeric-only flow: a fresh descriptor goes straight to the numeric
+    // analysis and the numeric compute stage, with the sparsity pattern of C
+    // supplied by the user (no symbolic stage). The numeric stages can then
+    // be repeated with new values.
+    template <typename T, typename S, typename I, typename J>
+    void numeric_only(rocsparse_handle handle, bool device, uint64_t seed, Bases bases = Bases())
+    {
+        SCOPED_TRACE(testing::Message()
+                     << "device=" << device << " bases=" << bases.a << bases.b << bases.c);
+        Geam<T, S, I, J> g;
+        g.bA = bases.a;
+        g.bB = bases.b;
+        g.bC = bases.c;
+        ASSERT_NO_FATAL_FAILURE(g.init(handle, device, seed));
+        ASSERT_NO_FATAL_FAILURE(g.create_C(g.want.nnzb(), true));
+        ASSERT_NO_FATAL_FAILURE(g.ok(NA, true));
+        ASSERT_NO_FATAL_FAILURE(g.ok(NC, true));
+        ASSERT_NO_FATAL_FAILURE(g.check_C());
+        ASSERT_NO_FATAL_FAILURE(g.ok(NC, true));
+        ASSERT_NO_FATAL_FAILURE(g.check_C());
+        ASSERT_NO_FATAL_FAILURE(g.ok(NA, true));
+        ASSERT_NO_FATAL_FAILURE(g.ok(NC, true));
+        ASSERT_NO_FATAL_FAILURE(g.check_C());
     }
 
     struct SpgeamCov70 : public rocsparse_ut::HandleTest
@@ -348,32 +425,73 @@ TEST_F(SpgeamCov70, flows_complex)
     flows<rocsparse_double_complex, rocsparse_double_complex, int64_t, int64_t>(handle, 81);
 }
 
-// The scalars are converted from the scalar type to the compute type.
-// The library hands the converted scalars (compute type) to csrgeam together
-// with the scalar type, so the numerical values of C are not meaningful when
-// the two types differ. These flows therefore verify the status of every
-// stage and the complete sparsity pattern (row pointer and column indices)
-// of C, and deliberately do not verify the values.
+// Index base one for A, B and C, and mixed bases.
+TEST_F(SpgeamCov70, flows_index_base_one)
+{
+    flows<float, float, int32_t, int32_t>(handle, 141, true, Bases{O, O, O});
+    flows<double, double, int64_t, int32_t>(handle, 161, true, Bases{O, Z, O});
+    flows<float, float, int32_t, int32_t>(handle, 181, true, Bases{Z, O, Z});
+    flows<rocsparse_double_complex, rocsparse_double_complex, int32_t, int32_t>(
+        handle, 201, true, Bases{O, O, Z});
+}
+
+TEST_F(SpgeamCov70, numeric_only_flow)
+{
+    for(int device = 0; device < 2; ++device)
+    {
+        numeric_only<float, float, int32_t, int32_t>(handle, device != 0, 221 + device);
+        numeric_only<double, double, int64_t, int64_t>(handle, device != 0, 231 + device);
+        numeric_only<rocsparse_float_complex, rocsparse_float_complex, int32_t, int32_t>(
+            handle, device != 0, 241 + device);
+        numeric_only<float, float, int32_t, int32_t>(
+            handle, device != 0, 251 + device, Bases{O, O, O});
+    }
+}
+
+// The scalar datatype differs from the compute datatype.
+//
+// Library bug (rocsparse_spgeam.cpp: csrgeam / csrgeam_numeric are called with
+// descr->get_scalar_datatype() instead of the compute datatype, after the
+// scalars were converted to the compute type): the kernel is instantiated on
+// the scalar type but works on buffers of the compute type, so the values of
+// C are wrong for every such combination.
+//
+// compute=float, scalar=double is NOT safe to run: the kernel reads and writes
+// 8 byte values on buffers of 4 byte values and writes past the end of the
+// value array of C (reproduced with a standalone program, canary bytes after
+// the C value buffer are overwritten). That combination is deliberately not
+// tested.
+//
+// compute=double, scalar=float stays inside the buffers (4 byte accesses on 8
+// byte buffers, reproduced with canary bytes after every buffer: untouched),
+// but yields wrong values. It therefore only checks the status of every stage
+// and the complete sparsity pattern of C (row pointer and column indices),
+// not the values.
 TEST_F(SpgeamCov70, flows_scalar_type_differs_from_compute_type)
 {
     flows<double, float, int32_t, int32_t>(handle, 101, false);
-    flows<float, double, int32_t, int32_t>(handle, 121, false);
 }
 
-// Every previous stage against every next stage. The legal transitions must
+// The stage sequences listed in `paths` (ending in every possible "last
+// executed stage") against every next stage. The legal transitions must
 // succeed (and compute the right C when they produce values), all others must
 // report rocsparse_status_invalid_value.
+// Not covered: the numeric compute stage as the very first stage on a fresh
+// descriptor. The documentation does not specify that case (it needs the
+// pattern of C and the values of the numeric analysis), so neither success nor
+// failure is asserted. The numeric analysis as the first stage is the
+// numeric-only flow (see numeric_only_flow).
 TEST_F(SpgeamCov70, stage_state_machine)
 {
     using G = Geam<float, float, int32_t, int32_t>;
 
     const std::vector<std::vector<stage_t>> paths
-        = {{}, {SA}, {AN}, {AN, CO}, {SA, SC}, {SA, SC, NA}, {SA, SC, NA, NC}};
+        = {{}, {SA}, {AN}, {AN, CO}, {SA, SC}, {SA, SC, NA}, {SA, SC, NA, NC}, {NA}, {NA, NC}};
     const std::vector<stage_t> nexts = {SA, SC, NA, NC, AN, CO};
 
     auto legal = [](const std::vector<stage_t>& path, stage_t next) {
         if(path.empty())
-            return next == SA || next == AN;
+            return next == SA || next == AN || next == NA;
         switch(path.back())
         {
         case SA:
@@ -394,9 +512,8 @@ TEST_F(SpgeamCov70, stage_state_machine)
     for(const auto& path : paths)
         for(stage_t next : nexts)
         {
-            // Not covered by the state machine: a numeric stage without any
-            // symbolic stage before it is not a meaningful request.
-            if(path.empty() && (next == NA || next == NC))
+            // Unspecified: numeric compute as the first stage (see above).
+            if(path.empty() && next == NC)
                 continue;
 
             std::string desc = "after [";
@@ -407,9 +524,15 @@ TEST_F(SpgeamCov70, stage_state_machine)
 
             G g;
             ASSERT_NO_FATAL_FAILURE(g.init(handle, false, 7));
-            // The output matrix has to exist for the stages that need it.
+            // The output matrix has to exist for the stages that need it. A
+            // sequence starting with the numeric analysis needs the pattern
+            // of C from the user.
+            const bool numeric_first
+                = (path.empty() && next == NA) || (!path.empty() && path[0] == NA);
             if(path.empty())
-                ASSERT_NO_FATAL_FAILURE(g.create_C(g.want.nnzb()));
+                ASSERT_NO_FATAL_FAILURE(g.create_C(g.want.nnzb(), numeric_first));
+            else if(numeric_first)
+                ASSERT_NO_FATAL_FAILURE(g.create_C(g.want.nnzb(), true));
             for(stage_t s : path)
                 ASSERT_NO_FATAL_FAILURE(g.ok(s, s != SA && s != AN));
 
@@ -610,16 +733,15 @@ TEST_F(SpgeamCov70, argument_errors)
                                size_t                 size,
                                rocsparse_status       want,
                                const char*            what) {
-            rocsparse_spgeam_descr d = nullptr;
-            ASSERT_EQ(rocsparse_create_spgeam_descr(&d), rocsparse_status_success);
-            g.set_inputs(d);
-            ASSERT_EQ(rocsparse_spgeam_set_input(handle, d, input, data, size, nullptr),
+            DescrH h;
+            ASSERT_EQ(rocsparse_create_spgeam_descr(&h.d), rocsparse_status_success);
+            g.set_inputs(h.d);
+            ASSERT_EQ(rocsparse_spgeam_set_input(handle, h.d, input, data, size, nullptr),
                       rocsparse_status_success)
                 << what;
             const rocsparse_status st
-                = rocsparse_spgeam(handle, d, g.sA.p, g.sB.p, g.sC.p, AN, 0, nullptr, nullptr);
+                = rocsparse_spgeam(handle, h.d, g.sA.p, g.sB.p, g.sC.p, AN, 0, nullptr, nullptr);
             EXPECT_EQ(st, want) << what;
-            EXPECT_EQ(rocsparse_destroy_spgeam_descr(d), rocsparse_status_success);
         };
         const rocsparse_spgeam_alg bad_alg = (rocsparse_spgeam_alg)99;
         expect_with(rocsparse_spgeam_input_alg,
@@ -655,9 +777,10 @@ TEST_F(SpgeamCov70, argument_errors)
 
     // ---- set_input / get_output sizes ----
     {
-        rocsparse_spgeam_descr d = nullptr;
-        ASSERT_EQ(rocsparse_create_spgeam_descr(&d), rocsparse_status_success);
-        float x = 1.0f;
+        DescrH h;
+        ASSERT_EQ(rocsparse_create_spgeam_descr(&h.d), rocsparse_status_success);
+        rocsparse_spgeam_descr d = h.d;
+        float                  x = 1.0f;
         EXPECT_EQ(rocsparse_spgeam_set_input(
                       handle, d, rocsparse_spgeam_input_scalar_alpha, &x, 1, nullptr),
                   rocsparse_status_invalid_size);
@@ -668,7 +791,6 @@ TEST_F(SpgeamCov70, argument_errors)
         EXPECT_EQ(rocsparse_spgeam_get_output(
                       handle, d, rocsparse_spgeam_output_nnz, &nnz32, sizeof(nnz32), nullptr),
                   rocsparse_status_invalid_size);
-        EXPECT_EQ(rocsparse_destroy_spgeam_descr(d), rocsparse_status_success);
     }
 
     // The session is still usable after the failed calls.

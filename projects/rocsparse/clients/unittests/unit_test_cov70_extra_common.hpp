@@ -96,27 +96,11 @@ namespace cov70
         static constexpr bool value = true;
     };
 
-    template <typename T>
-    struct is_single_t
-    {
-        static constexpr bool value = false;
-    };
-    template <>
-    struct is_single_t<float>
-    {
-        static constexpr bool value = true;
-    };
-    template <>
-    struct is_single_t<rocsparse_float_complex>
-    {
-        static constexpr bool value = true;
-    };
-
-    template <typename T>
-    inline double rel_tol()
-    {
-        return is_single_t<T>::value ? 1.0e-4 : 1.0e-10;
-    }
+    // The test data are small integers (and exactly representable fractions),
+    // so sums and products are computed exactly in float and double: results
+    // are compared exactly (tolerance 0). The few tests whose result is not
+    // exactly representable (e.g. deep triangular solves) pass an explicit,
+    // measured and justified tolerance.
 
     // Round a value to what T can represent, so the host reference uses exactly
     // the numbers the device sees.
@@ -347,12 +331,13 @@ namespace cov70
     }
 
     // ----- comparison ------------------------------------------------------
+    // |got - want| <= tol * (1 + |want|); tol == 0 is an exact comparison.
     template <typename T>
-    inline bool close(T got, cplx want)
+    inline bool close(T got, cplx want, double tol = 0.0)
     {
         const cplx   g = to_c<T>(got);
         const double e = std::abs(g - want);
-        return std::isfinite(e) && e <= rel_tol<T>() * (1.0 + std::abs(want));
+        return std::isfinite(e) && e <= tol * (1.0 + std::abs(want));
     }
 
     // Compare the whole logical matrix (and the untouched padding) of a dense
@@ -363,7 +348,8 @@ namespace cov70
                                    rocsparse_order       order,
                                    int64_t               ld,
                                    const char*           what,
-                                   cplx                  pad = cplx(-77.0, 0.0))
+                                   cplx                  pad = cplx(-77.0, 0.0),
+                                   double                tol = 0.0)
     {
         const int64_t lines = (order == rocsparse_order_column) ? want.cols : want.rows;
         ASSERT_GE(static_cast<int64_t>(got.size()), std::max<int64_t>(ld * lines, 1)) << what;
@@ -372,7 +358,7 @@ namespace cov70
             for(int64_t j = 0; j < want.cols && bad < 5; ++j)
             {
                 const int64_t idx = (order == rocsparse_order_column) ? j * ld + i : i * ld + j;
-                if(!close<T>(got[static_cast<size_t>(idx)], want.at(i, j)))
+                if(!close<T>(got[static_cast<size_t>(idx)], want.at(i, j), tol))
                 {
                     ++bad;
                     ADD_FAILURE() << what << "(" << i << "," << j
@@ -396,13 +382,15 @@ namespace cov70
     }
 
     template <typename T>
-    inline void
-        expect_vec_equal(const std::vector<T>& got, const std::vector<cplx>& want, const char* what)
+    inline void expect_vec_equal(const std::vector<T>&    got,
+                                 const std::vector<cplx>& want,
+                                 const char*              what,
+                                 double                   tol = 0.0)
     {
         ASSERT_GE(got.size(), want.size()) << what;
         int bad = 0;
         for(size_t i = 0; i < want.size() && bad < 5; ++i)
-            if(!close<T>(got[i], want[i]))
+            if(!close<T>(got[i], want[i], tol))
             {
                 ++bad;
                 ADD_FAILURE() << what << "[" << i << "] = " << to_c<T>(got[i]) << " expected "

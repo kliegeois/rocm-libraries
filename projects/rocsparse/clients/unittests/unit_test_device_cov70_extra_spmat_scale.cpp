@@ -55,7 +55,7 @@ namespace
         = {Fmt::coo, Fmt::coo_aos, Fmt::csr, Fmt::csc, Fmt::bsr, Fmt::ell, Fmt::bell, Fmt::sell};
 
     // Index storage (never touched by spmat_scale) and the length of the value
-    // array of a small fixed matrix of each format.
+    // array of the matrix created last (cross-checked against value_length).
     struct Layout
     {
         std::vector<DevBuf<int32_t>> idx;
@@ -190,7 +190,9 @@ namespace
         return rocsparse_status_invalid_value;
     }
 
-    // Length of the value array of the fixed matrix built by create_matrix.
+    // Length of the value array of the fixed matrix built by create_matrix
+    // (checked against Layout::val_len, which create_matrix derives from the
+    // arguments it passes to the library).
     size_t value_length(Fmt fmt)
     {
         switch(fmt)
@@ -234,6 +236,7 @@ namespace
         Layout lay;
         SpmatH source, target;
         ASSERT_EQ(create_matrix(fmt, dt, source, lay, d_src.ptr), rocsparse_status_success);
+        ASSERT_EQ(static_cast<size_t>(lay.val_len), len);
         if(in_place)
         {
             // Same value storage through a second descriptor.
@@ -243,6 +246,11 @@ namespace
         {
             ASSERT_EQ(create_matrix(fmt, dt, target, lay, d_dst.ptr), rocsparse_status_success);
         }
+
+        // The index arrays of both matrices must not be touched.
+        std::vector<std::vector<int32_t>> idx_before;
+        for(const auto& b : lay.idx)
+            idx_before.push_back(b.host());
 
         const cplx alpha_c = cplx(2.0, -1.0);
         Scalar<T>  alpha_s(alpha_c, device_alpha);
@@ -254,6 +262,10 @@ namespace
         ASSERT_EQ(rocsparse_spmat_scale(handle, alpha.p, source.p, target.p, nullptr),
                   rocsparse_status_success);
         ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
+
+        ASSERT_EQ(lay.idx.size(), idx_before.size());
+        for(size_t i = 0; i < lay.idx.size(); ++i)
+            EXPECT_EQ(lay.idx[i].host(), idx_before[i]) << "index array " << i << " modified";
 
         const cplx        a = to_c<T>(alpha_s.h);
         std::vector<cplx> want(len);
@@ -457,7 +469,9 @@ TEST_F(SpmatScaleCov70, argument_errors)
         DevBuf<float> ve(size_t{64});
         ASSERT_EQ(create_matrix(Fmt::ell, dt, e2, le2, ve.ptr, 2), rocsparse_status_success);
         ASSERT_EQ(create_matrix(Fmt::ell, dt, e3, le3, ve.ptr, 3), rocsparse_status_success);
-        // ELL nnz derives from the width, so a different width fails the size checks.
+        // The nnz of an ELL matrix is rows * width, so a different width is
+        // already rejected by the nnz comparison (the width comparison itself
+        // cannot be reached through the public API).
         EXPECT_EQ(rocsparse_spmat_scale(handle, a.p, e2.p, e3.p, nullptr),
                   rocsparse_status_invalid_size);
     }
@@ -468,6 +482,22 @@ TEST_F(SpmatScaleCov70, argument_errors)
         ASSERT_EQ(create_matrix(Fmt::bell, dt, b2, lb2, vb.ptr, -1, 2), rocsparse_status_success);
         ASSERT_EQ(create_matrix(Fmt::bell, dt, b4, lb4, vb.ptr, -1, 4), rocsparse_status_success);
         EXPECT_EQ(rocsparse_spmat_scale(handle, a.p, b2.p, b4.p, nullptr),
+                  rocsparse_status_invalid_size); // block dimension differs
+        // Same block dimension, different number of ELL columns.
+        SpmatH b2_wide;
+        ASSERT_EQ(rocsparse_create_bell_descr(&b2_wide.p,
+                                              4,
+                                              4,
+                                              rocsparse_direction_row,
+                                              2,
+                                              4,
+                                              lb2.idx[0].ptr,
+                                              vb.ptr,
+                                              rocsparse_indextype_i32,
+                                              rocsparse_index_base_zero,
+                                              dt),
+                  rocsparse_status_success);
+        EXPECT_EQ(rocsparse_spmat_scale(handle, a.p, b2.p, b2_wide.p, nullptr),
                   rocsparse_status_invalid_size);
     }
     {
@@ -510,7 +540,7 @@ TEST_F(SpmatScaleCov70, argument_errors)
                   rocsparse_status_not_implemented);
     }
 
-    // alpha: wrong size, wrong type, null values
+    // alpha: wrong size, batched, wrong type
     {
         DevBuf<float> hv(size_t{2});
         DnvecH        vec2;
@@ -538,11 +568,6 @@ TEST_F(SpmatScaleCov70, argument_errors)
                   rocsparse_status_success);
         EXPECT_EQ(rocsparse_spmat_scale(handle, wrong_type.p, csr.p, csr2.p, nullptr),
                   rocsparse_status_type_mismatch);
-
-        // A dense vector without values cannot be created.
-        DnvecH null_values;
-        EXPECT_EQ(rocsparse_create_dnvec_descr(&null_values.p, 1, nullptr, dt),
-                  rocsparse_status_invalid_pointer);
     }
 
     // The scalar descriptor constructor rejects bad arguments.

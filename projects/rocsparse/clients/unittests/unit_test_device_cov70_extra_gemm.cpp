@@ -49,14 +49,18 @@ namespace
 
     struct GemmCase
     {
-        bool                 bsr          = true; // BSR entry points, otherwise CSR (bd == 1)
-        Mode                 mode         = Mode::multadd;
-        int64_t              mb           = 6;
-        int64_t              nb           = 7;
-        int64_t              kb           = 5;
-        int64_t              bd           = 2;
-        rocsparse_direction  dir          = rocsparse_direction_row;
-        rocsparse_index_base base         = rocsparse_index_base_zero;
+        bool                bsr  = true; // BSR entry points, otherwise CSR (bd == 1)
+        Mode                mode = Mode::multadd;
+        int64_t             mb   = 6;
+        int64_t             nb   = 7;
+        int64_t             kb   = 5;
+        int64_t             bd   = 2;
+        rocsparse_direction dir  = rocsparse_direction_row;
+        // Index bases of the matrices A, B, C and D (independent of each other).
+        rocsparse_index_base base_A       = rocsparse_index_base_zero;
+        rocsparse_index_base base_B       = rocsparse_index_base_zero;
+        rocsparse_index_base base_C       = rocsparse_index_base_zero;
+        rocsparse_index_base base_D       = rocsparse_index_base_zero;
         bool                 device       = false;
         cplx                 alpha        = cplx(2.0, 1.0);
         cplx                 beta         = cplx(-1.0, 0.5);
@@ -72,8 +76,9 @@ namespace
         return std::string(c.bsr ? "bsr" : "csr")
                + " mode=" + std::to_string(static_cast<int>(c.mode)) + " mb=" + std::to_string(c.mb)
                + " nb=" + std::to_string(c.nb) + " kb=" + std::to_string(c.kb)
-               + " bd=" + std::to_string(c.bd) + " dir=" + std::to_string(c.dir)
-               + " base=" + std::to_string(c.base) + " dev=" + std::to_string(c.device);
+               + " bd=" + std::to_string(c.bd) + " dir=" + std::to_string(c.dir) + " bases="
+               + std::to_string(c.base_A) + std::to_string(c.base_B) + std::to_string(c.base_C)
+               + std::to_string(c.base_D) + " dev=" + std::to_string(c.device);
     }
 
     Bsr empty_bsr(int64_t mb, int64_t nb, int64_t bd)
@@ -86,16 +91,20 @@ namespace
         return E;
     }
 
-    // Compares a computed BSR matrix with the reference. Within a row the
-    // blocks are matched by column index so the check does not depend on the
-    // order the library emits them in.
+    // Compares a computed BSR matrix with the reference. With `sorted` the
+    // blocks of every row have to come out sorted by column (guaranteed by the
+    // documentation of csrgemm: "the output will be sorted"); the
+    // documentation of bsrgemm gives no such guarantee, so there the blocks of
+    // a row are matched by column index and the order the library emits them
+    // in is not checked.
     template <typename T>
     void expect_bsr_equal(const std::vector<rocsparse_int>& ptr,
                           const std::vector<rocsparse_int>& col,
                           const std::vector<T>&             val_dev,
                           const Bsr&                        want,
                           rocsparse_direction               dir,
-                          int64_t                           base)
+                          int64_t                           base,
+                          bool                              sorted)
     {
         bool ptr_ok = ptr.size() >= want.ptr.size();
         for(size_t i = 0; ptr_ok && i < want.ptr.size(); ++i)
@@ -114,9 +123,10 @@ namespace
             std::vector<int64_t> order(static_cast<size_t>(e - b));
             for(int64_t p = b; p < e; ++p)
                 order[static_cast<size_t>(p - b)] = p;
-            std::sort(order.begin(), order.end(), [&](int64_t x, int64_t y) {
-                return col[static_cast<size_t>(x)] < col[static_cast<size_t>(y)];
-            });
+            if(!sorted)
+                std::sort(order.begin(), order.end(), [&](int64_t x, int64_t y) {
+                    return col[static_cast<size_t>(x)] < col[static_cast<size_t>(y)];
+                });
             for(int64_t q = 0; q < e - b; ++q)
             {
                 const int64_t p = order[static_cast<size_t>(q)];
@@ -174,7 +184,7 @@ namespace
         const Bsr       want
             = bsr_gemm(mul, to_c<T>(alpha.h), Ause, Buse, add, to_c<T>(beta.h), Duse, c.mb, c.nb);
 
-        MatDescrH dA(c.base), dB(c.base), dC(c.base), dD(c.base);
+        MatDescrH dA(c.base_A), dB(c.base_B), dC(c.base_C), dD(c.base_D);
         MatInfoH  info;
 
         // Device operands. Unused operands are passed as null pointers.
@@ -182,17 +192,17 @@ namespace
         DevBuf<T>             vA, vB, vD;
         if(mul)
         {
-            pA = up_idx<rocsparse_int>(A.ptr, c.base);
-            iA = up_idx<rocsparse_int>(A.col, c.base);
+            pA = up_idx<rocsparse_int>(A.ptr, c.base_A);
+            iA = up_idx<rocsparse_int>(A.col, c.base_A);
             vA = up_raw<T>(bsr_pack<T>(A, c.dir));
-            pB = up_idx<rocsparse_int>(B.ptr, c.base);
-            iB = up_idx<rocsparse_int>(B.col, c.base);
+            pB = up_idx<rocsparse_int>(B.ptr, c.base_B);
+            iB = up_idx<rocsparse_int>(B.col, c.base_B);
             vB = up_raw<T>(bsr_pack<T>(B, c.dir));
         }
         if(add)
         {
-            pD = up_idx<rocsparse_int>(D.ptr, c.base);
-            iD = up_idx<rocsparse_int>(D.col, c.base);
+            pD = up_idx<rocsparse_int>(D.ptr, c.base_D);
+            iD = up_idx<rocsparse_int>(D.col, c.base_D);
             vD = up_raw<T>(bsr_pack<T>(D, c.dir));
         }
         DevBuf<rocsparse_int> pC(static_cast<size_t>(c.mb) + 1);
@@ -405,7 +415,7 @@ namespace
         }
         ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
 
-        expect_bsr_equal<T>(pC.host(), iC.host(), vC.host(), want, c.dir, c.base);
+        expect_bsr_equal<T>(pC.host(), iC.host(), vC.host(), want, c.dir, c.base_C, !c.bsr);
     }
 
     template <typename T>
@@ -430,10 +440,22 @@ namespace
                     c.device = true;
                     run_gemm<T>(handle, c);
                     c.device = false;
-                    c.base   = rocsparse_index_base_one;
+                    // all one based, then every base different from its
+                    // neighbours (mixed bases)
+                    c.base_A = c.base_B = c.base_C = c.base_D = rocsparse_index_base_one;
                     run_gemm<T>(handle, c);
-                    c.base    = rocsparse_index_base_zero;
-                    c.empty_A = true;
+                    c.base_A = rocsparse_index_base_one;
+                    c.base_B = rocsparse_index_base_zero;
+                    c.base_C = rocsparse_index_base_one;
+                    c.base_D = rocsparse_index_base_zero;
+                    run_gemm<T>(handle, c);
+                    c.base_A = rocsparse_index_base_zero;
+                    c.base_B = rocsparse_index_base_one;
+                    c.base_C = rocsparse_index_base_zero;
+                    c.base_D = rocsparse_index_base_one;
+                    run_gemm<T>(handle, c);
+                    c.base_A = c.base_B = c.base_C = c.base_D = rocsparse_index_base_zero;
+                    c.empty_A                                 = true;
                     run_gemm<T>(handle, c);
                     c.empty_A = false;
                     c.empty_B = true;
@@ -474,7 +496,11 @@ TEST_F(GemmCov70, csrgemm_modes_types)
 
 TEST_F(GemmCov70, bsrgemm_modes_float)
 {
-    run_modes<float>(handle, true, {1, 2, 3, 4, 5, 8, 9, 16, 17, 32}, true);
+    // Every block dimension class with the default options; the scalar
+    // pointer mode, index base, empty operand and empty dimension variants
+    // (which do not depend on the block dimension class) for three of them.
+    run_modes<float>(handle, true, {1, 2, 3, 4, 5, 8, 9, 16, 17, 32}, false);
+    run_modes<float>(handle, true, {2, 5, 16}, true);
 }
 
 TEST_F(GemmCov70, bsrgemm_modes_double)
@@ -888,7 +914,7 @@ namespace
         // The unmodified call still works and computes the right C.
         ASSERT_EQ(gemm_compute(g), rocsparse_status_success);
         ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
-        expect_bsr_equal<float>(pC.host(), iC.host(), vC.host(), want, dir, 0);
+        expect_bsr_equal<float>(pC.host(), iC.host(), vC.host(), want, dir, 0, !bsr);
     }
 }
 

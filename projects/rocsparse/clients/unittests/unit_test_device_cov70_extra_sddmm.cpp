@@ -31,7 +31,10 @@
 // the sparse output C (including the padding of ELL, which must stay
 // untouched) is compared with a host reference
 //     C = alpha * (op(A) * op(B)) sampled at the pattern of C + beta * C.
-// The dense algorithm needs rocBLAS and is not part of these tests.
+// The dense algorithm needs rocBLAS for its computation, so only the parts
+// that run before any rocBLAS call are tested (buffer size formula, empty C,
+// missing buffer); they behave the same whether or not rocBLAS is built in.
+// The ELL padding holds a non-zero sentinel that must stay untouched.
 //
 #include "unit_test_cov70_extra_common.hpp"
 
@@ -50,20 +53,24 @@ namespace
 
     struct SddmmCase
     {
-        SFmt                fmt     = SFmt::csr;
-        rocsparse_operation opA     = rocsparse_operation_none;
-        rocsparse_operation opB     = rocsparse_operation_none;
-        rocsparse_order     order_A = rocsparse_order_column;
-        rocsparse_order     order_B = rocsparse_order_column;
-        int64_t             m       = 9;
-        int64_t             n       = 8;
-        int64_t             k       = 5;
-        bool                device  = false;
-        cplx                alpha   = cplx(2.0, 0.0);
-        cplx                beta    = cplx(-0.5, 0.0);
-        int64_t             ld_pad  = 1;
-        bool                empty_C = false;
-        uint64_t            seed    = 1;
+        SFmt                 fmt     = SFmt::csr;
+        rocsparse_operation  opA     = rocsparse_operation_none;
+        rocsparse_operation  opB     = rocsparse_operation_none;
+        rocsparse_order      order_A = rocsparse_order_column;
+        rocsparse_order      order_B = rocsparse_order_column;
+        int64_t              m       = 9;
+        int64_t              n       = 8;
+        int64_t              k       = 5;
+        bool                 device  = false;
+        cplx                 alpha   = cplx(2.0, 0.0);
+        cplx                 beta    = cplx(-0.5, 0.0);
+        int64_t              ld_pad  = 1;
+        bool                 empty_C = false;
+        uint64_t             seed    = 1;
+        rocsparse_index_base base    = rocsparse_index_base_zero;
+        // Only check the dense algorithm entry points that run before any
+        // rocBLAS call instead of computing.
+        bool dense_checks = false;
     };
 
     std::string describe(const SddmmCase& c)
@@ -71,18 +78,69 @@ namespace
         return "fmt=" + std::to_string(static_cast<int>(c.fmt))
                + " opA=" + std::to_string(static_cast<int>(c.opA))
                + " opB=" + std::to_string(static_cast<int>(c.opB))
-               + " order_A=" + std::to_string(static_cast<int>(c.order_A))
-               + " order_B=" + std::to_string(static_cast<int>(c.order_B))
-               + " m=" + std::to_string(c.m) + " n=" + std::to_string(c.n)
-               + " k=" + std::to_string(c.k) + " device=" + std::to_string(c.device);
+               + " order_A=" + std::to_string(static_cast<int>(c.order_A)) + " order_B="
+               + std::to_string(static_cast<int>(c.order_B)) + " m=" + std::to_string(c.m)
+               + " n=" + std::to_string(c.n) + " k=" + std::to_string(c.k) + " device="
+               + std::to_string(c.device) + " base=" + std::to_string(static_cast<int>(c.base));
     }
 
     // One stored entry of C in the order of the device value array.
     struct Entry
     {
-        int64_t row, col; // -1 for ELL padding
+        int64_t row, col; // -1 for ELL padding (value: the padding sentinel)
         cplx    val;
     };
+
+    // Dense algorithm: the parts that do not need rocBLAS.
+    //  - buffer size: 0 for an empty C, otherwise the size of a dense m x n
+    //    matrix of C's type rounded up to a multiple of 256 bytes,
+    //  - preprocess: nothing to do,
+    //  - compute with an empty C: success without looking at the buffer,
+    //  - compute with a non-empty C and no buffer: invalid pointer (checked
+    //    before the dense conversion and the matrix multiplication).
+    template <typename T>
+    void dense_algorithm_checks(rocsparse_handle      handle,
+                                const SddmmCase&      c,
+                                const void*           alpha,
+                                const void*           beta,
+                                rocsparse_dnmat_descr mA,
+                                rocsparse_dnmat_descr mB,
+                                rocsparse_spmat_descr sC,
+                                int64_t               nnz)
+    {
+        const rocsparse_datatype dt  = rocsparse_ut::dt_of<T>();
+        const auto               alg = rocsparse_sddmm_alg_dense;
+
+        size_t bsz = 12345;
+        ASSERT_EQ(rocsparse_sddmm_buffer_size(
+                      handle, c.opA, c.opB, alpha, mA, mB, beta, sC, dt, alg, &bsz),
+                  rocsparse_status_success);
+        const size_t dense_bytes = sizeof(T) * static_cast<size_t>(c.m) * static_cast<size_t>(c.n);
+        const size_t expected    = (nnz == 0) ? 0 : ((dense_bytes - 1) / 256 + 1) * 256;
+        ASSERT_EQ(bsz, expected);
+
+        DevBuf<char> buffer(bsz);
+        ASSERT_TRUE(buffer.ptr);
+        EXPECT_EQ(rocsparse_sddmm_preprocess(
+                      handle, c.opA, c.opB, alpha, mA, mB, beta, sC, dt, alg, buffer.ptr),
+                  rocsparse_status_success);
+
+        if(nnz == 0)
+        {
+            EXPECT_EQ(
+                rocsparse_sddmm(handle, c.opA, c.opB, alpha, mA, mB, beta, sC, dt, alg, nullptr),
+                rocsparse_status_success);
+            EXPECT_EQ(
+                rocsparse_sddmm(handle, c.opA, c.opB, alpha, mA, mB, beta, sC, dt, alg, buffer.ptr),
+                rocsparse_status_success);
+        }
+        else
+        {
+            EXPECT_EQ(
+                rocsparse_sddmm(handle, c.opA, c.opB, alpha, mA, mB, beta, sC, dt, alg, nullptr),
+                rocsparse_status_invalid_pointer);
+        }
+    }
 
     template <typename T, typename I, typename J>
     void run_sddmm(rocsparse_handle handle, const SddmmCase& c)
@@ -97,6 +155,10 @@ namespace
                           : random_csr<T>(c.m, c.n, std::min<int64_t>(c.n, 4), rng);
         for(auto& v : P.val)
             v = round_to<T>(rand_val<T>(rng));
+
+        // Non-zero value stored in the ELL padding slots: the library must
+        // neither write nor scale them.
+        const cplx pad_sentinel(-77.0, 0.0);
 
         // Entries in the order of the value array of the chosen format.
         std::vector<Entry> entries;
@@ -131,7 +193,7 @@ namespace
             for(int64_t i = 0; i < P.m; ++i)
                 ell_width = std::max(
                     ell_width, P.ptr[static_cast<size_t>(i) + 1] - P.ptr[static_cast<size_t>(i)]);
-            entries.assign(static_cast<size_t>(P.m * ell_width), Entry{-1, -1, cplx(0.0, 0.0)});
+            entries.assign(static_cast<size_t>(P.m * ell_width), Entry{-1, -1, pad_sentinel});
             for(int64_t i = 0; i < P.m; ++i)
             {
                 const int64_t b = P.ptr[static_cast<size_t>(i)];
@@ -162,6 +224,7 @@ namespace
         ASSERT_TRUE(dval.ptr);
 
         const int64_t        nnz = static_cast<int64_t>(entries.size());
+        const int64_t        b   = static_cast<int64_t>(c.base);
         DevBuf<I>            d_ptr_or_row;
         DevBuf<J>            d_idx;
         DevBuf<I>            d_idx_i;
@@ -171,8 +234,8 @@ namespace
         {
         case SFmt::csr:
         {
-            d_ptr_or_row = up_idx<I>(P.ptr);
-            d_idx        = up_idx<J>(P.col);
+            d_ptr_or_row = up_idx<I>(P.ptr, b);
+            d_idx        = up_idx<J>(P.col, b);
             ASSERT_TRUE(d_ptr_or_row.ptr && d_idx.ptr);
             ASSERT_EQ(rocsparse_create_csr_descr(&sC.p,
                                                  c.m,
@@ -183,7 +246,7 @@ namespace
                                                  dval.ptr,
                                                  rocsparse_ut::it_of<I>(),
                                                  rocsparse_ut::it_of<J>(),
-                                                 rocsparse_index_base_zero,
+                                                 c.base,
                                                  dt),
                       rocsparse_status_success);
             break;
@@ -191,8 +254,8 @@ namespace
         case SFmt::csc:
         {
             const Csr Pt = transpose(P);
-            d_ptr_or_row = up_idx<I>(Pt.ptr);
-            d_idx        = up_idx<J>(Pt.col);
+            d_ptr_or_row = up_idx<I>(Pt.ptr, b);
+            d_idx        = up_idx<J>(Pt.col, b);
             ASSERT_TRUE(d_ptr_or_row.ptr && d_idx.ptr);
             ASSERT_EQ(rocsparse_create_csc_descr(&sC.p,
                                                  c.m,
@@ -203,7 +266,7 @@ namespace
                                                  dval.ptr,
                                                  rocsparse_ut::it_of<I>(),
                                                  rocsparse_ut::it_of<J>(),
-                                                 rocsparse_index_base_zero,
+                                                 c.base,
                                                  dt),
                       rocsparse_status_success);
             break;
@@ -215,8 +278,8 @@ namespace
                 v_a.push_back(e.row);
                 v_b.push_back(e.col);
             }
-            d_ptr_or_row = up_idx<I>(v_a);
-            d_idx_i      = up_idx<I>(v_b);
+            d_ptr_or_row = up_idx<I>(v_a, b);
+            d_idx_i      = up_idx<I>(v_b, b);
             ASSERT_TRUE(d_ptr_or_row.ptr && d_idx_i.ptr);
             ASSERT_EQ(rocsparse_create_coo_descr(&sC.p,
                                                  c.m,
@@ -226,7 +289,7 @@ namespace
                                                  d_idx_i.ptr,
                                                  dval.ptr,
                                                  rocsparse_ut::it_of<I>(),
-                                                 rocsparse_index_base_zero,
+                                                 c.base,
                                                  dt),
                       rocsparse_status_success);
             break;
@@ -238,7 +301,7 @@ namespace
                 v_a.push_back(e.row);
                 v_a.push_back(e.col);
             }
-            d_ptr_or_row = up_idx<I>(v_a);
+            d_ptr_or_row = up_idx<I>(v_a, b);
             ASSERT_TRUE(d_ptr_or_row.ptr);
             ASSERT_EQ(rocsparse_create_coo_aos_descr(&sC.p,
                                                      c.m,
@@ -247,17 +310,17 @@ namespace
                                                      d_ptr_or_row.ptr,
                                                      dval.ptr,
                                                      rocsparse_ut::it_of<I>(),
-                                                     rocsparse_index_base_zero,
+                                                     c.base,
                                                      dt),
                       rocsparse_status_success);
             break;
         }
         case SFmt::ell:
         {
-            // Column-major ELL, padding marked with -1 (zero based).
+            // Column-major ELL, padding marked with -1 (zero based) / 0 (one based).
             for(const Entry& e : entries)
                 v_a.push_back(e.col);
-            d_ptr_or_row = up_idx<I>(v_a);
+            d_ptr_or_row = up_idx<I>(v_a, b);
             ASSERT_TRUE(d_ptr_or_row.ptr);
             ASSERT_EQ(rocsparse_create_ell_descr(&sC.p,
                                                  c.m,
@@ -266,7 +329,7 @@ namespace
                                                  dval.ptr,
                                                  ell_width,
                                                  rocsparse_ut::it_of<I>(),
-                                                 rocsparse_index_base_zero,
+                                                 c.base,
                                                  dt),
                       rocsparse_status_success);
             break;
@@ -284,6 +347,13 @@ namespace
         Scalar<T>        alpha(c.alpha, c.device);
         Scalar<T>        beta(c.beta, c.device);
         PointerModeGuard mode(handle, mode_of(c.device));
+
+        if(c.dense_checks)
+        {
+            ASSERT_NO_FATAL_FAILURE((dense_algorithm_checks<T>(
+                handle, c, alpha.get(), beta.get(), mA.p, mB.p, sC.p, nnz)));
+            return;
+        }
 
         size_t bsz = 0;
         ASSERT_EQ(rocsparse_sddmm_buffer_size(handle,
@@ -461,6 +531,58 @@ TEST_F(SddmmCov70, scalars_and_empty_pattern)
         if(HasFatalFailure())
             return;
     }
+}
+
+TEST_F(SddmmCov70, index_base_one)
+{
+    uint64_t seed = 1100;
+    for(SFmt f : all_fmts)
+        for(bool device : {false, true})
+        {
+            SddmmCase c;
+            c.fmt    = f;
+            c.base   = rocsparse_index_base_one;
+            c.device = device;
+            c.opA    = device ? rocsparse_operation_transpose : rocsparse_operation_none;
+            c.seed   = seed++;
+            run_sddmm<float, int32_t, int32_t>(handle, c);
+            if(HasFatalFailure())
+                return;
+            c.seed = seed++;
+            run_sddmm<double, int64_t, int64_t>(handle, c);
+            if(HasFatalFailure())
+                return;
+        }
+}
+
+TEST_F(SddmmCov70, dense_algorithm_without_blas)
+{
+    const int64_t dims[][2] = {{9, 8}, {16, 16}, {1, 1}, {33, 31}, {64, 20}};
+    uint64_t      seed      = 1300;
+    for(SFmt f : all_fmts)
+        for(const auto& d : dims)
+            for(bool empty : {false, true})
+            {
+                SddmmCase c;
+                c.fmt          = f;
+                c.m            = d[0];
+                c.n            = d[1];
+                c.empty_C      = empty;
+                c.dense_checks = true;
+                c.seed         = seed++;
+                run_sddmm<float, int32_t, int32_t>(handle, c);
+                if(HasFatalFailure())
+                    return;
+                run_sddmm<double, int32_t, int32_t>(handle, c);
+                if(HasFatalFailure())
+                    return;
+                run_sddmm<rocsparse_float_complex, int32_t, int32_t>(handle, c);
+                if(HasFatalFailure())
+                    return;
+                run_sddmm<rocsparse_double_complex, int64_t, int64_t>(handle, c);
+                if(HasFatalFailure())
+                    return;
+            }
 }
 
 TEST_F(SddmmCov70, argument_errors)
