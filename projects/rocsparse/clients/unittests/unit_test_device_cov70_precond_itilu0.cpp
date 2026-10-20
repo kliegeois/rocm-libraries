@@ -203,12 +203,18 @@ namespace
     //  * stopping criterion (tol 1e-6 float, 1e-12 double): the error is the residual
     //    left at the stop: float <= 2.1e-5 (async_inplace; <= 5e-7 for the others),
     //    double <= 2.4e-12 -> 2.1e-4, 2.4e-11.
+    //
+    // The converged factor still differs from the host one by the rounding of the
+    // row sums, which grows with the row length and depends on the summation order
+    // (wave32 and wave64 kernels, async scheduling), so the bound never goes below
+    // eps * row_length (dense 100 x 100 rows: 2.2e-14 in double against a measured
+    // 1.5e-15 on gfx1201).
     template <typename T>
-    double iterative_tolerance(bool stopping)
+    double iterative_tolerance(bool stopping, int32_t row_length)
     {
-        if(is_single_precision<T>)
-            return stopping ? 2.1e-4 : 1.6e-6;
-        return stopping ? 2.4e-11 : 1.0e-14;
+        const double fixed = is_single_precision<T> ? (stopping ? 2.1e-4 : 1.6e-6)
+                                                    : (stopping ? 2.4e-11 : 1.0e-14);
+        return std::max(fixed, epsilon_of<T>() * static_cast<double>(row_length));
     }
 
     // Factorization of `a` through rocsparse_Xcsritilu0_compute, compared with
@@ -272,7 +278,9 @@ namespace
         ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
         EXPECT_GE(nmaxiter, 1);
         EXPECT_LE(nmaxiter, nmaxiter_in);
-        expect_close(to_host(dilu), host_ilu0(a), iterative_tolerance<T>(is_stopping(options)));
+        expect_close(to_host(dilu),
+                     host_ilu0(a),
+                     iterative_tolerance<T>(is_stopping(options), max_row_length(a)));
 
         if((options & rocsparse_itilu0_option_convergence_history) != 0)
         {
@@ -530,8 +538,8 @@ namespace
             EXPECT_EQ(headers, static_cast<size_t>(nsweeps));
         }
 
-        const std::vector<T> ref     = host_ilu0(a);
-        const double         rel_tol = iterative_tolerance<T>(is_stopping(opt.options));
+        const std::vector<T> ref = host_ilu0(a);
+        const double rel_tol = iterative_tolerance<T>(is_stopping(opt.options), max_row_length(a));
         expect_close(to_host(dlval), gather(ref, split.lpos), rel_tol);
         expect_close(to_host(duval), gather(ref, split.upos), rel_tol);
         expect_close(to_host(ddval), gather(ref, split.dpos), rel_tol);
