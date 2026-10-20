@@ -200,18 +200,26 @@ namespace
     }
 #undef COV70_TYPED
 
-    // One tridiagonal system with a known solution. The matrix is strictly
-    // diagonally dominant, so solving without pivoting is stable.
+    // One tridiagonal system with a known solution. By default the matrix is
+    // strictly diagonally dominant, so solving without pivoting is stable.
+    //
+    // With `swaps`, every third row (i % 3 == 1) has |dl| (3.0 .. 3.4) larger than
+    // |d| (0.5 .. 0.7) and |du| (0.8 .. 1.1): partial pivoting exchanges that row
+    // with the one above it. The sub-diagonal of those rows has the opposite sign of
+    // the others; this pattern was chosen because its LAPACK partial-pivoting
+    // solution reproduces the known solution to float accuracy (relative error
+    // 1e-6) for every size used by the tests, i.e. the system is well conditioned.
     template <typename T>
     struct system_t
     {
         std::vector<T> dl, d, du;
         std::vector<T> x; // known solution, m * n (column-major, leading dimension m)
         std::vector<T> b; // right-hand side A * x
+        int32_t        swap_rows = 0; // rows with |dl| > |d|
     };
 
     template <typename T>
-    system_t<T> make_system(int32_t m, int32_t n, int seed)
+    system_t<T> make_system(int32_t m, int32_t n, int seed, bool swaps = false)
     {
         system_t<T> s;
         s.dl.resize(m);
@@ -220,11 +228,18 @@ namespace
         for(int32_t i = 0; i < m; ++i)
         {
             const double im_part = is_cplx<T> ? 0.1 * (((i + seed) % 3) - 1) : 0.0;
-            s.dl[i]              = (i == 0) ? make_value<T>(0.0)
-                                            : make_value<T>(-(1.0 + 0.1 * ((i * 7 + seed) % 5)), im_part);
-            s.du[i]              = (i == m - 1) ? make_value<T>(0.0)
-                                                : make_value<T>(-(0.8 + 0.1 * ((i * 3 + seed) % 4)), -im_part);
-            s.d[i]               = make_value<T>(5.0 + 0.2 * (i % 3), im_part);
+            double       dl      = -(1.0 + 0.1 * ((i * 7 + seed) % 5));
+            double       d       = 5.0 + 0.2 * (i % 3);
+            if(swaps && i > 0 && i % 3 == 1)
+            {
+                dl = 3.0 + 0.1 * ((i * 7 + seed) % 5);
+                d  = 0.5 + 0.1 * (i % 3);
+                ++s.swap_rows;
+            }
+            s.dl[i] = (i == 0) ? make_value<T>(0.0) : make_value<T>(dl, im_part);
+            s.du[i] = (i == m - 1) ? make_value<T>(0.0)
+                                   : make_value<T>(-(0.8 + 0.1 * ((i * 3 + seed) % 4)), -im_part);
+            s.d[i]  = make_value<T>(d, im_part);
         }
         s.x.resize(static_cast<size_t>(m) * n);
         s.b.resize(static_cast<size_t>(m) * n);
@@ -252,11 +267,15 @@ namespace
         return s;
     }
 
+    // Absolute error of the solution entries (about 1.0 .. 1.2), and residual relative to
+    // max|b|: about ten times the largest measured on gfx1201 over all tests of this
+    // file. Solution error: float/cfloat 1.31e-6 (the systems that force row swaps),
+    // double/cdouble 2.7e-15. Residual / max|b|: float/cfloat 1.36e-6, double/cdouble
+    // 2.25e-15.
     template <typename T>
     double solve_tolerance()
     {
-        return std::is_same_v<T, float> || std::is_same_v<T, rocsparse_float_complex> ? 2.0e-3
-                                                                                      : 1.0e-9;
+        return is_single_precision<T> ? 1.5e-5 : 3.0e-14;
     }
 
     template <typename T>
@@ -281,15 +300,43 @@ namespace
         pivot
     };
 
-    // Multi-RHS solve through gtsv_no_pivot or gtsv; ldb >= m.
-    template <Solver S, typename T>
-    void run_multi_rhs(rocsparse_handle handle, int32_t m, int32_t n, int32_t ldb_extra = 0)
+    // max_i |b_i - (A x)_i| over every right-hand side, relative to max |b|: the
+    // residual check does not depend on the known solution.
+    template <typename T>
+    void
+        expect_small_residual(const system_t<T>& s, const std::vector<T>& sol, int32_t m, int32_t n)
     {
-        SCOPED_TRACE(std::string(S == Solver::no_pivot ? "no_pivot" : "pivot")
-                     + " m=" + std::to_string(m) + " n=" + std::to_string(n));
-        const system_t<T> s   = make_system<T>(m, n, m % 7);
-        const int32_t     ldb = m + ldb_extra;
-        std::vector<T>    hb(static_cast<size_t>(ldb) * n, make_value<T>(0.0));
+        double res = 0.0, norm_b = 0.0;
+        for(int32_t c = 0; c < n; ++c)
+        {
+            for(int32_t i = 0; i < m; ++i)
+            {
+                const size_t         k  = static_cast<size_t>(c) * m + i;
+                std::complex<double> ax = to_cd(s.d[i]) * to_cd(sol[k]);
+                if(i > 0)
+                    ax += to_cd(s.dl[i]) * to_cd(sol[k - 1]);
+                if(i + 1 < m)
+                    ax += to_cd(s.du[i]) * to_cd(sol[k + 1]);
+                res    = std::max(res, std::abs(to_cd(s.b[k]) - ax));
+                norm_b = std::max(norm_b, std::abs(to_cd(s.b[k])));
+            }
+        }
+        EXPECT_LE(res, solve_tolerance<T>() * norm_b);
+    }
+
+    // Multi-RHS solve through gtsv_no_pivot or gtsv; ldb >= m. `swaps` makes the
+    // systems need row exchanges (see make_system).
+    template <Solver S, typename T>
+    void run_multi_rhs(
+        rocsparse_handle handle, int32_t m, int32_t n, int32_t ldb_extra = 0, bool swaps = false)
+    {
+        SCOPED_TRACE(std::string(S == Solver::no_pivot ? "no_pivot" : "pivot") + " m="
+                     + std::to_string(m) + " n=" + std::to_string(n) + (swaps ? " swaps" : ""));
+        const system_t<T> s = make_system<T>(m, n, m % 7, swaps);
+        if(swaps)
+            ASSERT_GT(s.swap_rows, 0);
+        const int32_t  ldb = m + ldb_extra;
+        std::vector<T> hb(static_cast<size_t>(ldb) * n, make_value<T>(0.0));
         for(int32_t c = 0; c < n; ++c)
             for(int32_t i = 0; i < m; ++i)
                 hb[static_cast<size_t>(c) * ldb + i] = s.b[static_cast<size_t>(c) * m + i];
@@ -319,6 +366,7 @@ namespace
             for(int32_t i = 0; i < m; ++i)
                 sol[static_cast<size_t>(c) * m + i] = got[static_cast<size_t>(c) * ldb + i];
         expect_solution(sol, s.x, "solution");
+        expect_small_residual(s, sol, m, n);
         // The padding rows between m and ldb are left untouched.
         for(int32_t c = 0; c < n; ++c)
             for(int32_t i = m; i < ldb; ++i)
@@ -434,6 +482,57 @@ TEST_F(Cov70PrecondGtsv, pivot_spike_grid_sizes)
     }
     run_multi_rhs<Solver::pivot, float>(handle, 30000, 1);
     run_multi_rhs<Solver::pivot, rocsparse_double_complex>(handle, 9000, 1);
+}
+
+// gtsv updates the right-hand sides in groups of 8, 4, 2 or 1 columns (n % 8 == 0,
+// n % 4 == 0, n % 2 == 0, otherwise).
+TEST_F(Cov70PrecondGtsv, pivot_rhs_counts)
+{
+    for(const int32_t n : {1, 2, 3, 4, 6, 8, 12, 16})
+    {
+        run_multi_rhs<Solver::pivot, double>(handle, 8000, n);
+        run_multi_rhs<Solver::pivot, float>(handle, 8000, n, 0, true);
+    }
+    for(const int32_t n : {4, 8, 16})
+    {
+        run_multi_rhs<Solver::pivot, rocsparse_float_complex>(handle, 8000, n);
+        run_multi_rhs<Solver::pivot, rocsparse_double_complex>(handle, 8000, n, 0, true);
+    }
+}
+
+// Systems with |dl| > |d| on every third row: the elimination exchanges rows.
+// Sizes up to 512 use a single block of the SPIKE grid, above that two blocks or more.
+TEST_F(Cov70PrecondGtsv, pivot_row_swaps)
+{
+    for(const int32_t m : {2, 3, 5, 16, 100, 512, 513, 1000, 1024, 3000, 8000, 30000})
+    {
+        run_multi_rhs<Solver::pivot, double>(handle, m, 1, 0, true);
+        run_multi_rhs<Solver::pivot, float>(handle, m, 3, 0, true);
+    }
+    for(const int32_t m : {3, 100, 512, 8000})
+    {
+        run_multi_rhs<Solver::pivot, rocsparse_float_complex>(handle, m, 2, 0, true);
+        run_multi_rhs<Solver::pivot, rocsparse_double_complex>(handle, m, 1, 0, true);
+    }
+    // Leading dimension larger than m.
+    run_multi_rhs<Solver::pivot, double>(handle, 100, 3, 7, true);
+}
+
+// Small systems without row exchanges (a single grid block).
+TEST_F(Cov70PrecondGtsv, pivot_small_sizes)
+{
+    for(const int32_t m : {2, 3, 100, 512})
+    {
+        run_multi_rhs<Solver::pivot, double>(handle, m, 1);
+        run_multi_rhs<Solver::pivot, float>(handle, m, 4);
+    }
+}
+
+// Above 262144 rows the SPIKE grid would exceed 512 blocks: the block dimension doubles.
+TEST_F(Cov70PrecondGtsv, pivot_large_block_dimension)
+{
+    run_multi_rhs<Solver::pivot, double>(handle, 270000, 1, 0, true);
+    run_multi_rhs<Solver::pivot, float>(handle, 700000, 1);
 }
 
 TEST_F(Cov70PrecondGtsv, strided_batch_small_sizes)
