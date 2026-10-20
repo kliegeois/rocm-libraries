@@ -355,6 +355,10 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_SOURCES
   unit_test_device_cov70_precond_legacy.cpp
   unit_test_device_cov70_precond_trm_info.cpp
   # cov80 extra
+  unit_test_device_cov80_extra_bell.cpp
+  unit_test_device_cov80_extra_bsrsm.cpp
+  unit_test_device_cov80_extra_geam.cpp
+  unit_test_device_cov80_extra_gebsrmm.cpp
   unit_test_device_cov80_extra_gemmi.cpp
   unit_test_device_cov80_extra_spgemm.cpp
   unit_test_device_cov80_extra_spmm.cpp

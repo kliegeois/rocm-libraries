@@ -877,6 +877,31 @@ namespace cov80_extra
             return rocsparse_##P##bsrgeam(a...);             \
         }                                                    \
         template <typename... A>                             \
+        static rocsparse_status csrgeam(A... a)              \
+        {                                                    \
+            return rocsparse_##P##csrgeam(a...);             \
+        }                                                    \
+        template <typename... A>                             \
+        static rocsparse_status bsrsm_buffer_size(A... a)    \
+        {                                                    \
+            return rocsparse_##P##bsrsm_buffer_size(a...);   \
+        }                                                    \
+        template <typename... A>                             \
+        static rocsparse_status bsrsm_analysis(A... a)       \
+        {                                                    \
+            return rocsparse_##P##bsrsm_analysis(a...);      \
+        }                                                    \
+        template <typename... A>                             \
+        static rocsparse_status bsrsm_solve(A... a)          \
+        {                                                    \
+            return rocsparse_##P##bsrsm_solve(a...);         \
+        }                                                    \
+        template <typename... A>                             \
+        static rocsparse_status gebsrmm(A... a)              \
+        {                                                    \
+            return rocsparse_##P##gebsrmm(a...);             \
+        }                                                    \
+        template <typename... A>                             \
         static rocsparse_status gemmi(A... a)                \
         {                                                    \
             return rocsparse_##P##gemmi(a...);               \
