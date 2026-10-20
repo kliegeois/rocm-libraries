@@ -354,6 +354,11 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_SOURCES
   unit_test_device_cov70_precond_itilu0.cpp
   unit_test_device_cov70_precond_legacy.cpp
   unit_test_device_cov70_precond_trm_info.cpp
+  # cov80 conv
+  unit_test_device_cov80_conv_spmat_print.cpp
+  unit_test_device_cov80_conv_hyb.cpp
+  unit_test_device_cov80_conv_edges.cpp
+  unit_test_device_cov80_conv_check.cpp
 )
 
 # Host building-block library translation units under test by the
@@ -475,6 +480,9 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_LIB_SOURCES
   # column-direction and same-direction branches can run.
   ${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/conversion/rocsparse_csxsldu_buffer_size.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/conversion/rocsparse_csxsldu_preprocess.cpp
+  # cov80 conv: rocsparse::internal_spmat_print is declared in a library-internal
+  # header, called by nothing in the library and hidden in librocsparse.
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/conversion/rocsparse_internal_spmat_print.cpp
 )
 
 # Internal rocsparse::primitives building blocks under test. Like the host-pure
