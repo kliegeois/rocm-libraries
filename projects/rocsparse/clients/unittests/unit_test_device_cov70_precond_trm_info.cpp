@@ -74,6 +74,34 @@ namespace
         return y;
     }
 
+    // Owns a rocsparse_mat_info: it is released on every exit path, including the
+    // early returns of failed ASSERT_* macros.
+    struct info_guard
+    {
+        rocsparse_mat_info info = nullptr;
+
+        info_guard()
+        {
+            EXPECT_EQ(rocsparse_create_mat_info(&info), rocsparse_status_success);
+        }
+
+        // Destroys the info now (the guard is empty afterwards).
+        void reset()
+        {
+            if(info)
+                EXPECT_EQ(rocsparse_destroy_mat_info(info), rocsparse_status_success);
+            info = nullptr;
+        }
+
+        ~info_guard()
+        {
+            reset();
+        }
+
+        info_guard(const info_guard&) = delete;
+        info_guard& operator=(const info_guard&) = delete;
+    };
+
     struct trm_fixture
     {
         csr_matrix<double>           a;
@@ -184,7 +212,7 @@ namespace
             v *= alpha;
         const auto want = solve_dense(
             dense_triangle(f.a, lower), n, lower, trans == rocsparse_operation_transpose, scaled);
-        expect_close(to_host(dy), want, 10.0);
+        expect_close(to_host(dy), want);
     }
 }
 
@@ -199,43 +227,82 @@ TEST_F(Cov70PrecondTrmInfo, copy_mat_info_with_triangular_analysis)
         trm_fixture f;
         ASSERT_NE(f.lower, nullptr);
 
-        rocsparse_mat_info src = nullptr;
-        rocsparse_mat_info dst = nullptr;
-        ASSERT_EQ(rocsparse_create_mat_info(&src), rocsparse_status_success);
-        ASSERT_EQ(rocsparse_create_mat_info(&dst), rocsparse_status_success);
+        info_guard src;
+        info_guard constructed; // empty destination: the trm info is copy constructed
+        info_guard assigned; // destination that already holds the data: assignment
+        ASSERT_TRUE(src.info && constructed.info && assigned.info);
 
         size_t buffer_size = 0;
-        analyze(handle, f, src, true, trans, buffer_size, nullptr);
-        analyze(handle, f, src, false, trans, buffer_size, nullptr);
+        analyze(handle, f, src.info, true, trans, buffer_size, nullptr);
+        analyze(handle, f, src.info, false, trans, buffer_size, nullptr);
         device_vector<char> buffer{buffer_size ? buffer_size : size_t{1}};
         ASSERT_TRUE(buffer.ptr);
-        analyze(handle, f, src, true, trans, buffer_size, buffer.ptr);
-        analyze(handle, f, src, false, trans, buffer_size, buffer.ptr);
+        analyze(handle, f, src.info, true, trans, buffer_size, buffer.ptr);
+        analyze(handle, f, src.info, false, trans, buffer_size, buffer.ptr);
 
         const std::string tag = (trans == rocsparse_operation_none) ? "none" : "transpose";
-        check_solve(handle, f, src, true, trans, buffer.ptr, "src lower " + tag);
-        check_solve(handle, f, src, false, trans, buffer.ptr, "src upper " + tag);
+        check_solve(handle, f, src.info, true, trans, buffer.ptr, "src lower " + tag);
+        check_solve(handle, f, src.info, false, trans, buffer.ptr, "src upper " + tag);
 
-        // Empty destination: the trm info is copy constructed.
-        ASSERT_EQ(rocsparse_copy_mat_info(dst, src), rocsparse_status_success);
-        check_solve(handle, f, dst, true, trans, buffer.ptr, "copy lower " + tag);
-        check_solve(handle, f, dst, false, trans, buffer.ptr, "copy upper " + tag);
+        ASSERT_EQ(rocsparse_copy_mat_info(constructed.info, src.info), rocsparse_status_success);
+        check_solve(handle, f, constructed.info, true, trans, buffer.ptr, "copy lower " + tag);
+        check_solve(handle, f, constructed.info, false, trans, buffer.ptr, "copy upper " + tag);
 
-        // Destination that already holds the data: the trm info is assigned.
-        ASSERT_EQ(rocsparse_copy_mat_info(dst, src), rocsparse_status_success);
-        check_solve(handle, f, dst, true, trans, buffer.ptr, "assigned lower " + tag);
-        check_solve(handle, f, dst, false, trans, buffer.ptr, "assigned upper " + tag);
+        ASSERT_EQ(rocsparse_copy_mat_info(assigned.info, src.info), rocsparse_status_success);
+        ASSERT_EQ(rocsparse_copy_mat_info(assigned.info, src.info), rocsparse_status_success);
+        check_solve(handle, f, assigned.info, true, trans, buffer.ptr, "assigned lower " + tag);
+        check_solve(handle, f, assigned.info, false, trans, buffer.ptr, "assigned upper " + tag);
 
-        // The source is unaffected.
-        check_solve(handle, f, src, true, trans, buffer.ptr, "src again " + tag);
+        // The source is unaffected by the copies.
+        check_solve(handle, f, src.info, true, trans, buffer.ptr, "src again " + tag);
 
-        for(const auto info : {dst, src})
+        // Release the source's analysis data and the source itself. A copy that shared the
+        // device arrays of the source would now solve with freed memory; a deep copy does
+        // not notice.
+        EXPECT_EQ(rocsparse_csrsv_clear(handle, f.lower, src.info), rocsparse_status_success);
+        EXPECT_EQ(rocsparse_csrsv_clear(handle, f.upper, src.info), rocsparse_status_success);
+        src.reset();
+        // Scribble over freed allocations a shallow copy might still point to.
+        {
+            device_vector<char> filler{buffer_size ? buffer_size : size_t{1}};
+            ASSERT_TRUE(filler.ptr);
+            ASSERT_EQ(hipMemset(filler.ptr, 0xff, buffer_size ? buffer_size : size_t{1}),
+                      hipSuccess);
+        }
+        check_solve(handle,
+                    f,
+                    constructed.info,
+                    true,
+                    trans,
+                    buffer.ptr,
+                    "constructed after src gone lower " + tag);
+        check_solve(handle,
+                    f,
+                    constructed.info,
+                    false,
+                    trans,
+                    buffer.ptr,
+                    "constructed after src gone upper " + tag);
+        check_solve(handle,
+                    f,
+                    assigned.info,
+                    true,
+                    trans,
+                    buffer.ptr,
+                    "assigned after src gone lower " + tag);
+        check_solve(handle,
+                    f,
+                    assigned.info,
+                    false,
+                    trans,
+                    buffer.ptr,
+                    "assigned after src gone upper " + tag);
+
+        for(const auto info : {constructed.info, assigned.info})
         {
             EXPECT_EQ(rocsparse_csrsv_clear(handle, f.lower, info), rocsparse_status_success);
             EXPECT_EQ(rocsparse_csrsv_clear(handle, f.upper, info), rocsparse_status_success);
         }
-        EXPECT_EQ(rocsparse_destroy_mat_info(dst), rocsparse_status_success);
-        EXPECT_EQ(rocsparse_destroy_mat_info(src), rocsparse_status_success);
     }
 }
 
@@ -244,14 +311,14 @@ TEST_F(Cov70PrecondTrmInfo, copy_mat_info_with_ilu0_analysis)
     // The ILU(0) analysis keeps its data in a trm info too (diagonal indices and row map).
     trm_fixture f;
     ASSERT_NE(f.lower, nullptr);
-    rocsparse_mat_info src = nullptr;
-    rocsparse_mat_info dst = nullptr;
-    ASSERT_EQ(rocsparse_create_mat_info(&src), rocsparse_status_success);
-    ASSERT_EQ(rocsparse_create_mat_info(&dst), rocsparse_status_success);
+    info_guard src;
+    info_guard constructed;
+    info_guard assigned;
+    ASSERT_TRUE(src.info && constructed.info && assigned.info);
 
     size_t size = 0;
     ASSERT_EQ(rocsparse_dcsrilu0_buffer_size(
-                  handle, f.a.n, f.a.nnz(), f.lower, f.val, f.row, f.col, src, &size),
+                  handle, f.a.n, f.a.nnz(), f.lower, f.val, f.row, f.col, src.info, &size),
               rocsparse_status_success);
     device_vector<char> buffer{size ? size : size_t{1}};
     ASSERT_TRUE(buffer.ptr);
@@ -262,18 +329,15 @@ TEST_F(Cov70PrecondTrmInfo, copy_mat_info_with_ilu0_analysis)
                                           f.val,
                                           f.row,
                                           f.col,
-                                          src,
+                                          src.info,
                                           rocsparse_analysis_policy_reuse,
                                           rocsparse_solve_policy_auto,
                                           buffer),
               rocsparse_status_success);
 
-    for(int pass = 0; pass < 2; ++pass)
-    {
-        SCOPED_TRACE("copy " + std::to_string(pass));
-        ASSERT_EQ(rocsparse_copy_mat_info(dst, src), rocsparse_status_success);
-
-        // Factorize with the copied analysis and compare with the exact ILU(0).
+    // Factorize with the analysis stored in `info` and compare with the exact ILU(0).
+    const auto factorize = [&](rocsparse_mat_info info, const char* what) {
+        SCOPED_TRACE(what);
         device_vector<double> dilu{f.a.val};
         ASSERT_TRUE(dilu.ptr);
         ASSERT_EQ(rocsparse_dcsrilu0(handle,
@@ -283,16 +347,32 @@ TEST_F(Cov70PrecondTrmInfo, copy_mat_info_with_ilu0_analysis)
                                      dilu,
                                      f.row,
                                      f.col,
-                                     dst,
+                                     info,
                                      rocsparse_solve_policy_auto,
                                      buffer),
                   rocsparse_status_success);
         ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
         expect_close(to_host(dilu), host_ilu0(f.a));
-    }
+    };
 
-    EXPECT_EQ(rocsparse_csrilu0_clear(handle, dst), rocsparse_status_success);
-    EXPECT_EQ(rocsparse_csrilu0_clear(handle, src), rocsparse_status_success);
-    EXPECT_EQ(rocsparse_destroy_mat_info(dst), rocsparse_status_success);
-    EXPECT_EQ(rocsparse_destroy_mat_info(src), rocsparse_status_success);
+    ASSERT_EQ(rocsparse_copy_mat_info(constructed.info, src.info), rocsparse_status_success);
+    ASSERT_EQ(rocsparse_copy_mat_info(assigned.info, src.info), rocsparse_status_success);
+    ASSERT_EQ(rocsparse_copy_mat_info(assigned.info, src.info), rocsparse_status_success);
+    factorize(src.info, "source");
+    factorize(constructed.info, "constructed");
+    factorize(assigned.info, "assigned");
+
+    // The copies own their data: release the source first, then factorize again.
+    EXPECT_EQ(rocsparse_csrilu0_clear(handle, src.info), rocsparse_status_success);
+    src.reset();
+    {
+        device_vector<char> filler{size ? size : size_t{1}};
+        ASSERT_TRUE(filler.ptr);
+        ASSERT_EQ(hipMemset(filler.ptr, 0xff, size ? size : size_t{1}), hipSuccess);
+    }
+    factorize(constructed.info, "constructed after the source is gone");
+    factorize(assigned.info, "assigned after the source is gone");
+
+    EXPECT_EQ(rocsparse_csrilu0_clear(handle, constructed.info), rocsparse_status_success);
+    EXPECT_EQ(rocsparse_csrilu0_clear(handle, assigned.info), rocsparse_status_success);
 }

@@ -38,6 +38,7 @@
 
 #include <algorithm>
 #include <string>
+#include <utility>
 
 using namespace cov70;
 
@@ -169,6 +170,47 @@ namespace
 #pragma clang diagnostic pop
 #endif
 
+    template <typename T>
+    rocsparse_status plain_history(rocsparse_handle     handle,
+                                   rocsparse_itilu0_alg alg,
+                                   rocsparse_int*       niter,
+                                   real_of<T>*          nrms,
+                                   size_t               buffer_size,
+                                   void*                buffer)
+    {
+        if constexpr(std::is_same_v<T, float>)
+            return rocsparse_scsritilu0_history(handle, alg, niter, nrms, buffer_size, buffer);
+        else if constexpr(std::is_same_v<T, double>)
+            return rocsparse_dcsritilu0_history(handle, alg, niter, nrms, buffer_size, buffer);
+        else if constexpr(std::is_same_v<T, rocsparse_float_complex>)
+            return rocsparse_ccsritilu0_history(handle, alg, niter, nrms, buffer_size, buffer);
+        else
+            return rocsparse_zcsritilu0_history(handle, alg, niter, nrms, buffer_size, buffer);
+    }
+
+    // The sweeps stop at a fixed count or on the residual criterion; the error left in
+    // the factor differs (see the measured values in the tests).
+    constexpr bool is_stopping(rocsparse_int options)
+    {
+        return (options & rocsparse_itilu0_option_stopping_criteria) != 0;
+    }
+
+    // Relative (per entry) tolerance on the factor, about 10x the largest error measured on
+    // gfx1201 over every algorithm, type and matrix of this file:
+    //  * fixed sweep count (60-80 sweeps, the iteration has converged to rounding):
+    //    float/cfloat <= 1.6e-7, double/cdouble <= 8.7e-16 -> 1.6e-6, 1e-14 (the double
+    //    bound is only 10x the rounding level of a direct factorization);
+    //  * stopping criterion (tol 1e-6 float, 1e-12 double): the error is the residual
+    //    left at the stop: float <= 2.1e-5 (async_inplace; <= 5e-7 for the others),
+    //    double <= 2.4e-12 -> 2.1e-4, 2.4e-11.
+    template <typename T>
+    double iterative_tolerance(bool stopping)
+    {
+        if(is_single_precision<T>)
+            return stopping ? 2.1e-4 : 1.6e-6;
+        return stopping ? 2.4e-11 : 1.0e-14;
+    }
+
     // Factorization of `a` through rocsparse_Xcsritilu0_compute, compared with
     // the exact ILU(0) factor.
     template <typename T>
@@ -230,7 +272,35 @@ namespace
         ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
         EXPECT_GE(nmaxiter, 1);
         EXPECT_LE(nmaxiter, nmaxiter_in);
-        expect_close(to_host(dilu), host_ilu0(a), 20.0);
+        expect_close(to_host(dilu), host_ilu0(a), iterative_tolerance<T>(is_stopping(options)));
+
+        if((options & rocsparse_itilu0_option_convergence_history) != 0)
+        {
+            // The log holds `niter` residual norms (after `niter` entries reserved for the
+            // correction norms, which were not requested).
+            rocsparse_int           niter = -1;
+            std::vector<real_of<T>> log(2 * static_cast<size_t>(nmaxiter_in), real_of<T>(-1));
+            ASSERT_EQ(plain_history<T>(handle, alg, &niter, log.data(), buffer_size, buffer.ptr),
+                      rocsparse_status_success);
+            ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
+            // The history is what the compute call reported, each residual norm is a finite
+            // non-negative number, the iteration reduced the residual, and a stopping run
+            // that ended early reached the requested tolerance.
+            EXPECT_EQ(niter, nmaxiter);
+            ASSERT_GE(niter, 1);
+            ASSERT_LE(niter, nmaxiter_in);
+            for(rocsparse_int i = 0; i < niter; ++i)
+            {
+                EXPECT_TRUE(std::isfinite(log[niter + i])) << "iteration " << i;
+                EXPECT_GE(log[niter + i], real_of<T>(0)) << "iteration " << i;
+            }
+            EXPECT_LT(log[2 * niter - 1], log[niter]);
+            if(is_stopping(options))
+            {
+                EXPECT_LT(nmaxiter, nmaxiter_in);
+                EXPECT_LE(log[2 * niter - 1], tol);
+            }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -398,6 +468,11 @@ namespace
         rocsparse_int    nsweeps = opt.nmaxiter;
         const real_of<T> tol     = std::is_same_v<real_of<T>, float> ? 1.0e-6f : 1.0e-12;
         rocsparse_status status  = rocsparse_status_internal_error;
+        const bool       verbose = (opt.options & rocsparse_itilu0_option_verbose) != 0;
+        if(verbose)
+        {
+            testing::internal::CaptureStdout();
+        }
         {
             ScopedWavefront guard(handle,
                                   opt.wavefront > 0 ? opt.wavefront : handle->wavefront_size);
@@ -434,15 +509,32 @@ namespace
                                                                  buffer_size,
                                                                  buffer.ptr);
         }
+        std::string log_text;
+        if(verbose)
+        {
+            log_text = testing::internal::GetCapturedStdout();
+        }
         ASSERT_EQ(status, rocsparse_status_success);
         ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
         EXPECT_GE(nsweeps, 1);
         EXPECT_LE(nsweeps, opt.nmaxiter);
 
-        const std::vector<T> ref = host_ilu0(a);
-        expect_close(to_host(dlval), gather(ref, split.lpos), 20.0);
-        expect_close(to_host(duval), gather(ref, split.upos), 20.0);
-        expect_close(to_host(ddval), gather(ref, split.dpos), 20.0);
+        if(verbose)
+        {
+            // One header line per sweep. The residual and rate columns of this driver are
+            // not meaningful (residual 0, rate nan), so only the table is checked.
+            size_t headers = 0;
+            for(size_t at = log_text.find("residual"); at != std::string::npos;
+                at        = log_text.find("residual", at + 1))
+                ++headers;
+            EXPECT_EQ(headers, static_cast<size_t>(nsweeps));
+        }
+
+        const std::vector<T> ref     = host_ilu0(a);
+        const double         rel_tol = iterative_tolerance<T>(is_stopping(opt.options));
+        expect_close(to_host(dlval), gather(ref, split.lpos), rel_tol);
+        expect_close(to_host(duval), gather(ref, split.upos), rel_tol);
+        expect_close(to_host(ddval), gather(ref, split.dpos), rel_tol);
     }
 }
 
@@ -478,24 +570,26 @@ TEST_F(Cov70PrecondItilu0, compute_algorithms_and_types)
 
 TEST_F(Cov70PrecondItilu0, compute_nnz_per_row_buckets)
 {
-    // Mean nnz per row of 2, 4, 6, 12, 22 and 100 select the sweep kernel widths.
+    // The sweep kernel width follows the mean number of nonzeros per row (nnz / m, integer
+    // division): <= 2, 4, 8, 16, 32, 64 select that width, anything larger the wavefront
+    // width. Half bandwidths 1, 2, 6, 12, 24 and a dense matrix give the means 2, 4, 12,
+    // 22, 39 and 100, one per kernel.
+    const std::pair<int32_t, int32_t> cases[]
+        = {{1, 2}, {2, 4}, {6, 12}, {12, 22}, {24, 39}, {100, 100}};
     for(const auto alg : {rocsparse_itilu0_alg_async_inplace, rocsparse_itilu0_alg_sync_split})
     {
-        for(const int32_t w : {1, 2, 6, 12, 24})
+        for(const auto& [w, mean] : cases)
         {
+            const int32_t m = (w >= 100) ? 100 : 64;
+            const auto    a = make_band_matrix<double>(m, w);
+            ASSERT_EQ(a.nnz() / a.n, mean);
             check_plain_compute<double>(handle,
                                         alg,
-                                        make_band_matrix<double>(64, w),
+                                        a,
                                         rocsparse_itilu0_option_compute_nrm_residual,
                                         80,
                                         "w=" + std::to_string(w));
         }
-        check_plain_compute<double>(handle,
-                                    alg,
-                                    make_band_matrix<double>(100, 100),
-                                    rocsparse_itilu0_option_compute_nrm_residual,
-                                    80,
-                                    "dense");
     }
 }
 
@@ -613,14 +707,19 @@ TEST_F(Cov70PrecondItilu0, compute_quick_returns_and_argument_checks)
 
 TEST_F(Cov70PrecondItilu0, x_async_split_nnz_per_row_buckets)
 {
-    // Mean nnz per row of 2, 4, 6, 12, 22, 40 and 100 select the sweep kernel widths.
+    // Same selection as the plain driver (mean nnz per row, integer division): half
+    // bandwidths 1, 2, 3, 6, 12, 24 and a dense matrix give the means 2, 4, 6, 12, 22, 39
+    // and 100, i.e. the widths 2, 4, 8, 16, 32, 64 and the wavefront size.
+    const std::pair<int32_t, int32_t> cases[]
+        = {{1, 2}, {2, 4}, {3, 6}, {6, 12}, {12, 22}, {24, 39}, {100, 100}};
     x_options opt;
-    for(const int32_t w : {1, 2, 3, 6, 12, 24})
+    for(const auto& [w, mean] : cases)
     {
-        check_async_split_x<double>(
-            handle, make_band_matrix<double>(64, w), opt, "w=" + std::to_string(w));
+        const int32_t m = (w >= 100) ? 100 : 64;
+        const auto    a = make_band_matrix<double>(m, w);
+        ASSERT_EQ(a.nnz() / a.n, mean);
+        check_async_split_x<double>(handle, a, opt, "w=" + std::to_string(w));
     }
-    check_async_split_x<double>(handle, make_band_matrix<double>(100, 100), opt, "dense");
 }
 
 TEST_F(Cov70PrecondItilu0, x_async_split_types)
@@ -645,7 +744,7 @@ TEST_F(Cov70PrecondItilu0, x_async_split_options)
     opt.nfreeiter = 2;
     check_async_split_x<double>(handle, make_band_matrix<double>(48, 2), opt, "free sweeps");
 
-    // Residual norm only, with the iteration log printed.
+    // Residual norm only, with the iteration log captured and checked (one table per sweep).
     opt.nfreeiter = 0;
     opt.nmaxiter  = 30;
     opt.options   = rocsparse_itilu0_option_compute_nrm_residual | rocsparse_itilu0_option_verbose;
