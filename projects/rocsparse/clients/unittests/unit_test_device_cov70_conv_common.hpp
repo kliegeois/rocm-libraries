@@ -31,11 +31,42 @@
 
 #include <cstdint>
 #include <functional>
+#include <initializer_list>
 #include <type_traits>
 #include <vector>
 
+// Status checks for behavior that the public documentation does not pin down.
+//
+// COV70_EXPECT_STATUS_IN(call, a, b, ...): the call must return one of the listed
+//   statuses. Used where the header documents a different (or no) status than the
+//   library returns today, so that either one is accepted.
+// COV70_EXPECT_REJECTED(call): the call must return an error, whatever it is. Used
+//   where the header only says that the operation is unsupported / returns an error.
+// The expression is evaluated exactly once.
+#define COV70_EXPECT_STATUS_IN(call, ...) EXPECT_TRUE(::cov70conv::status_in((call), {__VA_ARGS__}))
+#define COV70_EXPECT_REJECTED(call) EXPECT_NE((call), rocsparse_status_success)
+
 namespace cov70conv
 {
+    inline ::testing::AssertionResult status_in(rocsparse_status                        actual,
+                                                std::initializer_list<rocsparse_status> allowed)
+    {
+        for(rocsparse_status a : allowed)
+        {
+            if(a == actual)
+            {
+                return ::testing::AssertionSuccess();
+            }
+        }
+        auto r = ::testing::AssertionFailure();
+        r << "status " << static_cast<int>(actual) << " is not one of:";
+        for(rocsparse_status a : allowed)
+        {
+            r << " " << static_cast<int>(a);
+        }
+        return r;
+    }
+
     // Destroys a descriptor owned by a local variable when the scope is left, also
     // when an ASSERT_* returns early. Declare it right after the variable:
     //     rocsparse_spmat_descr mat = nullptr;

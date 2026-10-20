@@ -150,9 +150,13 @@ namespace
             rocsparse_spsort_buffer_size(
                 handle, descr, source, target, rocsparse_spsort_stage_compute, &size, nullptr),
             rocsparse_status_success);
-        EXPECT_GT(size, size_t(0));
+        // The size of the scratch space is an implementation detail: it is not
+        // required to be positive here (the tests that need a positive size check it).
         void* buffer = nullptr;
-        EXPECT_EQ(hipMalloc(&buffer, size), hipSuccess);
+        if(size > 0)
+        {
+            EXPECT_EQ(hipMalloc(&buffer, size), hipSuccess);
+        }
 
         status = rocsparse_spsort(
             handle, descr, source, target, rocsparse_spsort_stage_compute, size, buffer, nullptr);
@@ -525,9 +529,9 @@ namespace
 
         const rocsparse_spsort_alg alg = rocsparse_spsort_alg_radix_sort;
         const rocsparse_direction  dir = rocsparse_direction_column;
-        EXPECT_EQ(rocsparse_spsort_set_input(
-                      nullptr, descr, rocsparse_spsort_input_alg, &alg, sizeof(alg), nullptr),
-                  rocsparse_status_invalid_handle);
+        // (invalid_handle is not in the list of documented statuses)
+        COV70_EXPECT_REJECTED(rocsparse_spsort_set_input(
+            nullptr, descr, rocsparse_spsort_input_alg, &alg, sizeof(alg), nullptr));
         EXPECT_EQ(rocsparse_spsort_set_input(
                       handle, nullptr, rocsparse_spsort_input_alg, &alg, sizeof(alg), nullptr),
                   rocsparse_status_invalid_pointer);
@@ -817,6 +821,8 @@ namespace
             rocsparse_status_success);
         ASSERT_EQ(buffer_size(descr, src, dst, rocsparse_spsort_stage_compute),
                   rocsparse_status_success);
+        // A sort of nnz > 1 entries needs scratch space; the checks below need a buffer
+        // that is smaller than the required size.
         ASSERT_GT(size, size_t(1));
         void* buffer = nullptr;
         ASSERT_EQ(hipMalloc(&buffer, size), hipSuccess);

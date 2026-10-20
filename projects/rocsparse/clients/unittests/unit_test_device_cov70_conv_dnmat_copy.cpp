@@ -275,15 +275,18 @@ namespace
                       &dst_double, 4, 3, 4, dd.ptr, rocsparse_datatype_f64_r, col),
                   rocsparse_status_success);
 
-        EXPECT_EQ(rocsparse_dnmat_copy_data(nullptr, nullptr, src, dst, nullptr),
-                  rocsparse_status_invalid_handle);
+        // (invalid_handle is not in the list of documented statuses)
+        COV70_EXPECT_REJECTED(rocsparse_dnmat_copy_data(nullptr, nullptr, src, dst, nullptr));
         EXPECT_EQ(rocsparse_dnmat_copy_data(handle, nullptr, nullptr, dst, nullptr),
                   rocsparse_status_invalid_pointer);
         EXPECT_EQ(rocsparse_dnmat_copy_data(handle, nullptr, src, nullptr, nullptr),
                   rocsparse_status_invalid_pointer);
         // Different data types.
-        EXPECT_EQ(rocsparse_dnmat_copy_data(handle, nullptr, src, dst_double, nullptr),
-                  rocsparse_status_not_implemented);
+        // The header documents invalid_value for invalid data types while the
+        // implementation returns not_implemented; accept both.
+        COV70_EXPECT_STATUS_IN(rocsparse_dnmat_copy_data(handle, nullptr, src, dst_double, nullptr),
+                               rocsparse_status_invalid_value,
+                               rocsparse_status_not_implemented);
         // Different shapes.
         EXPECT_EQ(rocsparse_dnmat_copy_data(handle, nullptr, src, dst_tall, nullptr),
                   rocsparse_status_invalid_value);
@@ -311,8 +314,9 @@ namespace
                                                       nullptr,
                                                       nullptr),
                   rocsparse_status_success);
-        EXPECT_EQ(rocsparse_dnmat_copy_data(handle, alpha, src, dst, nullptr),
-                  rocsparse_status_not_implemented);
+        COV70_EXPECT_STATUS_IN(rocsparse_dnmat_copy_data(handle, alpha, src, dst, nullptr),
+                               rocsparse_status_invalid_value,
+                               rocsparse_status_not_implemented);
         EXPECT_EQ(rocsparse_destroy_dnvec_descr(alpha), rocsparse_status_success);
         alpha = nullptr;
 

@@ -544,9 +544,12 @@ TEST_F(Cov70ConvPrune, Dense2CsrByPercentageArguments)
         rocsparse_dprune_dense2csr_by_percentage(
             nullptr, m, n, dA, lda, 40.0, descr.d, d_val, d_row_ptr, d_col_ind, info.i, temp.ptr),
         rocsparse_status_invalid_handle);
-    EXPECT_EQ(
+    // The header documents invalid_size for an invalid percentage; the implementation
+    // returns invalid_value. Accept both.
+    COV70_EXPECT_STATUS_IN(
         rocsparse_dprune_dense2csr_by_percentage(
             handle, m, n, dA, lda, -1.0, descr.d, d_val, d_row_ptr, d_col_ind, info.i, temp.ptr),
+        rocsparse_status_invalid_size,
         rocsparse_status_invalid_value);
     EXPECT_EQ(
         rocsparse_dprune_dense2csr_by_percentage(
@@ -556,9 +559,11 @@ TEST_F(Cov70ConvPrune, Dense2CsrByPercentageArguments)
         rocsparse_dprune_dense2csr_by_percentage(
             handle, m, n, dA, lda, 40.0, descr.d, d_val, d_row_ptr, d_col_ind, info.i, nullptr),
         rocsparse_status_invalid_pointer);
-    EXPECT_EQ(rocsparse_dprune_dense2csr_nnz_by_percentage(
-                  handle, m, n, dA, lda, 101.0, descr.d, d_row_ptr, &nnz, info.i, temp.ptr),
-              rocsparse_status_invalid_value);
+    COV70_EXPECT_STATUS_IN(
+        rocsparse_dprune_dense2csr_nnz_by_percentage(
+            handle, m, n, dA, lda, 101.0, descr.d, d_row_ptr, &nnz, info.i, temp.ptr),
+        rocsparse_status_invalid_size,
+        rocsparse_status_invalid_value);
     EXPECT_EQ(rocsparse_dprune_dense2csr_nnz_by_percentage(
                   handle, m, n, dA, lda, 40.0, descr.d, d_row_ptr, nullptr, info.i, temp.ptr),
               rocsparse_status_invalid_pointer);

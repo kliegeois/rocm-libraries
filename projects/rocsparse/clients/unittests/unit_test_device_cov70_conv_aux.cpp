@@ -495,8 +495,8 @@ namespace
         EXPECT_GE(nnz, rows * ell_cols);
 
         // The number of non-zeros of a blocked ELL matrix cannot be set.
-        EXPECT_EQ(rocsparse_spmat_set_nnz(const_cast<rocsparse_spmat_descr>(descr), 3),
-                  rocsparse_status_invalid_value);
+        // (the header only says that the operation returns an error)
+        COV70_EXPECT_REJECTED(rocsparse_spmat_set_nnz(const_cast<rocsparse_spmat_descr>(descr), 3));
 
         // Invalid arguments.
         const int32_t*              i      = b.i32.data();
@@ -845,13 +845,28 @@ namespace
         int64_t nnz = 0;
         EXPECT_EQ(rocsparse_spmat_get_nnz(descr, &nnz), rocsparse_status_success);
         EXPECT_EQ(nnz, 3 * 5);
-        EXPECT_EQ(rocsparse_spmat_set_nnz(descr, 4), rocsparse_status_invalid_value);
+        // (the header only says that the operation returns an error for ELL)
+        COV70_EXPECT_REJECTED(rocsparse_spmat_set_nnz(descr, 4));
 
         EXPECT_EQ(rocsparse_ell_set_strided_batch(nullptr, 2, 10),
                   rocsparse_status_invalid_pointer);
-        EXPECT_EQ(rocsparse_ell_set_strided_batch(descr, 0, 10), rocsparse_status_invalid_value);
-        EXPECT_EQ(rocsparse_ell_set_strided_batch(descr, 2, -1), rocsparse_status_invalid_value);
-        EXPECT_EQ(rocsparse_ell_set_strided_batch(descr, 1, 5), rocsparse_status_invalid_value);
+        // The header documents rocsparse_status_invalid_size for an invalid batch count
+        // or batch stride, while the implementation returns
+        // rocsparse_status_invalid_value; accept both.
+        COV70_EXPECT_STATUS_IN(rocsparse_ell_set_strided_batch(descr, 0, 10),
+                               rocsparse_status_invalid_size,
+                               rocsparse_status_invalid_value);
+        COV70_EXPECT_STATUS_IN(rocsparse_ell_set_strided_batch(descr, 2, -1),
+                               rocsparse_status_invalid_size,
+                               rocsparse_status_invalid_value);
+        // A positive stride with a batch count of one is not covered by the
+        // documentation: it was rejected for a while and the check was reverted
+        // afterwards. Only require that the call does not fail with an unrelated
+        // status, and that the following valid call is accepted.
+        COV70_EXPECT_STATUS_IN(rocsparse_ell_set_strided_batch(descr, 1, 5),
+                               rocsparse_status_success,
+                               rocsparse_status_invalid_size,
+                               rocsparse_status_invalid_value);
         ASSERT_EQ(rocsparse_ell_set_strided_batch(descr, 3, 20), rocsparse_status_success);
         rocsparse_int batch_count = 0;
         EXPECT_EQ(rocsparse_spmat_get_strided_batch(descr, &batch_count), rocsparse_status_success);
