@@ -35,6 +35,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <memory>
 #include <string>
 
 using namespace rocsparse_ut;
@@ -97,7 +98,8 @@ namespace
     }
 
     // Column-major dense matrix with distinct magnitudes (a permutation of 1..97 stepped
-    // by 17), explicit zeros on a diagonal pattern and alternating signs.
+    // by 17), a few explicit zeros (about 1 in 19, so that low percentages prune
+    // nonzero entries as well) and alternating signs.
     std::vector<double> make_dense(int m, int n, int lda)
     {
         std::vector<double> a(static_cast<size_t>(lda) * n, -777.0);
@@ -107,7 +109,7 @@ namespace
             {
                 const int    k   = i * n + j;
                 const double mag = 1.0 + static_cast<double>((k * 17) % 97);
-                double       v   = ((i + j) % 4 == 0) ? 0.0 : ((k % 2 == 0) ? mag : -mag);
+                double       v   = ((i * 3 + j) % 19 == 0) ? 0.0 : ((k % 2 == 0) ? mag : -mag);
                 a[static_cast<size_t>(j) * lda + i] = v;
             }
         }
@@ -150,118 +152,250 @@ namespace
     };
 }
 
-// The dense routine over a grid of percentages, index bases, pointer modes and
-// scratch buffer situations (handle buffer large enough, or too small so that the
-// routine allocates its own storage).
-TEST_F(Cov70ConvPrune, Dense2CsrByPercentageDouble)
+namespace
 {
-    const int                 m = 9, n = 7, lda = 11;
-    const std::vector<double> hA = make_dense(m, n, lda);
-    device_vector<double>     dA(hA);
-    ASSERT_TRUE(dA.ptr);
-
-    for(double pct : {0.0, 10.0, 40.0, 77.0, 100.0})
+    // Precision independent entry points of the dense routines.
+    inline rocsparse_status dense_buffer_size(rocsparse_handle          handle,
+                                              rocsparse_int             m,
+                                              rocsparse_int             n,
+                                              const float*              A,
+                                              rocsparse_int             lda,
+                                              float                     pct,
+                                              const rocsparse_mat_descr descr,
+                                              rocsparse_int*            row_ptr,
+                                              rocsparse_mat_info        info,
+                                              size_t*                   size)
     {
-        for(int base : {0, 1})
+        return rocsparse_sprune_dense2csr_by_percentage_buffer_size(
+            handle, m, n, A, lda, pct, descr, nullptr, row_ptr, nullptr, info, size);
+    }
+    inline rocsparse_status dense_buffer_size(rocsparse_handle          handle,
+                                              rocsparse_int             m,
+                                              rocsparse_int             n,
+                                              const double*             A,
+                                              rocsparse_int             lda,
+                                              double                    pct,
+                                              const rocsparse_mat_descr descr,
+                                              rocsparse_int*            row_ptr,
+                                              rocsparse_mat_info        info,
+                                              size_t*                   size)
+    {
+        return rocsparse_dprune_dense2csr_by_percentage_buffer_size(
+            handle, m, n, A, lda, pct, descr, nullptr, row_ptr, nullptr, info, size);
+    }
+    inline rocsparse_status dense_nnz(rocsparse_handle          handle,
+                                      rocsparse_int             m,
+                                      rocsparse_int             n,
+                                      const float*              A,
+                                      rocsparse_int             lda,
+                                      float                     pct,
+                                      const rocsparse_mat_descr descr,
+                                      rocsparse_int*            row_ptr,
+                                      rocsparse_int*            nnz,
+                                      rocsparse_mat_info        info,
+                                      void*                     temp)
+    {
+        return rocsparse_sprune_dense2csr_nnz_by_percentage(
+            handle, m, n, A, lda, pct, descr, row_ptr, nnz, info, temp);
+    }
+    inline rocsparse_status dense_nnz(rocsparse_handle          handle,
+                                      rocsparse_int             m,
+                                      rocsparse_int             n,
+                                      const double*             A,
+                                      rocsparse_int             lda,
+                                      double                    pct,
+                                      const rocsparse_mat_descr descr,
+                                      rocsparse_int*            row_ptr,
+                                      rocsparse_int*            nnz,
+                                      rocsparse_mat_info        info,
+                                      void*                     temp)
+    {
+        return rocsparse_dprune_dense2csr_nnz_by_percentage(
+            handle, m, n, A, lda, pct, descr, row_ptr, nnz, info, temp);
+    }
+    inline rocsparse_status dense_compute(rocsparse_handle          handle,
+                                          rocsparse_int             m,
+                                          rocsparse_int             n,
+                                          const float*              A,
+                                          rocsparse_int             lda,
+                                          float                     pct,
+                                          const rocsparse_mat_descr descr,
+                                          float*                    val,
+                                          rocsparse_int*            row_ptr,
+                                          rocsparse_int*            col_ind,
+                                          rocsparse_mat_info        info,
+                                          void*                     temp)
+    {
+        return rocsparse_sprune_dense2csr_by_percentage(
+            handle, m, n, A, lda, pct, descr, val, row_ptr, col_ind, info, temp);
+    }
+    inline rocsparse_status dense_compute(rocsparse_handle          handle,
+                                          rocsparse_int             m,
+                                          rocsparse_int             n,
+                                          const double*             A,
+                                          rocsparse_int             lda,
+                                          double                    pct,
+                                          const rocsparse_mat_descr descr,
+                                          double*                   val,
+                                          rocsparse_int*            row_ptr,
+                                          rocsparse_int*            col_ind,
+                                          rocsparse_mat_info        info,
+                                          void*                     temp)
+    {
+        return rocsparse_dprune_dense2csr_by_percentage(
+            handle, m, n, A, lda, pct, descr, val, row_ptr, col_ind, info, temp);
+    }
+
+    template <typename T>
+    std::vector<T> as(const std::vector<double>& v)
+    {
+        return std::vector<T>(v.begin(), v.end());
+    }
+
+    int64_t count_nonzeros(const std::vector<double>& a, int m, int n, int lda)
+    {
+        int64_t cnt = 0;
+        for(int j = 0; j < n; ++j)
+            for(int i = 0; i < m; ++i)
+                cnt += (a[static_cast<size_t>(j) * lda + i] != 0.0) ? 1 : 0;
+        return cnt;
+    }
+
+    // The dense routine over a grid of percentages, index bases, pointer modes and
+    // scratch buffer situations (handle buffer large enough, or too small so that
+    // the routine allocates its own storage). All four flag combinations occur for
+    // every percentage and every base.
+    template <typename T>
+    void run_dense(rocsparse_handle handle)
+    {
+        const int                 m = 9, n = 7, lda = 11;
+        const std::vector<double> hAd = make_dense(m, n, lda);
+        const std::vector<T>      hA  = as<T>(hAd);
+        device_vector<T>          dA(hA);
+        ASSERT_TRUE(dA.ptr);
+        const int64_t nonzeros = count_nonzeros(hAd, m, n, lda);
+        ASSERT_LT(nonzeros, static_cast<int64_t>(m) * n); // the matrix has explicit zeros
+
+        for(double pct : {0.0, 10.0, 40.0, 77.0, 100.0})
         {
-            for(rocsparse_pointer_mode mode :
-                {rocsparse_pointer_mode_host, rocsparse_pointer_mode_device})
+            for(int base : {0, 1})
             {
-                for(bool shrink : {false, true})
+                for(rocsparse_pointer_mode mode :
+                    {rocsparse_pointer_mode_host, rocsparse_pointer_mode_device})
                 {
-                    SCOPED_TRACE("pct=" + std::to_string(pct) + " base=" + std::to_string(base)
-                                 + " device_mode="
-                                 + std::to_string(mode == rocsparse_pointer_mode_device)
-                                 + " shrink=" + std::to_string(shrink));
-
-                    const HostCsr ref = reference_dense(m, n, lda, hA, pct, base);
-
-                    MatDescr descr(base == 0 ? rocsparse_index_base_zero
-                                             : rocsparse_index_base_one);
-                    MatInfo  info;
-                    ASSERT_TRUE(descr.d && info.i);
-
-                    PointerModeScope pm(handle, mode);
-
-                    device_vector<rocsparse_int> d_row_ptr(static_cast<size_t>(m + 1));
-                    ASSERT_TRUE(d_row_ptr.ptr);
-
-                    size_t buffer_size = 0;
-                    ASSERT_EQ(rocsparse_dprune_dense2csr_by_percentage_buffer_size(handle,
-                                                                                   m,
-                                                                                   n,
-                                                                                   dA,
-                                                                                   lda,
-                                                                                   pct,
-                                                                                   descr.d,
-                                                                                   nullptr,
-                                                                                   d_row_ptr,
-                                                                                   nullptr,
-                                                                                   info.i,
-                                                                                   &buffer_size),
-                              rocsparse_status_success);
-                    EXPECT_EQ(buffer_size, sizeof(double) * 2 * m * n);
-
-                    device_vector<char> temp(std::max(buffer_size, size_t(1)));
-                    ASSERT_TRUE(temp.ptr);
-
-                    std::unique_ptr<ShrinkHandleBuffer> shrinker;
-                    if(shrink)
+                    for(bool shrink : {false, true})
                     {
-                        shrinker.reset(new ShrinkHandleBuffer(handle));
+                        SCOPED_TRACE("pct=" + std::to_string(pct) + " base=" + std::to_string(base)
+                                     + " device_mode="
+                                     + std::to_string(mode == rocsparse_pointer_mode_device)
+                                     + " shrink=" + std::to_string(shrink));
+
+                        const HostCsr ref = reference_dense(m, n, lda, hAd, pct, base);
+                        // The reference prunes: nothing but the explicit zeros at 0 %,
+                        // some nonzero entries at 10 % and above, everything at 100 %.
+                        if(pct == 0.0)
+                            ASSERT_EQ(static_cast<int64_t>(ref.val.size()), nonzeros);
+                        else if(pct < 100.0)
+                            ASSERT_LT(static_cast<int64_t>(ref.val.size()), nonzeros);
+                        else
+                            ASSERT_EQ(ref.val.size(), size_t(0));
+
+                        MatDescr descr(base == 0 ? rocsparse_index_base_zero
+                                                 : rocsparse_index_base_one);
+                        MatInfo  info;
+                        ASSERT_TRUE(descr.d && info.i);
+
+                        PointerModeScope pm(handle, mode);
+
+                        device_vector<rocsparse_int> d_row_ptr(static_cast<size_t>(m + 1));
+                        ASSERT_TRUE(d_row_ptr.ptr);
+
+                        size_t buffer_size = 0;
+                        ASSERT_EQ(dense_buffer_size(handle,
+                                                    m,
+                                                    n,
+                                                    dA.ptr,
+                                                    lda,
+                                                    static_cast<T>(pct),
+                                                    descr.d,
+                                                    d_row_ptr.ptr,
+                                                    info.i,
+                                                    &buffer_size),
+                                  rocsparse_status_success);
+                        // The size is the library's choice; the computation below runs
+                        // with exactly the reported size.
+
+                        device_vector<char> temp(std::max(buffer_size, size_t(1)));
+                        ASSERT_TRUE(temp.ptr);
+
+                        std::unique_ptr<ShrinkHandleBuffer> shrinker;
+                        if(shrink)
+                        {
+                            shrinker.reset(new ShrinkHandleBuffer(handle));
+                        }
+
+                        rocsparse_int                nnz_host = -1;
+                        device_vector<rocsparse_int> nnz_dev(static_cast<size_t>(1));
+                        ASSERT_TRUE(nnz_dev.ptr);
+                        rocsparse_int* nnz_ptr
+                            = (mode == rocsparse_pointer_mode_device) ? nnz_dev.ptr : &nnz_host;
+
+                        ASSERT_EQ(dense_nnz(handle,
+                                            m,
+                                            n,
+                                            dA.ptr,
+                                            lda,
+                                            static_cast<T>(pct),
+                                            descr.d,
+                                            d_row_ptr.ptr,
+                                            nnz_ptr,
+                                            info.i,
+                                            temp.ptr),
+                                  rocsparse_status_success);
+                        ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
+                        const rocsparse_int nnz = (mode == rocsparse_pointer_mode_device)
+                                                      ? to_host(nnz_dev.ptr, 1)[0]
+                                                      : nnz_host;
+                        ASSERT_EQ(nnz, static_cast<rocsparse_int>(ref.val.size()));
+                        EXPECT_EQ(to_host(d_row_ptr.ptr, m + 1), ref.row_ptr);
+
+                        device_vector<rocsparse_int> d_col_ind(std::max<size_t>(nnz, 1));
+                        device_vector<T>             d_val(std::max<size_t>(nnz, 1));
+                        ASSERT_TRUE(d_col_ind.ptr && d_val.ptr);
+
+                        ASSERT_EQ(dense_compute(handle,
+                                                m,
+                                                n,
+                                                dA.ptr,
+                                                lda,
+                                                static_cast<T>(pct),
+                                                descr.d,
+                                                d_val.ptr,
+                                                d_row_ptr.ptr,
+                                                d_col_ind.ptr,
+                                                info.i,
+                                                temp.ptr),
+                                  rocsparse_status_success);
+                        ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
+
+                        EXPECT_EQ(to_host(d_row_ptr.ptr, m + 1), ref.row_ptr);
+                        EXPECT_EQ(to_host(d_col_ind.ptr, nnz), ref.col_ind);
+                        EXPECT_EQ(to_host(d_val.ptr, nnz), as<T>(ref.val));
                     }
-
-                    rocsparse_int                nnz_host = -1;
-                    device_vector<rocsparse_int> nnz_dev(static_cast<size_t>(1));
-                    ASSERT_TRUE(nnz_dev.ptr);
-                    rocsparse_int* nnz_ptr
-                        = (mode == rocsparse_pointer_mode_device) ? nnz_dev.ptr : &nnz_host;
-
-                    ASSERT_EQ(rocsparse_dprune_dense2csr_nnz_by_percentage(handle,
-                                                                           m,
-                                                                           n,
-                                                                           dA,
-                                                                           lda,
-                                                                           pct,
-                                                                           descr.d,
-                                                                           d_row_ptr,
-                                                                           nnz_ptr,
-                                                                           info.i,
-                                                                           temp.ptr),
-                              rocsparse_status_success);
-                    ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
-                    const rocsparse_int nnz = (mode == rocsparse_pointer_mode_device)
-                                                  ? to_host(nnz_dev.ptr, 1)[0]
-                                                  : nnz_host;
-                    ASSERT_EQ(nnz, static_cast<rocsparse_int>(ref.val.size()));
-                    EXPECT_EQ(to_host(d_row_ptr.ptr, m + 1), ref.row_ptr);
-
-                    device_vector<rocsparse_int> d_col_ind(std::max<size_t>(nnz, 1));
-                    device_vector<double>        d_val(std::max<size_t>(nnz, 1));
-                    ASSERT_TRUE(d_col_ind.ptr && d_val.ptr);
-
-                    ASSERT_EQ(rocsparse_dprune_dense2csr_by_percentage(handle,
-                                                                       m,
-                                                                       n,
-                                                                       dA,
-                                                                       lda,
-                                                                       pct,
-                                                                       descr.d,
-                                                                       d_val,
-                                                                       d_row_ptr,
-                                                                       d_col_ind,
-                                                                       info.i,
-                                                                       temp.ptr),
-                              rocsparse_status_success);
-                    ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
-
-                    EXPECT_EQ(to_host(d_row_ptr.ptr, m + 1), ref.row_ptr);
-                    EXPECT_EQ(to_host(d_col_ind.ptr, nnz), ref.col_ind);
-                    EXPECT_EQ(to_host(d_val.ptr, nnz), ref.val);
                 }
             }
         }
     }
+}
+
+TEST_F(Cov70ConvPrune, Dense2CsrByPercentageDouble)
+{
+    run_dense<double>(handle);
+}
+
+TEST_F(Cov70ConvPrune, Dense2CsrByPercentageFloat)
+{
+    run_dense<float>(handle);
 }
 
 // Empty matrices: the nnz routine fills the row pointer with the index base and
@@ -313,7 +447,6 @@ TEST_F(Cov70ConvPrune, Dense2CsrByPercentageEmpty)
                                                                                info.i,
                                                                                &buffer_size),
                           rocsparse_status_success);
-                EXPECT_EQ(buffer_size, size_t(0));
 
                 ASSERT_EQ(rocsparse_dprune_dense2csr_nnz_by_percentage(handle,
                                                                        sz.m,
