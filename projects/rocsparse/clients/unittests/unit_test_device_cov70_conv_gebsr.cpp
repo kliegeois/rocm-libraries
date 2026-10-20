@@ -235,90 +235,159 @@ namespace
         }
     }
 
-    // Representatives of the block dimension buckets of the gebsr2csr dispatch:
-    // <= 2, <= 4, <= 8, <= 16, <= 32, <= 64 and <= 128.
-    const int s_bucket_dims[] = {1, 3, 6, 12, 24, 48, 96};
+    // Number of nonzero (rbd x cbd) blocks of every block row of a row-major dense
+    // matrix whose dimensions are multiples of the block dimensions.
+    std::vector<int> nonzero_blocks_per_row(
+        const std::vector<float>& dense, int rows, int cols, int rbd, int cbd)
+    {
+        std::vector<int> counts(static_cast<size_t>(rows / rbd), 0);
+        for(int ib = 0; ib < rows / rbd; ++ib)
+        {
+            for(int jb = 0; jb < cols / cbd; ++jb)
+            {
+                bool any = false;
+                for(int ii = 0; ii < rbd && !any; ++ii)
+                    for(int jj = 0; jj < cbd && !any; ++jj)
+                        any = dense[static_cast<size_t>(ib * rbd + ii) * cols + jb * cbd + jj]
+                              != 0.0f;
+                counts[static_cast<size_t>(ib)] += any ? 1 : 0;
+            }
+        }
+        return counts;
+    }
+
+    // Block row pointer differences must equal the host block counts.
+    void expect_block_rows(const std::vector<int>& row_ptr,
+                           int                     base,
+                           const std::vector<int>& expected_counts)
+    {
+        ASSERT_EQ(row_ptr.size(), expected_counts.size() + 1);
+        for(size_t ib = 0; ib < expected_counts.size(); ++ib)
+        {
+            EXPECT_EQ(row_ptr[ib + 1] - row_ptr[ib], expected_counts[ib]) << "block row " << ib;
+        }
+        EXPECT_EQ(row_ptr[0], base);
+    }
+
+    // Block dimensions of the gebsr2csr dispatch buckets (<= 2, <= 4, <= 8, <= 16,
+    // <= 32, <= 64, <= 128). The row dimension i and the column dimension i of the
+    // two lists fall into the same bucket, so a grid over both lists reaches every
+    // pair of buckets including the seven diagonal ones.
+    const int s_row_dims[] = {1, 3, 6, 12, 24, 48, 96};
+    const int s_col_dims[] = {2, 4, 8, 16, 32, 64, 128};
+
+    // gebsr2csr of the 3 x 3 block test matrix, compared with the host reference.
+    void run_gebsr2csr(rocsparse_handle    handle,
+                       rocsparse_direction dir,
+                       int                 rbd,
+                       int                 cbd,
+                       int                 bsr_base,
+                       int                 csr_base)
+    {
+        SCOPED_TRACE(std::string("dir=") + dir_name(dir) + " rbd=" + std::to_string(rbd)
+                     + " cbd=" + std::to_string(cbd) + " bsr_base=" + std::to_string(bsr_base)
+                     + " csr_base=" + std::to_string(csr_base));
+
+        const HostGebsr<float> g = make_gebsr(dir, rbd, cbd, bsr_base);
+        const int              m = g.mb * rbd;
+        const int              n = g.nb * cbd;
+
+        std::vector<int>   ref_ptr, ref_ind;
+        std::vector<float> ref_val;
+        host_gebsr2csr(g, csr_base, ref_ptr, ref_ind, ref_val);
+        ASSERT_EQ(ref_val.size(), static_cast<size_t>(4) * rbd * cbd);
+
+        MatDescr bsr_descr(to_base(bsr_base)), csr_descr(to_base(csr_base));
+        ASSERT_TRUE(bsr_descr.d && csr_descr.d);
+
+        device_vector<int>   d_bsr_ptr(g.row_ptr);
+        device_vector<int>   d_bsr_ind(g.col_ind);
+        device_vector<float> d_bsr_val(g.val);
+        device_vector<int>   d_csr_ptr(static_cast<size_t>(m) + 1);
+        device_vector<int>   d_csr_ind(ref_val.size());
+        device_vector<float> d_csr_val(ref_val.size());
+        ASSERT_TRUE(d_bsr_ptr.ptr && d_bsr_ind.ptr && d_bsr_val.ptr && d_csr_ptr.ptr
+                    && d_csr_ind.ptr && d_csr_val.ptr);
+
+        ASSERT_EQ(rocsparse_sgebsr2csr(handle,
+                                       dir,
+                                       g.mb,
+                                       g.nb,
+                                       bsr_descr.d,
+                                       d_bsr_val,
+                                       d_bsr_ptr,
+                                       d_bsr_ind,
+                                       rbd,
+                                       cbd,
+                                       csr_descr.d,
+                                       d_csr_val,
+                                       d_csr_ptr,
+                                       d_csr_ind),
+                  rocsparse_status_success);
+        ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
+
+        EXPECT_EQ(to_host(d_csr_ptr.ptr, static_cast<size_t>(m) + 1), ref_ptr);
+        EXPECT_EQ(to_host(d_csr_ind.ptr, ref_ind.size()), ref_ind);
+        EXPECT_EQ(to_host(d_csr_val.ptr, ref_val.size()), ref_val);
+
+        // The CSR matrix describes the same dense matrix as the gebsr one.
+        EXPECT_EQ(csr_to_dense(ref_ptr, ref_ind, ref_val, csr_base, m, n), gebsr_to_dense(g, m, n));
+    }
 
     class Cov70ConvGebsr : public HandleTest
     {
     };
 }
 
-// gebsr2csr for every pair of different row and column block dimension buckets,
-// both block directions and every combination of index bases.
+// gebsr2csr for every pair of dispatch buckets of the row and the column block
+// dimension (49 pairs, the seven diagonal ones included), both block directions;
+// the index bases of the two matrices are varied over the grid.
 TEST_F(Cov70ConvGebsr, Gebsr2CsrBucketGrid)
 {
     int combo = 0;
     for(rocsparse_direction dir : {rocsparse_direction_row, rocsparse_direction_column})
     {
-        for(int rbd : s_bucket_dims)
+        for(int rbd : s_row_dims)
         {
-            for(int cbd : s_bucket_dims)
+            for(int cbd : s_col_dims)
             {
-                if(rbd == cbd)
-                {
-                    continue;
-                }
                 const int bsr_base = combo % 2;
                 const int csr_base = (combo / 2) % 2;
                 ++combo;
-
-                SCOPED_TRACE(std::string("dir=") + dir_name(dir) + " rbd=" + std::to_string(rbd)
-                             + " cbd=" + std::to_string(cbd) + " bsr_base="
-                             + std::to_string(bsr_base) + " csr_base=" + std::to_string(csr_base));
-
-                const HostGebsr<float> g = make_gebsr(dir, rbd, cbd, bsr_base);
-                const int              m = g.mb * rbd;
-                const int              n = g.nb * cbd;
-
-                std::vector<int>   ref_ptr, ref_ind;
-                std::vector<float> ref_val;
-                host_gebsr2csr(g, csr_base, ref_ptr, ref_ind, ref_val);
-                ASSERT_EQ(ref_val.size(), static_cast<size_t>(4) * rbd * cbd);
-
-                MatDescr bsr_descr(to_base(bsr_base)), csr_descr(to_base(csr_base));
-                ASSERT_TRUE(bsr_descr.d && csr_descr.d);
-
-                device_vector<int>   d_bsr_ptr(g.row_ptr);
-                device_vector<int>   d_bsr_ind(g.col_ind);
-                device_vector<float> d_bsr_val(g.val);
-                device_vector<int>   d_csr_ptr(static_cast<size_t>(m) + 1);
-                device_vector<int>   d_csr_ind(ref_val.size());
-                device_vector<float> d_csr_val(ref_val.size());
-                ASSERT_TRUE(d_bsr_ptr.ptr && d_bsr_ind.ptr && d_bsr_val.ptr && d_csr_ptr.ptr
-                            && d_csr_ind.ptr && d_csr_val.ptr);
-
-                ASSERT_EQ(rocsparse_sgebsr2csr(handle,
-                                               dir,
-                                               g.mb,
-                                               g.nb,
-                                               bsr_descr.d,
-                                               d_bsr_val,
-                                               d_bsr_ptr,
-                                               d_bsr_ind,
-                                               rbd,
-                                               cbd,
-                                               csr_descr.d,
-                                               d_csr_val,
-                                               d_csr_ptr,
-                                               d_csr_ind),
-                          rocsparse_status_success);
-                ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
-
-                EXPECT_EQ(to_host(d_csr_ptr.ptr, static_cast<size_t>(m) + 1), ref_ptr);
-                EXPECT_EQ(to_host(d_csr_ind.ptr, ref_ind.size()), ref_ind);
-                EXPECT_EQ(to_host(d_csr_val.ptr, ref_val.size()), ref_val);
-
-                // The CSR matrix describes the same dense matrix as the gebsr one.
-                EXPECT_EQ(csr_to_dense(ref_ptr, ref_ind, ref_val, csr_base, m, n),
-                          gebsr_to_dense(g, m, n));
+                run_gebsr2csr(handle, dir, rbd, cbd, bsr_base, csr_base);
+                if(::testing::Test::HasFatalFailure())
+                {
+                    return;
+                }
             }
         }
     }
 }
 
-// gebsr2csr in the other precisions, equal block dimensions, empty matrices and
-// invalid arguments.
+// Equal row and column block dimensions are converted through the BSR code path.
+TEST_F(Cov70ConvGebsr, Gebsr2CsrEqualBlockDims)
+{
+    int combo = 0;
+    for(rocsparse_direction dir : {rocsparse_direction_row, rocsparse_direction_column})
+    {
+        for(int bd : {1, 3, 24, 96})
+        {
+            for(int bases = 0; bases < 4; ++bases)
+            {
+                ++combo;
+                run_gebsr2csr(handle, dir, bd, bd, bases % 2, bases / 2);
+                if(::testing::Test::HasFatalFailure())
+                {
+                    return;
+                }
+            }
+        }
+    }
+    EXPECT_GT(combo, 0);
+}
+
+// gebsr2csr (3 x 5 blocks) in the other precisions, empty matrices and invalid
+// arguments.
 TEST_F(Cov70ConvGebsr, Gebsr2CsrPrecisionsAndArguments)
 {
     const int rbd = 3, cbd = 5;
@@ -664,18 +733,9 @@ namespace
                                                      cbd_c,
                                                      &buffer_size),
                   rocsparse_status_success);
-        if(rbd_c > 32)
-        {
-            // Performed through an intermediate CSR matrix.
-            const size_t expected = sizeof(int) * (static_cast<size_t>(m) + 1)
-                                    + sizeof(int) * rbd_a * cbd_a * nnzb
-                                    + sizeof(float) * rbd_a * cbd_a * nnzb;
-            EXPECT_EQ(buffer_size, expected);
-        }
-        else
-        {
-            EXPECT_EQ(buffer_size, size_t(0));
-        }
+        // The size is the library's choice (the paths with an output row block
+        // dimension above 32 need scratch space, the others none); the routines
+        // below run with exactly the reported size.
 
         device_vector<char> temp(std::max(buffer_size, size_t(1)));
         ASSERT_TRUE(temp.ptr);
@@ -714,8 +774,33 @@ namespace
                   rocsparse_status_success);
         ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
         const int nnzb_c = device_mode ? to_host(nnz_dev.ptr, 1)[0] : nnz_host;
-        ASSERT_GT(nnzb_c, 0);
-        EXPECT_EQ(to_host(d_ptr_c.ptr, static_cast<size_t>(mb_c) + 1).back() - base_c, nnzb_c);
+
+        // Same dense matrix, padded with zeros to the output block grid. All stored
+        // values of the input are nonzero, so the output blocks that hold a nonzero
+        // are exactly the blocks the conversion has to keep.
+        const int                rows = mb_c * rbd_c;
+        const int                cols = nb_c * cbd_c;
+        std::vector<float>       expected(static_cast<size_t>(rows) * cols, 0.0f);
+        const std::vector<float> dense_a = gebsr_to_dense(a, m, n);
+        for(int i = 0; i < m; ++i)
+        {
+            for(int j = 0; j < n; ++j)
+            {
+                expected[static_cast<size_t>(i) * cols + j]
+                    = dense_a[static_cast<size_t>(i) * n + j];
+            }
+        }
+        const std::vector<int> expected_counts
+            = nonzero_blocks_per_row(expected, rows, cols, rbd_c, cbd_c);
+        int expected_nnzb = 0;
+        for(int cnt : expected_counts)
+            expected_nnzb += cnt;
+        ASSERT_GT(expected_nnzb, 0);
+        EXPECT_EQ(nnzb_c, expected_nnzb);
+        ASSERT_EQ(nnzb_c, expected_nnzb);
+        const std::vector<int> nnz_row_ptr = to_host(d_ptr_c.ptr, static_cast<size_t>(mb_c) + 1);
+        EXPECT_EQ(nnz_row_ptr.back() - base_c, nnzb_c);
+        expect_block_rows(nnz_row_ptr, base_c, expected_counts);
 
         device_vector<int>   d_ind_c(static_cast<size_t>(nnzb_c));
         device_vector<float> d_val_c(static_cast<size_t>(nnzb_c) * rbd_c * cbd_c);
@@ -759,43 +844,37 @@ namespace
             }
         }
 
-        // Same dense matrix, padded with zeros to the output block grid.
-        const int                rows = mb_c * rbd_c;
-        const int                cols = nb_c * cbd_c;
-        std::vector<float>       expected(static_cast<size_t>(rows) * cols, 0.0f);
-        const std::vector<float> dense_a = gebsr_to_dense(a, m, n);
-        for(int i = 0; i < m; ++i)
-        {
-            for(int j = 0; j < n; ++j)
-            {
-                expected[static_cast<size_t>(i) * cols + j]
-                    = dense_a[static_cast<size_t>(i) * n + j];
-            }
-        }
+        // The converted matrix holds the same dense matrix.
+        expect_block_rows(c.row_ptr, base_c, expected_counts);
         EXPECT_EQ(gebsr_to_dense(c, rows, cols), expected);
     }
 }
 
 // gebsr2gebsr over a grid of output block sizes: the fast kernels (row block
 // dimension <= 32, per power of two bucket) and the CSR based path (> 32), both
-// directions and base combinations, with every pointer mode / scratch buffer
-// situation exercised on part of the grid.
+// directions. For every output row block dimension the 16 runs (direction, input
+// block size, output column block dimension) use all 16 combinations of
+// (base of A, base of C, host/device pointer mode, large/small handle buffer), so
+// each combination occurs on both code paths and for every bucket.
 TEST_F(Cov70ConvGebsr, Gebsr2GebsrGrid)
 {
-    int combo = 0;
+    int dir_index = 0;
     for(rocsparse_direction dir : {rocsparse_direction_row, rocsparse_direction_column})
     {
+        int dims_index = 0;
         for(auto dims_a : {std::pair<int, int>{3, 2}, std::pair<int, int>{4, 5}})
         {
             for(int rbd_c : {1, 2, 3, 4, 7, 8, 13, 16, 25, 32, 40, 64})
             {
+                int cbd_index = 0;
                 for(int cbd_c : {2, 5, 16, 33})
                 {
+                    const int  combo       = cbd_index + 4 * (dims_index + 2 * dir_index);
                     const int  base_a      = combo % 2;
                     const int  base_c      = (combo / 2) % 2;
                     const bool device_mode = (combo / 4) % 2 == 1;
                     const bool shrink      = (combo / 8) % 2 == 1;
-                    ++combo;
+                    ++cbd_index;
                     run_gebsr2gebsr(handle,
                                     dir,
                                     dims_a.first,
@@ -812,7 +891,9 @@ TEST_F(Cov70ConvGebsr, Gebsr2GebsrGrid)
                     }
                 }
             }
+            ++dims_index;
         }
+        ++dir_index;
     }
 }
 
@@ -837,7 +918,7 @@ TEST_F(Cov70ConvGebsr, Gebsr2GebsrEmpty)
             MatDescr descr_a, descr_c;
             ASSERT_TRUE(descr_a.d && descr_c.d);
             device_vector<int> d_ptr_a(std::vector<int>(static_cast<size_t>(mb_e) + 1, 0));
-            device_vector<int> d_ptr_c(static_cast<size_t>(8));
+            device_vector<int> d_ptr_c(std::vector<int>(static_cast<size_t>(8), -4));
             ASSERT_TRUE(d_ptr_a.ptr && d_ptr_c.ptr);
 
             size_t buffer_size = 1;
@@ -856,15 +937,9 @@ TEST_F(Cov70ConvGebsr, Gebsr2GebsrEmpty)
                                                          cbd_c,
                                                          &buffer_size),
                       rocsparse_status_success);
-            if(rbd_c > 32)
-            {
-                const size_t m = static_cast<size_t>(mb_e) * rbd_a;
-                EXPECT_EQ(buffer_size, sizeof(int) * (m + 1));
-            }
-            else
-            {
-                EXPECT_EQ(buffer_size, size_t(0));
-            }
+            // The size is the library's choice; the nnz routine below gets a buffer of
+            // exactly the reported size (at least one byte, a null buffer is rejected
+            // on the CSR based path even for empty matrices).
 
             device_vector<char> temp(std::max(buffer_size, size_t(1)));
             ASSERT_TRUE(temp.ptr);
@@ -887,6 +962,22 @@ TEST_F(Cov70ConvGebsr, Gebsr2GebsrEmpty)
                                                 &nnz_total,
                                                 temp.ptr),
                       rocsparse_status_success);
+            ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
+            EXPECT_EQ(nnz_total, 0);
+            {
+                // The output row pointer is the index base (zero) for every output
+                // block row; entries beyond it keep their initial value.
+                const int              mb_c = (mb_e * rbd_a + rbd_c - 1) / rbd_c;
+                const std::vector<int> got  = to_host(d_ptr_c.ptr, static_cast<size_t>(8));
+                for(int ib = 0; ib <= mb_c; ++ib)
+                {
+                    EXPECT_EQ(got[static_cast<size_t>(ib)], 0) << "entry " << ib;
+                }
+                for(int ib = mb_c + 1; ib < 8; ++ib)
+                {
+                    EXPECT_EQ(got[static_cast<size_t>(ib)], -4) << "entry " << ib;
+                }
+            }
 
             EXPECT_EQ(rocsparse_sgebsr2gebsr(handle,
                                              rocsparse_direction_row,
@@ -1035,8 +1126,29 @@ namespace
                   rocsparse_status_success);
         ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
         const int nnzb = device_mode ? to_host(nnz_dev.ptr, 1)[0] : nnz_host;
-        ASSERT_GT(nnzb, 0);
-        EXPECT_EQ(to_host(d_bsr_ptr.ptr, static_cast<size_t>(mb) + 1).back() - bsr_base, nnzb);
+
+        // The blocks to keep are those that hold at least one stored (nonzero) entry.
+        const int          rows = mb * rbd;
+        const int          cols = nb * cbd;
+        std::vector<float> expected(static_cast<size_t>(rows) * cols, 0.0f);
+        for(int i = 0; i < m; ++i)
+        {
+            for(int j = 0; j < n; ++j)
+            {
+                expected[static_cast<size_t>(i) * cols + j] = dense[static_cast<size_t>(i) * n + j];
+            }
+        }
+        const std::vector<int> expected_counts
+            = nonzero_blocks_per_row(expected, rows, cols, rbd, cbd);
+        int expected_nnzb = 0;
+        for(int cnt : expected_counts)
+            expected_nnzb += cnt;
+        ASSERT_GT(expected_nnzb, 0);
+        EXPECT_EQ(nnzb, expected_nnzb);
+        ASSERT_EQ(nnzb, expected_nnzb);
+        const std::vector<int> nnz_row_ptr = to_host(d_bsr_ptr.ptr, static_cast<size_t>(mb) + 1);
+        EXPECT_EQ(nnz_row_ptr.back() - bsr_base, nnzb);
+        expect_block_rows(nnz_row_ptr, bsr_base, expected_counts);
 
         device_vector<int>   d_bsr_ind(static_cast<size_t>(nnzb));
         device_vector<float> d_bsr_val(static_cast<size_t>(nnzb) * rbd * cbd);
@@ -1077,23 +1189,15 @@ namespace
             }
         }
 
-        const int          rows = mb * rbd;
-        const int          cols = nb * cbd;
-        std::vector<float> expected(static_cast<size_t>(rows) * cols, 0.0f);
-        for(int i = 0; i < m; ++i)
-        {
-            for(int j = 0; j < n; ++j)
-            {
-                expected[static_cast<size_t>(i) * cols + j] = dense[static_cast<size_t>(i) * n + j];
-            }
-        }
+        expect_block_rows(b.row_ptr, bsr_base, expected_counts);
         EXPECT_EQ(gebsr_to_dense(b, rows, cols), expected);
     }
 }
 
-// csr2gebsr over a grid of block sizes: each (row, column) bucket of the kernel
-// dispatch, both directions, index bases, pointer modes and scratch buffer
-// situations (handle buffer large enough or too small).
+// csr2gebsr over a grid of block sizes covering the buckets of the kernel dispatch
+// for both directions. The index bases, pointer modes and scratch buffer situations
+// (handle buffer large enough or too small) are varied across the grid; not every
+// combination occurs for every block size.
 TEST_F(Cov70ConvGebsr, Csr2GebsrGrid)
 {
     int combo = 0;
