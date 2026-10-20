@@ -144,6 +144,30 @@ namespace cov70
         return is_single_precision<T> ? 3.0e-6 : 2.0e-14;
     }
 
+    // Unit roundoff scale of the value type (epsilon of the real type).
+    template <typename T>
+    constexpr double epsilon_of()
+    {
+        return is_single_precision<T> ? 1.1920929e-7 : 2.220446049250313e-16;
+    }
+
+    // Tolerance for results that are sums over rows of `row_length` entries (inner sums
+    // of IC(0)/ILU(0), the pivot sum of a fat row). The rounding error of such a sum grows
+    // with its length and depends on the summation order, which differs between the host
+    // (sequential), the wave32 and the wave64 kernels (lane partial sums plus a tree), so a
+    // fixed bound measured on one wave size is not portable.
+    // Measured (order perturbed host sums: forward, reverse, 64 lane tree, pairwise, in
+    // float and double against a long double reference, fat rows of 80..381 entries): the
+    // worst per-entry relative error is 0.063 * eps * row_length (sequential float; the
+    // tree orders stay below 0.006 * eps * row_length). The bound below is eps * row_length,
+    // about 16x the worst order and never below the fixed tolerance() that covers short
+    // rows.
+    template <typename T>
+    double tolerance(int32_t row_length)
+    {
+        return std::max(tolerance<T>(), epsilon_of<T>() * static_cast<double>(row_length));
+    }
+
     // Entries below this fraction of the largest reference entry are compared with
     // an absolute allowance (they may be exact zeros or the result of cancellation).
     constexpr double small_entry_fraction = 1.0e-3;
@@ -156,6 +180,20 @@ namespace cov70
                       double                rel_tol = tolerance<T>())
     {
         ASSERT_EQ(got.size(), want.size());
+        // The reference is computed on the host from generated data: a non-finite value
+        // means the generated matrix is broken (not positive definite, zero pivot), not that
+        // the library is wrong. Report that instead of "nan vs nan" for every entry.
+        for(size_t i = 0; i < want.size(); ++i)
+        {
+            if(!std::isfinite(re(want[i])) || !std::isfinite(im(want[i])))
+            {
+                ADD_FAILURE() << "host reference is not finite at entry " << i << " ("
+                              << re(want[i]) << ", " << im(want[i])
+                              << "): the generated test matrix is not positive definite / has a "
+                                 "zero pivot, the comparison is meaningless";
+                return;
+            }
+        }
         double max_want = 0.0;
         for(const auto& w : want)
             max_want = std::max(max_want, std::abs(to_cd(w)));
@@ -515,47 +553,61 @@ namespace cov70
         }
     };
 
-    // Fills the dense blocks of a BSR matrix whose pattern (ptr / ind) is set. The
-    // scalar matrix is strictly diagonally dominant for the block tridiagonal
-    // pattern and Hermitian (its lower triangle is what IC(0) reads); `skew` breaks
-    // the symmetry of the lower triangle (ILU(0) only).
+    // Fills the dense blocks of a BSR matrix whose pattern (ptr / ind) is set.
+    //
+    // The off-diagonal entries are small and Hermitian (real part symmetric, imaginary
+    // part antisymmetric and bounded by 0.12); `skew` breaks the symmetry of the lower
+    // triangle (ILU(0) only). The diagonal is then chosen from the generated entries:
+    //   diagonal = max(4 * block_dim, 1.25 * S + 1)
+    // where S(g) is the sum of the moduli of every stored off-diagonal entry in row g
+    // plus every one in column g (rows and columns are both counted, so the bound also
+    // holds for the Hermitian completion of a lower-only pattern, which is what IC(0)
+    // factorizes). The scalar matrix is therefore strictly diagonally dominant in the
+    // Hermitian sense whatever the block row length, hence positive definite: IC(0) and
+    // ILU(0) exist (no zero or negative pivot, no NaN in the host reference). Length
+    // dependent growth of the pivots cannot make the generator fail: a block row of N
+    // blocks of size d has S of the order of N * d * 0.4, which the diagonal follows.
     template <typename T>
     void fill_block_values(bsr_matrix<T>& m, bool skew)
     {
         const int32_t b = m.block_dim;
         m.val.assign(static_cast<size_t>(m.nnzb()) * b * b, make_value<T>(0.0));
-        for(int32_t r = 0; r < m.mb; ++r)
-        {
-            for(int32_t k = m.ptr[r]; k < m.ptr[r + 1]; ++k)
+        std::vector<double> dominance(static_cast<size_t>(m.mb) * b, 0.0);
+        const auto          for_each_entry = [&](auto&& f) {
+            for(int32_t r = 0; r < m.mb; ++r)
             {
-                const int32_t c = m.ind[k];
-                for(int32_t i = 0; i < b; ++i)
+                for(int32_t k = m.ptr[r]; k < m.ptr[r + 1]; ++k)
                 {
-                    for(int32_t j = 0; j < b; ++j)
+                    const int32_t c = m.ind[k];
+                    for(int32_t i = 0; i < b; ++i)
                     {
-                        const int32_t gi = r * b + i;
-                        const int32_t gj = c * b + j;
-                        double        rv = 0.0;
-                        double        iv = 0.0;
-                        if(gi == gj)
+                        for(int32_t j = 0; j < b; ++j)
                         {
-                            rv = 4.0 * b;
+                            const size_t idx = (m.dir == rocsparse_direction_row)
+                                                            ? static_cast<size_t>(i) * b + j
+                                                            : static_cast<size_t>(j) * b + i;
+                            f(r * b + i, c * b + j, static_cast<size_t>(k) * b * b + idx);
                         }
-                        else
-                        {
-                            rv = -0.3 * (1.0 + 0.1 * ((gi + gj) % 3));
-                            iv = is_cplx<T> ? 0.02 * (gi - gj) : 0.0;
-                            if(skew && gi > gj)
-                                rv *= 1.2;
-                        }
-                        const size_t idx = (m.dir == rocsparse_direction_row)
-                                               ? static_cast<size_t>(i) * b + j
-                                               : static_cast<size_t>(j) * b + i;
-                        m.val[static_cast<size_t>(k) * b * b + idx] = make_value<T>(rv, iv);
                     }
                 }
             }
-        }
+        };
+        for_each_entry([&](int32_t gi, int32_t gj, size_t pos) {
+            if(gi == gj)
+                return;
+            double rv = -0.3 * (1.0 + 0.1 * ((gi + gj) % 3));
+            double iv = is_cplx<T> ? 0.02 * ((gi - gj) % 7) : 0.0;
+            if(skew && gi > gj)
+                rv *= 1.2;
+            m.val[pos]       = make_value<T>(rv, iv);
+            const double mod = std::hypot(rv, iv);
+            dominance[gi] += mod;
+            dominance[gj] += mod;
+        });
+        for_each_entry([&](int32_t gi, int32_t gj, size_t pos) {
+            if(gi == gj)
+                m.val[pos] = make_value<T>(std::max(4.0 * b, 1.25 * dominance[gi] + 1.0), 0.0);
+        });
     }
 
     // Block tridiagonal pattern: block row I holds the blocks I-1, I and I+1.
@@ -717,15 +769,58 @@ namespace cov70
     // Residual of a factorization on the pattern, relative to the largest entry of A:
     // about ten times the largest measured on gfx1201 (float/cfloat 2.0e-7, double/cdouble
     // 2.8e-16).
+    // For long rows the bound grows like eps * row_length, see tolerance(row_length).
     template <typename T>
-    double residual_tolerance()
+    double residual_tolerance(int32_t row_length = 0)
     {
-        return is_single_precision<T> ? 2.0e-6 : 3.0e-15;
+        const double fixed = is_single_precision<T> ? 2.0e-6 : 3.0e-15;
+        return std::max(fixed, epsilon_of<T>() * static_cast<double>(row_length));
+    }
+
+    template <typename T>
+    int32_t max_row_length(const csr_matrix<T>& a)
+    {
+        int32_t longest = 0;
+        for(int32_t i = 0; i < a.n; ++i)
+            longest = std::max(longest, a.ptr[i + 1] - a.ptr[i]);
+        return longest;
     }
 
     template <typename T>
     void expect_small_residual(double residual, const csr_matrix<T>& a)
     {
-        EXPECT_LE(residual, residual_tolerance<T>() * max_abs_value(a));
+        EXPECT_TRUE(std::isfinite(residual)) << "factor is not finite";
+        EXPECT_LE(residual, residual_tolerance<T>(max_row_length(a)) * max_abs_value(a));
+    }
+
+    // The generated matrix must be strictly diagonally dominant in the Hermitian sense
+    // (|a_ii| > sum over j != i of |a_ij| + |a_ji|, rows and columns of the stored
+    // pattern), which guarantees positive definiteness of its Hermitian completion and
+    // existence of the IC(0)/ILU(0) factors. Checked before any comparison so that a bad
+    // generator fails here and not as "nan vs nan".
+    template <typename T>
+    void expect_diagonally_dominant(const csr_matrix<T>& a)
+    {
+        std::vector<double> off(static_cast<size_t>(a.n), 0.0);
+        std::vector<double> diag(static_cast<size_t>(a.n), 0.0);
+        for(int32_t i = 0; i < a.n; ++i)
+        {
+            for(int32_t p = a.ptr[i]; p < a.ptr[i + 1]; ++p)
+            {
+                const int32_t j   = a.ind[p];
+                const double  mod = std::abs(to_cd(a.val[p]));
+                if(i == j)
+                {
+                    diag[i] = mod;
+                }
+                else
+                {
+                    off[i] += mod;
+                    off[j] += mod;
+                }
+            }
+        }
+        for(int32_t i = 0; i < a.n; ++i)
+            EXPECT_GT(diag[i], off[i]) << "row " << i << " is not diagonally dominant";
     }
 } // namespace cov70

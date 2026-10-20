@@ -486,7 +486,7 @@ namespace
         std::vector<T> got = got_in;
         if constexpr(K == Kind::ic)
             got = keep_lower_only(a, got_in);
-        expect_close(got, reference<K>(a, opt));
+        expect_close(got, reference<K>(a, opt), tolerance<T>(max_row_length(a)));
         if(!opt.boost)
         {
             double res = 0.0;
@@ -559,6 +559,8 @@ namespace
         dev_bsr<T> d;
         d.init(m, base);
         ASSERT_NE(d.A, nullptr);
+        // Whatever the wave size, the matrix must admit the factorization.
+        expect_diagonally_dominant(expand_bsr(m));
         run_result<T> out;
         run_factorization<K, T>(handle, d.A, d.val, 1, opt, out);
         ASSERT_EQ(out.compute_status, rocsparse_status_success);
