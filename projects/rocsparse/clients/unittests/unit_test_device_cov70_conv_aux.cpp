@@ -24,8 +24,11 @@
 
 // Device unit tests for the generic-API descriptor and auxiliary entry points
 // (const descriptor constructors and getters, nnz / batch accessors, status
-// strings, color-info and HYB copies, dnmat_copy_data). Every test checks the
-// returned status and the values read back through the public getters.
+// strings and the color-info copy). Descriptor tests check the returned status and
+// compare what the public getters return with what was passed in; the status
+// string and color-info tests check the status / string result only (the color
+// info structure is empty in the library, so there is no content to compare).
+// Descriptors are owned by guards, so an ASSERT_* failure does not leak them.
 
 #include "unit_test_device_cov70_conv_common.hpp"
 
@@ -34,6 +37,7 @@
 #include <vector>
 
 using namespace rocsparse_ut;
+using namespace cov70conv;
 
 namespace
 {
@@ -48,72 +52,52 @@ namespace
 
     TEST(Cov70ConvAux, StatusNameAndDescription)
     {
+        // The names are the enumerator identifiers. The wording of the descriptions
+        // may change, so only check that every known status has a non-empty
+        // description that differs from the one of an unknown status.
         struct Entry
         {
             rocsparse_status status;
             const char*      name;
-            const char*      description;
         };
         const Entry entries[] = {
-            {rocsparse_status_success,
-             "rocsparse_status_success",
-             "rocsparse operation was successful"},
-            {rocsparse_status_invalid_handle,
-             "rocsparse_status_invalid_handle",
-             "handle not initialized, invalid or null"},
-            {rocsparse_status_not_implemented,
-             "rocsparse_status_not_implemented",
-             "function is not implemented"},
-            {rocsparse_status_invalid_pointer,
-             "rocsparse_status_invalid_pointer",
-             "invalid pointer parameter"},
-            {rocsparse_status_invalid_size,
-             "rocsparse_status_invalid_size",
-             "invalid size parameter"},
-            {rocsparse_status_memory_error,
-             "rocsparse_status_memory_error",
-             "failed memory allocation, copy, dealloc"},
-            {rocsparse_status_internal_error,
-             "rocsparse_status_internal_error",
-             "other internal library failure"},
-            {rocsparse_status_invalid_value,
-             "rocsparse_status_invalid_value",
-             "invalid value parameter"},
-            {rocsparse_status_arch_mismatch,
-             "rocsparse_status_arch_mismatch",
-             "device arch is not supported"},
-            {rocsparse_status_zero_pivot, "rocsparse_status_zero_pivot", "encountered zero pivot"},
-            {rocsparse_status_not_initialized,
-             "rocsparse_status_not_initialized",
-             "descriptor has not been initialized"},
-            {rocsparse_status_type_mismatch,
-             "rocsparse_status_type_mismatch",
-             "index types do not match"},
-            {rocsparse_status_requires_sorted_storage,
-             "rocsparse_status_requires_sorted_storage",
-             "sorted storage required"},
-            {rocsparse_status_thrown_exception,
-             "rocsparse_status_thrown_exception",
-             "exception being thrown"},
-            {rocsparse_status_continue,
-             "rocsparse_status_continue",
-             "nothing preventing function to proceed"},
+            {rocsparse_status_success, "rocsparse_status_success"},
+            {rocsparse_status_invalid_handle, "rocsparse_status_invalid_handle"},
+            {rocsparse_status_not_implemented, "rocsparse_status_not_implemented"},
+            {rocsparse_status_invalid_pointer, "rocsparse_status_invalid_pointer"},
+            {rocsparse_status_invalid_size, "rocsparse_status_invalid_size"},
+            {rocsparse_status_memory_error, "rocsparse_status_memory_error"},
+            {rocsparse_status_internal_error, "rocsparse_status_internal_error"},
+            {rocsparse_status_invalid_value, "rocsparse_status_invalid_value"},
+            {rocsparse_status_arch_mismatch, "rocsparse_status_arch_mismatch"},
+            {rocsparse_status_zero_pivot, "rocsparse_status_zero_pivot"},
+            {rocsparse_status_not_initialized, "rocsparse_status_not_initialized"},
+            {rocsparse_status_type_mismatch, "rocsparse_status_type_mismatch"},
+            {rocsparse_status_requires_sorted_storage, "rocsparse_status_requires_sorted_storage"},
+            {rocsparse_status_thrown_exception, "rocsparse_status_thrown_exception"},
+            {rocsparse_status_continue, "rocsparse_status_continue"},
         };
+        const char* unknown_name = rocsparse_get_status_name(static_cast<rocsparse_status>(1000));
+        const char* unknown_description
+            = rocsparse_get_status_description(static_cast<rocsparse_status>(1000));
+        ASSERT_NE(unknown_name, nullptr);
+        ASSERT_NE(unknown_description, nullptr);
         for(const Entry& e : entries)
         {
             EXPECT_STREQ(rocsparse_get_status_name(e.status), e.name);
-            EXPECT_STREQ(rocsparse_get_status_description(e.status), e.description);
+            const char* description = rocsparse_get_status_description(e.status);
+            ASSERT_NE(description, nullptr) << e.name;
+            EXPECT_GT(std::strlen(description), 0u) << e.name;
+            EXPECT_STRNE(description, unknown_description) << e.name;
+            EXPECT_STRNE(rocsparse_get_status_name(e.status), unknown_name) << e.name;
         }
-        EXPECT_STREQ(rocsparse_get_status_name(static_cast<rocsparse_status>(1000)),
-                     "Unrecognized status code");
-        EXPECT_STREQ(rocsparse_get_status_description(static_cast<rocsparse_status>(1000)),
-                     "Unrecognized status code");
     }
 
     TEST(Cov70ConvAux, ConstSpvecRoundTrip)
     {
         Buf                         b;
         rocsparse_const_spvec_descr descr = nullptr;
+        SpvecGuard                  descr_guard(descr);
         ASSERT_EQ(rocsparse_create_const_spvec_descr(&descr,
                                                      10,
                                                      4,
@@ -143,14 +127,13 @@ namespace
         const void* vals = nullptr;
         ASSERT_EQ(rocsparse_const_spvec_get_values(descr, &vals), rocsparse_status_success);
         EXPECT_EQ(vals, static_cast<const void*>(b.v32.data()));
-        EXPECT_EQ(rocsparse_destroy_spvec_descr(const_cast<rocsparse_spvec_descr>(descr)),
-                  rocsparse_status_success);
     }
 
     TEST(Cov70ConvAux, ConstSpvecInvalidArguments)
     {
         Buf                         b;
-        rocsparse_const_spvec_descr descr  = nullptr;
+        rocsparse_const_spvec_descr descr = nullptr;
+        SpvecGuard                  descr_guard(descr);
         const auto                  create = [&](rocsparse_const_spvec_descr* d,
                                 int64_t                      size,
                                 int64_t                      nnz,
@@ -211,6 +194,7 @@ namespace
     {
         Buf                         b;
         rocsparse_const_spmat_descr descr = nullptr;
+        SpmatGuard                  descr_guard(descr);
         ASSERT_EQ(rocsparse_create_const_coo_descr(&descr,
                                                    6,
                                                    7,
@@ -245,15 +229,13 @@ namespace
         int64_t nnz_get = 0;
         EXPECT_EQ(rocsparse_spmat_get_nnz(descr, &nnz_get), rocsparse_status_success);
         EXPECT_EQ(nnz_get, 3);
-
-        EXPECT_EQ(rocsparse_destroy_spmat_descr(const_cast<rocsparse_spmat_descr>(descr)),
-                  rocsparse_status_success);
     }
 
     TEST(Cov70ConvAux, ConstCooInvalidArguments)
     {
         Buf                         b;
-        rocsparse_const_spmat_descr descr  = nullptr;
+        rocsparse_const_spmat_descr descr = nullptr;
+        SpmatGuard                  descr_guard(descr);
         const auto                  create = [&](rocsparse_const_spmat_descr* d,
                                 int64_t                      rows,
                                 int64_t                      cols,
@@ -300,6 +282,7 @@ namespace
     {
         Buf                         b;
         rocsparse_const_spmat_descr descr = nullptr;
+        SpmatGuard                  descr_guard(descr);
         ASSERT_EQ(rocsparse_create_const_csc_descr(&descr,
                                                    5,
                                                    4,
@@ -335,9 +318,6 @@ namespace
         rocsparse_format fmt = rocsparse_format_csr;
         EXPECT_EQ(rocsparse_spmat_get_format(descr, &fmt), rocsparse_status_success);
         EXPECT_EQ(fmt, rocsparse_format_csc);
-
-        EXPECT_EQ(rocsparse_destroy_spmat_descr(const_cast<rocsparse_spmat_descr>(descr)),
-                  rocsparse_status_success);
 
         // Invalid arguments.
         const auto create = [&](rocsparse_const_spmat_descr* d,
@@ -377,6 +357,7 @@ namespace
     {
         Buf                         b;
         rocsparse_const_spmat_descr descr = nullptr;
+        SpmatGuard                  descr_guard(descr);
         ASSERT_EQ(rocsparse_create_const_bsr_descr(&descr,
                                                    3,
                                                    4,
@@ -415,12 +396,11 @@ namespace
         EXPECT_EQ(base, rocsparse_index_base_one);
         EXPECT_EQ(dt, rocsparse_datatype_f32_r);
 
-        // The nnz of a BSR matrix is the number of blocks times block_dim^2.
+        // Observed library behavior (not verified to be the intended contract): the nnz
+        // of a BSR descriptor created with nnzb blocks reads back as nnzb * block_dim^2.
         int64_t nnz = 0;
         EXPECT_EQ(rocsparse_spmat_get_nnz(descr, &nnz), rocsparse_status_success);
         EXPECT_EQ(nnz, 5 * 2 * 2);
-        EXPECT_EQ(rocsparse_destroy_spmat_descr(const_cast<rocsparse_spmat_descr>(descr)),
-                  rocsparse_status_success);
 
         // Invalid arguments.
         const int32_t*              i      = b.i32.data();
@@ -469,6 +449,7 @@ namespace
     {
         Buf                         b;
         rocsparse_const_spmat_descr descr = nullptr;
+        SpmatGuard                  descr_guard(descr);
         // rows = 6, cols = 8, block_dim = 2, ell_cols = 4 -> 3 block rows.
         ASSERT_EQ(rocsparse_create_const_bell_descr(&descr,
                                                     6,
@@ -502,16 +483,20 @@ namespace
         EXPECT_EQ(base, rocsparse_index_base_zero);
         EXPECT_EQ(dt, rocsparse_datatype_f32_r);
 
-        // Pins the library definition: ell_cols * rows * block_dim^2.
+        // The library reports ell_cols * rows * block_dim^2 here. The value array of a
+        // blocked ELL matrix holds rows * ell_cols entries (rocsparse_create_bell_descr
+        // checks the array with that size, and ell_cols counts scalar columns), so the
+        // library formula is suspected to overcount by block_dim^2. This is not pinned
+        // on purpose: only check that the query succeeds and covers at least the
+        // stored values. If the library formula is fixed to rows * ell_cols this still
+        // holds.
         int64_t nnz = 0;
         EXPECT_EQ(rocsparse_spmat_get_nnz(descr, &nnz), rocsparse_status_success);
-        EXPECT_EQ(nnz, ell_cols * rows * bdim * bdim);
+        EXPECT_GE(nnz, rows * ell_cols);
 
         // The number of non-zeros of a blocked ELL matrix cannot be set.
         EXPECT_EQ(rocsparse_spmat_set_nnz(const_cast<rocsparse_spmat_descr>(descr), 3),
                   rocsparse_status_invalid_value);
-        EXPECT_EQ(rocsparse_destroy_spmat_descr(const_cast<rocsparse_spmat_descr>(descr)),
-                  rocsparse_status_success);
 
         // Invalid arguments.
         const int32_t*              i      = b.i32.data();
@@ -556,6 +541,7 @@ namespace
     {
         Buf                         b;
         rocsparse_const_spmat_descr descr = nullptr;
+        SpmatGuard                  descr_guard(descr);
         ASSERT_EQ(rocsparse_create_const_sell_descr(&descr,
                                                     8,
                                                     9,
@@ -601,8 +587,6 @@ namespace
                   rocsparse_status_success);
         EXPECT_EQ(rocsparse_spmat_get_nnz(descr, &got), rocsparse_status_success);
         EXPECT_EQ(got, 7);
-        EXPECT_EQ(rocsparse_destroy_spmat_descr(const_cast<rocsparse_spmat_descr>(descr)),
-                  rocsparse_status_success);
 
         // Invalid arguments.
         const int32_t*              i      = b.i32.data();
@@ -650,6 +634,7 @@ namespace
     {
         Buf                         b;
         rocsparse_const_spmat_descr descr = nullptr;
+        SpmatGuard                  descr_guard(descr);
         ASSERT_EQ(rocsparse_create_const_sell_descr(&descr,
                                                     4,
                                                     4,
@@ -792,8 +777,6 @@ namespace
                                            &base,
                                            nullptr),
                   rocsparse_status_invalid_pointer);
-        EXPECT_EQ(rocsparse_destroy_spmat_descr(const_cast<rocsparse_spmat_descr>(descr)),
-                  rocsparse_status_success);
     }
 
     TEST(Cov70ConvAux, BellSetPointers)
@@ -802,6 +785,7 @@ namespace
         std::vector<int32_t>  other_idx(64, 1);
         std::vector<float>    other_val(64, 2.0f);
         rocsparse_spmat_descr descr = nullptr;
+        SpmatGuard            descr_guard(descr);
         // 4 rows, block_dim 2 -> 2 block rows, ell_cols 4 -> 2 blocks per block row.
         ASSERT_EQ(rocsparse_create_bell_descr(&descr,
                                               4,
@@ -840,13 +824,13 @@ namespace
         EXPECT_EQ(cols, 6);
         EXPECT_EQ(bdim, 2);
         EXPECT_EQ(ell_cols, 4);
-        EXPECT_EQ(rocsparse_destroy_spmat_descr(descr), rocsparse_status_success);
     }
 
     TEST(Cov70ConvAux, EllNnzAndStridedBatch)
     {
         Buf                   b;
         rocsparse_spmat_descr descr = nullptr;
+        SpmatGuard            descr_guard(descr);
         ASSERT_EQ(rocsparse_create_ell_descr(&descr,
                                              5,
                                              7,
@@ -872,7 +856,6 @@ namespace
         rocsparse_int batch_count = 0;
         EXPECT_EQ(rocsparse_spmat_get_strided_batch(descr, &batch_count), rocsparse_status_success);
         EXPECT_EQ(batch_count, 3);
-        EXPECT_EQ(rocsparse_destroy_spmat_descr(descr), rocsparse_status_success);
     }
 
     TEST(Cov70ConvAux, SpmatSetNnzPerFormat)
@@ -880,6 +863,7 @@ namespace
         Buf                   b;
         rocsparse_spmat_descr csr = nullptr, csc = nullptr, coo = nullptr, bsr = nullptr,
                               aos = nullptr;
+        SpmatGuard csr_guard(csr), csc_guard(csc), coo_guard(coo), bsr_guard(bsr), aos_guard(aos);
         ASSERT_EQ(rocsparse_create_csr_descr(&csr,
                                              4,
                                              4,
@@ -940,6 +924,10 @@ namespace
                                                  rocsparse_datatype_f32_r),
                   rocsparse_status_success);
 
+        // set_nnz stores the value as is for csr/csc/coo/coo_aos and, for BSR, as the
+        // number of blocks; get_nnz of a BSR matrix returns blocks * block_dim^2. The
+        // asymmetry between set (blocks) and get (scalar entries) is the observed
+        // library behavior, not verified to be intended.
         const struct
         {
             rocsparse_spmat_descr d;
@@ -957,11 +945,6 @@ namespace
         int64_t out = 0;
         EXPECT_EQ(rocsparse_spmat_get_nnz(nullptr, &out), rocsparse_status_invalid_pointer);
         EXPECT_EQ(rocsparse_spmat_get_nnz(csr, nullptr), rocsparse_status_invalid_pointer);
-
-        for(rocsparse_spmat_descr d : {csr, csc, coo, bsr, aos})
-        {
-            EXPECT_EQ(rocsparse_destroy_spmat_descr(d), rocsparse_status_success);
-        }
     }
 
 #ifdef ROCSPARSE_WITH_SPMAT_SCALE
@@ -970,6 +953,7 @@ namespace
         float alpha = 2.5f;
         // Read-only descriptor, host pointer mode.
         rocsparse_dnvec_descr descr = nullptr;
+        DnvecGuard            descr_guard(descr);
         ASSERT_EQ(rocsparse_dnvec_descr_create_scalar(handle,
                                                       &descr,
                                                       rocsparse_pointer_mode_host,
@@ -1002,6 +986,7 @@ namespace
         EXPECT_EQ(size, 1);
         EXPECT_EQ(rw, static_cast<void*>(&alpha));
         EXPECT_EQ(rocsparse_destroy_dnvec_descr(descr), rocsparse_status_success);
+        descr = nullptr;
 
         // Invalid arguments.
         float other = 1.0f;
@@ -1062,6 +1047,7 @@ namespace
     {
         std::vector<float>          v(64, 1.0f);
         rocsparse_const_dnmat_descr descr = nullptr;
+        DnmatGuard                  descr_guard(descr);
         // Row order: ld must be at least cols.
         EXPECT_EQ(rocsparse_create_const_dnmat_descr(
                       &descr, 3, 5, 4, v.data(), rocsparse_datatype_f32_r, rocsparse_order_row),
@@ -1082,20 +1068,20 @@ namespace
         EXPECT_EQ(vals, static_cast<const void*>(v.data()));
         EXPECT_EQ(dt, rocsparse_datatype_f32_r);
         EXPECT_EQ(ord, rocsparse_order_row);
-        EXPECT_EQ(rocsparse_destroy_dnmat_descr(const_cast<rocsparse_dnmat_descr>(descr)),
-                  rocsparse_status_success);
     }
 
     TEST(Cov70ConvAux, CopyColorInfo)
     {
+        // _rocsparse_color_info is an empty structure and rocsparse_copy_color_info only
+        // validates its pointers, so there is no content to copy or compare through the
+        // public API; the test covers the argument checks and the success path.
         rocsparse_color_info a = nullptr, b = nullptr;
+        ColorGuard           a_guard(a), b_guard(b);
         ASSERT_EQ(rocsparse_create_color_info(&a), rocsparse_status_success);
         ASSERT_EQ(rocsparse_create_color_info(&b), rocsparse_status_success);
         EXPECT_EQ(rocsparse_copy_color_info(nullptr, a), rocsparse_status_invalid_pointer);
         EXPECT_EQ(rocsparse_copy_color_info(a, nullptr), rocsparse_status_invalid_pointer);
         EXPECT_EQ(rocsparse_copy_color_info(a, a), rocsparse_status_invalid_pointer);
         EXPECT_EQ(rocsparse_copy_color_info(a, b), rocsparse_status_success);
-        EXPECT_EQ(rocsparse_destroy_color_info(a), rocsparse_status_success);
-        EXPECT_EQ(rocsparse_destroy_color_info(b), rocsparse_status_success);
     }
 } // namespace

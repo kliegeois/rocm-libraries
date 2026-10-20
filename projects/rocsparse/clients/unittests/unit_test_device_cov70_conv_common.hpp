@@ -30,11 +30,99 @@
 #include "unit_test_utils.hpp"
 
 #include <cstdint>
+#include <functional>
 #include <type_traits>
 #include <vector>
 
 namespace cov70conv
 {
+    // Destroys a descriptor owned by a local variable when the scope is left, also
+    // when an ASSERT_* returns early. Declare it right after the variable:
+    //     rocsparse_spmat_descr mat = nullptr;
+    //     SpmatGuard            mat_guard(mat);
+    // The destroy status is checked. A guarded variable that is null (never created
+    // or explicitly destroyed and reset) is skipped.
+    template <auto DESTROY>
+    class Guard
+    {
+        std::function<void()> m_cleanup;
+
+    public:
+        template <typename V>
+        explicit Guard(V& ref)
+            : m_cleanup([&ref]() {
+                if(ref != nullptr)
+                {
+                    EXPECT_EQ(DESTROY(ref), rocsparse_status_success);
+                    ref = nullptr;
+                }
+            })
+        {
+        }
+        ~Guard()
+        {
+            m_cleanup();
+        }
+        Guard(const Guard&) = delete;
+        Guard& operator=(const Guard&) = delete;
+    };
+
+    inline rocsparse_status destroy_spmat(rocsparse_const_spmat_descr d)
+    {
+        return rocsparse_destroy_spmat_descr(const_cast<rocsparse_spmat_descr>(d));
+    }
+    inline rocsparse_status destroy_spvec(rocsparse_const_spvec_descr d)
+    {
+        return rocsparse_destroy_spvec_descr(const_cast<rocsparse_spvec_descr>(d));
+    }
+    inline rocsparse_status destroy_dnmat(rocsparse_const_dnmat_descr d)
+    {
+        return rocsparse_destroy_dnmat_descr(const_cast<rocsparse_dnmat_descr>(d));
+    }
+    inline rocsparse_status destroy_dnvec(rocsparse_const_dnvec_descr d)
+    {
+        return rocsparse_destroy_dnvec_descr(const_cast<rocsparse_dnvec_descr>(d));
+    }
+    inline rocsparse_status destroy_color(rocsparse_color_info d)
+    {
+        return rocsparse_destroy_color_info(d);
+    }
+    inline rocsparse_status destroy_s2s(rocsparse_sparse_to_sparse_descr d)
+    {
+        return rocsparse_destroy_sparse_to_sparse_descr(d);
+    }
+
+    using SpmatGuard = Guard<destroy_spmat>;
+    using SpvecGuard = Guard<destroy_spvec>;
+    using DnmatGuard = Guard<destroy_dnmat>;
+    using DnvecGuard = Guard<destroy_dnvec>;
+    using ColorGuard = Guard<destroy_color>;
+    using S2sGuard   = Guard<destroy_s2s>;
+
+    // Owns a rocsparse_spsort_descr (its destruction needs the handle).
+    struct SpsortDescr
+    {
+        rocsparse_handle       handle = nullptr;
+        rocsparse_spsort_descr d      = nullptr;
+        explicit SpsortDescr(rocsparse_handle h)
+            : handle(h)
+        {
+        }
+        ~SpsortDescr()
+        {
+            if(d != nullptr)
+            {
+                EXPECT_EQ(rocsparse_spsort_descr_destroy(handle, d, nullptr),
+                          rocsparse_status_success);
+            }
+        }
+        SpsortDescr(const SpsortDescr&) = delete;
+        SpsortDescr& operator=(const SpsortDescr&) = delete;
+                     operator rocsparse_spsort_descr() const
+        {
+            return d;
+        }
+    };
     // Value with the given real and imaginary parts (the imaginary part is ignored
     // for real types).
     template <typename T>
@@ -95,7 +183,9 @@ namespace cov70conv
         MatInfo& operator=(const MatInfo&) = delete;
     };
 
-    // Dense host matrix (column major) -> block compressed rows (gebsr).
+    // Host copy of a general block compressed sparse row (gebsr) matrix: block row
+    // pointer, block column indices and values. Each block holds rbd x cbd values,
+    // stored row major for rocsparse_direction_row and column major otherwise.
     template <typename T>
     struct HostGebsr
     {
@@ -148,7 +238,9 @@ namespace cov70conv
         row_ptr[static_cast<size_t>(m)] = static_cast<int>(col_ind.size()) + csr_base;
     }
 
-    // Deterministic, nonzero and (almost always) distinct values.
+    // Deterministic nonzero values that are exactly representable in float. The
+    // sequence has period 61, i.e. only 61 distinct values (1.0 .. 16.0), so it is
+    // not suitable to tell apart two positions that are a multiple of 61 apart.
     inline float pattern_value(size_t i)
     {
         return 1.0f + static_cast<float>((i * 7) % 61) * 0.25f;

@@ -24,8 +24,11 @@
 
 // Device unit tests for rocsparse_dnmat_copy_data: contiguous copies, padded
 // (2D) copies, batched layouts, scaled copies through the kernel path in both
-// pointer modes and the argument validation. Each test reads the whole target
-// buffer back and checks every logical element and every padding element.
+// pointer modes and the argument validation. Each copy test reads the whole target
+// buffer back and checks every logical element and every padding element. The
+// scaled copies need rocsparse_dnvec_descr_create_scalar, which only exists when
+// the library is built with ROCSPARSE_WITH_SPMAT_SCALE; they are compiled out
+// otherwise.
 
 #include "unit_test_device_cov70_conv_common.hpp"
 
@@ -90,6 +93,7 @@ namespace
         ASSERT_NE(ddst.ptr, nullptr);
 
         rocsparse_dnmat_descr dm_src = nullptr, dm_dst = nullptr;
+        DnmatGuard            dm_src_guard(dm_src), dm_dst_guard(dm_dst);
         ASSERT_EQ(rocsparse_create_dnmat_descr(
                       &dm_src, src.rows, src.cols, src.ld, dsrc.ptr, dt_of<T>(), src.order),
                   rocsparse_status_success);
@@ -102,6 +106,7 @@ namespace
                   rocsparse_status_success);
 
         rocsparse_dnvec_descr alpha = nullptr;
+        DnvecGuard            alpha_guard(alpha);
         std::vector<T>        halpha;
         if(alpha_kind == AlphaKind::host || alpha_kind == AlphaKind::device)
         {
@@ -113,6 +118,7 @@ namespace
                 halpha.push_back(make_val<T>(2 + b, 1));
         }
         device_vector<T> dalpha(halpha);
+#ifdef ROCSPARSE_WITH_SPMAT_SCALE
         if(alpha_kind == AlphaKind::host)
         {
             ASSERT_EQ(rocsparse_dnvec_descr_create_scalar(handle,
@@ -142,6 +148,10 @@ namespace
             }
         }
 
+#else
+        ASSERT_EQ(alpha_kind, AlphaKind::none);
+#endif
+
         ASSERT_EQ(rocsparse_dnmat_copy_data(handle, alpha, dm_src, dm_dst, nullptr),
                   rocsparse_status_success);
         ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
@@ -164,13 +174,6 @@ namespace
         for(size_t k = 0; k < got.size(); ++k)
         {
             EXPECT_EQ(got[k], expected[k]) << "element " << k;
-        }
-
-        EXPECT_EQ(rocsparse_destroy_dnmat_descr(dm_src), rocsparse_status_success);
-        EXPECT_EQ(rocsparse_destroy_dnmat_descr(dm_dst), rocsparse_status_success);
-        if(alpha)
-        {
-            EXPECT_EQ(rocsparse_destroy_dnvec_descr(alpha), rocsparse_status_success);
         }
     }
 
@@ -204,6 +207,7 @@ namespace
         // One source matrix broadcast into every batch of the target.
         run_copy<T>(handle, {col, M, N, M, 1, 0}, {col, M, N, M, B, M * N}, AlphaKind::none);
 
+#ifdef ROCSPARSE_WITH_SPMAT_SCALE
         // Scaled copies take the kernel.
         run_copy<T>(handle, {col, M, N, M, 1, 0}, {col, M, N, M, 1, 0}, AlphaKind::host);
         run_copy<T>(handle, {col, M, N, M + 1, 1, 0}, {col, M, N, M, 1, 0}, AlphaKind::device);
@@ -212,10 +216,15 @@ namespace
         run_copy<T>(
             handle, {col, M, N, M, B, M * N}, {col, M, N, M, B, M * N}, AlphaKind::device_batched);
         run_copy<T>(handle, {col, M, N, M, 1, 0}, {col, M, N, M, B, M * N}, AlphaKind::host);
+#endif
 
         // Different orders go through the order switch.
         run_copy<T>(handle, {col, M, N, M, 1, 0}, {row, M, N, N, 1, 0}, AlphaKind::none);
+#ifdef ROCSPARSE_WITH_SPMAT_SCALE
         run_copy<T>(handle, {row, M, N, N, 1, 0}, {col, M, N, M, 1, 0}, AlphaKind::host);
+#else
+        run_copy<T>(handle, {row, M, N, N, 1, 0}, {col, M, N, M, 1, 0}, AlphaKind::none);
+#endif
     }
 
     TEST_F(HandleTest, Cov70ConvDnmatCopyDataFloat)
@@ -248,6 +257,8 @@ namespace
         const auto            col = rocsparse_order_column;
         rocsparse_dnmat_descr src = nullptr, dst = nullptr, dst_wide = nullptr, dst_tall = nullptr,
                               dst_double = nullptr;
+        DnmatGuard src_guard(src), dst_guard(dst), wide_guard(dst_wide), tall_guard(dst_tall),
+            double_guard(dst_double);
         ASSERT_EQ(
             rocsparse_create_dnmat_descr(&src, 4, 3, 4, df.ptr, rocsparse_datatype_f32_r, col),
             rocsparse_status_success);
@@ -287,9 +298,11 @@ namespace
         ASSERT_EQ(rocsparse_dnmat_set_strided_batch(src, 1, 0), rocsparse_status_success);
         ASSERT_EQ(rocsparse_dnmat_set_strided_batch(dst, 1, 0), rocsparse_status_success);
 
+#ifdef ROCSPARSE_WITH_SPMAT_SCALE
         // The scalar must have the data type of the matrices.
         double                alpha_d = 2.0;
         rocsparse_dnvec_descr alpha   = nullptr;
+        DnvecGuard            alpha_guard(alpha);
         ASSERT_EQ(rocsparse_dnvec_descr_create_scalar(handle,
                                                       &alpha,
                                                       rocsparse_pointer_mode_host,
@@ -301,6 +314,7 @@ namespace
         EXPECT_EQ(rocsparse_dnmat_copy_data(handle, alpha, src, dst, nullptr),
                   rocsparse_status_not_implemented);
         EXPECT_EQ(rocsparse_destroy_dnvec_descr(alpha), rocsparse_status_success);
+        alpha = nullptr;
 
         // The scalar batch count must match the target or be one with a zero stride.
         float alpha_f[3] = {2.0f, 3.0f, 4.0f};
@@ -317,10 +331,7 @@ namespace
         EXPECT_EQ(rocsparse_dnmat_copy_data(handle, alpha, src, dst, nullptr),
                   rocsparse_status_invalid_value);
         EXPECT_EQ(rocsparse_destroy_dnvec_descr(alpha), rocsparse_status_success);
-
-        for(rocsparse_dnmat_descr d : {src, dst, dst_wide, dst_tall, dst_double})
-        {
-            EXPECT_EQ(rocsparse_destroy_dnmat_descr(d), rocsparse_status_success);
-        }
+        alpha = nullptr;
+#endif
     }
 } // namespace
