@@ -354,6 +354,13 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_SOURCES
   unit_test_device_cov70_precond_itilu0.cpp
   unit_test_device_cov70_precond_legacy.cpp
   unit_test_device_cov70_precond_trm_info.cpp
+  # cov80 level2
+  unit_test_device_cov80_level2_bsrsv.cpp
+  unit_test_device_cov80_level2_csrcolor.cpp
+  unit_test_device_cov80_level2_csrmv.cpp
+  unit_test_device_cov80_level2_formats.cpp
+  unit_test_device_cov80_level2_legacy.cpp
+  unit_test_device_cov80_level2_level1.cpp
 )
 
 # Host building-block library translation units under test by the
