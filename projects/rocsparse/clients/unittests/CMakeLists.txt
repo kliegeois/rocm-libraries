@@ -308,6 +308,11 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_SOURCES
   # the sibling unit-test branches above. Drives public entry points plus
   # rocsparse::convert_array, whose TU is already compiled in below.
   unit_test_internal_conversion_grid_clamp.cpp
+  # --- csritsv_solve_ex nnz == 0 without a tolerance [AISPARSE-899] ----------
+  # Drives the public rocsparse_Xcsritsv entry points; no compile-in library TUs.
+  # Inline entry until #13475 lands; it then moves to cmake/unit_tests_level2.cmake
+  # and this entry is dropped.
+  unit_test_device_level2_itsv.cpp
 )
 
 # Host building-block library translation units under test by the
