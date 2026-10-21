@@ -308,6 +308,13 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_SOURCES
   # the sibling unit-test branches above. Drives public entry points plus
   # rocsparse::convert_array, whose TU is already compiled in below.
   unit_test_internal_conversion_grid_clamp.cpp
+  # --- convert_array datatype pairs [AISPARSE-910] ---------------------------
+  # Distinct anchor at the end of the list. Calls rocsparse::convert_array,
+  # rocsparse::dnvec_transfer_from and rocsparse_sparse_to_sparse; the
+  # convert_array TU is already compiled in below.
+  # Inline entry for this fix only; drop it when #13475 lands, which registers the
+  # file in cmake/unit_tests_conv.cmake.
+  unit_test_device_conv_internal.cpp
 )
 
 # Host building-block library translation units under test by the
@@ -450,6 +457,9 @@ target_include_directories(rocsparse-unit-test-device PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/include>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/level1>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/level3>
+  # rocsparse_convert_array.hpp for unit_test_device_conv_internal.cpp [AISPARSE-910];
+  # #13475 adds the same directory.
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/conversion>
 )
 
 # hip::device provides the HIP device-compilation flags (-x hip, --offload-arch).
