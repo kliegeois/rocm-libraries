@@ -308,6 +308,12 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_SOURCES
   # the sibling unit-test branches above. Drives public entry points plus
   # rocsparse::convert_array, whose TU is already compiled in below.
   unit_test_internal_conversion_grid_clamp.cpp
+  # --- sparse_to_sparse BSR -> BSR re-blocking [AISPARSE-902] ----------------
+  # Distinct anchor at the end of the list. Drives the public
+  # rocsparse_sparse_to_sparse entry point; no compile-in TUs.
+  # Inline entry for this fix only; drop it when #13475 lands, which registers the
+  # file in cmake/unit_tests_conv.cmake.
+  unit_test_device_conv_spmat.cpp
 )
 
 # Host building-block library translation units under test by the
