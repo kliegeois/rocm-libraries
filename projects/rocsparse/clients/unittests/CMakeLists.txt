@@ -271,6 +271,9 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_SOURCES
   unit_test_internal_extra_bsrgemm_scal_grids.cpp
   #10154: distinct anchor to avoid stacked-branch merge conflicts
   unit_test_host_extra_geam.cpp
+  # Generic spgeam C-API tests; no compile-in TUs added. #13475 registers this
+  # file in cmake/unit_tests_extra.cmake: drop this entry when it lands.
+  unit_test_device_extra_spgeam.cpp
   unit_test_internal_level3_sddmm.cpp
   unit_test_internal_level3_bsrmm.cpp
   # bsrmm grid.x/grid.y and coomm block reduce forced clamp [AISPARSE-665/704]
