@@ -262,6 +262,9 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_SOURCES
   unit_test_internal_level3_mm_grid_y.cpp
   unit_test_internal_conversion_csr2csc_buffer.cpp
   unit_test_internal_extra_geam.cpp
+  # Generic spgemm / spgeam C-API tests; no compile-in TUs added. #13475 registers
+  # this file in cmake/unit_tests_extra.cmake: drop this entry when it lands.
+  unit_test_device_extra_gemm_geam.cpp
   unit_test_internal_extra_csrgemm_bitmap.cpp
   # --- bsrgemm scaling-copy grid.x clamp [AISPARSE-676] ---------------------
   # Distinct anchor (after the geam internal tests) so this leaf does not
