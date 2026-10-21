@@ -183,7 +183,7 @@ void host_csric0(J                    M,
                 if(nnz_entries[col_k] != 0)
                 {
                     I idx     = nnz_entries[col_k];
-                    local_sum = std::fma(csr_val[k], rocsparse_conj(csr_val[idx]), local_sum);
+                    local_sum = std::fma(csr_val[idx], rocsparse_conj(csr_val[k]), local_sum);
                 }
             }
 
@@ -393,17 +393,19 @@ void host_bsric0(rocsparse_direction  direction,
                         {
                             if(direction == rocsparse_direction_row)
                             {
-                                local_sum = std::fma(bsr_val[block_dim * block_dim * l
-                                                             + block_dim * local_row_j + m],
-                                                     rocsparse_conj(bsr_val[idx]),
-                                                     local_sum);
+                                local_sum = std::fma(
+                                    bsr_val[idx],
+                                    rocsparse_conj(bsr_val[block_dim * block_dim * l
+                                                           + block_dim * local_row_j + m]),
+                                    local_sum);
                             }
                             else
                             {
-                                local_sum = std::fma(bsr_val[block_dim * block_dim * l
-                                                             + block_dim * m + local_row_j],
-                                                     rocsparse_conj(bsr_val[idx]),
-                                                     local_sum);
+                                local_sum = std::fma(
+                                    bsr_val[idx],
+                                    rocsparse_conj(bsr_val[block_dim * block_dim * l + block_dim * m
+                                                           + local_row_j]),
+                                    local_sum);
                             }
                         }
                     }

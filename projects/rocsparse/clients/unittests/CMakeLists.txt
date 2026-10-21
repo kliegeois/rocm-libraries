@@ -308,6 +308,12 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_SOURCES
   # the sibling unit-test branches above. Drives public entry points plus
   # rocsparse::convert_array, whose TU is already compiled in below.
   unit_test_internal_conversion_grid_clamp.cpp
+  # --- spic0 complex inner sums [AISPARSE-903] --------------------------------
+  # Distinct anchor at the end of the list. Drives the public entry points;
+  # no compile-in library TUs needed.
+  # Inline until #13475 lands: it registers this file in
+  # cmake/unit_tests_precond.cmake, and this entry is then dropped.
+  unit_test_device_precond_generic.cpp
 )
 
 # Host building-block library translation units under test by the
