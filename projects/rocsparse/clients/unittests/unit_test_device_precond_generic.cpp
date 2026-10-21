@@ -78,7 +78,9 @@ TYPED_TEST(PrecondIluIc, csr_types_policies_batches_and_index_base)
 }
 
 // IC(0) inner sums with several non-zero terms (rows that share columns below the
-// diagonal) through the hash and the binary-search kernel, with real-valued entries.
+// diagonal) through the hash and the binary-search kernel. The complex types get
+// imaginary off-diagonal parts, so the products of the inner sums are not real and
+// the conjugation order of the update shows.
 TEST_F(PrecondGeneric, spic0_csr_nonzero_inner_sums_hash)
 {
     run_options opt;
@@ -87,8 +89,7 @@ TEST_F(PrecondGeneric, spic0_csr_nonzero_inner_sums_hash)
     {
         for_all_types([&](auto tag) {
             using T = decltype(tag);
-            check_csr_matrix<Kind::ic, T>(
-                handle, make_lower_band_matrix<T>(60, w, false), opt, "band");
+            check_csr_matrix<Kind::ic, T>(handle, make_lower_band_matrix<T>(60, w), opt, "band");
         });
     }
     // A dense last row over narrow band rows: table sizes 32 .. 512 (lengths below
@@ -99,13 +100,33 @@ TEST_F(PrecondGeneric, spic0_csr_nonzero_inner_sums_hash)
             handle, make_fat_row_matrix<double>(fat, false, 3), opt, "fat " + std::to_string(fat));
         check_csr_matrix<Kind::ic, float>(
             handle, make_fat_row_matrix<float>(fat, false, 3), opt, "fat " + std::to_string(fat));
+        check_csr_matrix<Kind::ic, rocsparse_float_complex>(
+            handle,
+            make_fat_row_matrix<rocsparse_float_complex>(fat, true, 3),
+            opt,
+            "complex fat " + std::to_string(fat));
+        check_csr_matrix<Kind::ic, rocsparse_double_complex>(
+            handle,
+            make_fat_row_matrix<rocsparse_double_complex>(fat, true, 3),
+            opt,
+            "complex fat " + std::to_string(fat));
     }
+    // Binary-search kernel (longest row above 512) with complex products.
+    check_csr_matrix<Kind::ic, rocsparse_float_complex>(
+        handle, make_fat_row_matrix<rocsparse_float_complex>(520, true, 3), opt, "complex fat 520");
+    check_csr_matrix<Kind::ic, rocsparse_double_complex>(
+        handle,
+        make_fat_row_matrix<rocsparse_double_complex>(520, true, 3),
+        opt,
+        "complex fat 520");
     // Band and fat-row matrices (non-zero inner sums) in the other index base.
     const auto one = rocsparse_index_base_one;
     check_csr_matrix<Kind::ic, double>(
         handle, make_lower_band_matrix<double>(60, 5, false), opt, "band", one);
     check_csr_matrix<Kind::ic, double>(
         handle, make_fat_row_matrix<double>(520, false, 3), opt, "fat 520", one);
+    check_csr_matrix<Kind::ic, rocsparse_double_complex>(
+        handle, make_lower_band_matrix<rocsparse_double_complex>(60, 5), opt, "complex band", one);
     check_csr_matrix<Kind::ilu, double>(
         handle, with_upper_triangle(make_lower_band_matrix<double>(60, 5)), opt, "band", one);
     check_csr_matrix<Kind::ilu, double>(
@@ -586,8 +607,6 @@ namespace
     void check_all_row_shapes(rocsparse_handle handle, const std::string& what)
     {
         const run_options opt;
-        // spic0 gets no imaginary parts (AISPARSE-903).
-        constexpr bool real_only = (K == Kind::ic);
         // ILU(0) gets the upper triangle as well, or its update would have nothing to do.
         const auto shape = [](const csr_matrix<T>& lower) {
             return (K == Kind::ilu) ? with_upper_triangle(lower) : lower;
@@ -595,19 +614,17 @@ namespace
 
         // Short rows: hash kernel with the smallest table.
         check_csr_matrix<K, T, I, J>(
-            handle, shape(make_lower_band_matrix<T>(12, 3, !real_only)), opt, what + " short rows");
+            handle, shape(make_lower_band_matrix<T>(12, 3, true)), opt, what + " short rows");
         // A row of 100 entries: hash kernel with a table of 128.
         check_csr_matrix<K, T, I, J>(
-            handle, shape(make_fat_row_matrix<T>(100, !real_only, 3)), opt, what + " fat row 100");
+            handle, shape(make_fat_row_matrix<T>(100, true, 3)), opt, what + " fat row 100");
         // A row of 520 entries: binary-search kernel.
         // Not for spildlt0 i32 rows / i64 cols: find_csrildlt0_kernel_binsearch_launch
         // dispatches <int32_t, int32_t> whenever row_type is i32 without looking at
         // col_type, so 64-bit column indices are read as 32-bit (AISPARSE-920).
         if constexpr(!(K == Kind::ildlt && sizeof(I) == 4 && sizeof(J) == 8))
-            check_csr_matrix<K, T, I, J>(handle,
-                                         shape(make_fat_row_matrix<T>(520, !real_only, 3)),
-                                         opt,
-                                         what + " fat row 520");
+            check_csr_matrix<K, T, I, J>(
+                handle, shape(make_fat_row_matrix<T>(520, true, 3)), opt, what + " fat row 520");
     }
 
     template <Kind K, typename T>
