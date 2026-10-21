@@ -308,6 +308,11 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_SOURCES
   # the sibling unit-test branches above. Drives public entry points plus
   # rocsparse::convert_array, whose TU is already compiled in below.
   unit_test_internal_conversion_grid_clamp.cpp
+  # --- Documented statuses of descriptor and prune routines [AISPARSE-904] ----
+  # Distinct anchor at the end of the list. Drives public entry points only.
+  # Drop these entries once cmake/unit_tests_conv.cmake registers the files.
+  unit_test_device_conv_descr.cpp
+  unit_test_device_conv_prune.cpp
 )
 
 # Host building-block library translation units under test by the
