@@ -308,6 +308,11 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_SOURCES
   # the sibling unit-test branches above. Drives public entry points plus
   # rocsparse::convert_array, whose TU is already compiled in below.
   unit_test_internal_conversion_grid_clamp.cpp
+  # --- SpTRSV scalar conversion in device pointer mode [AISPARSE-905] ---------
+  # Drives the public rocsparse_sptrsv entry point; no compile-in library TUs.
+  # Inline entry until #13475 lands; it then moves to cmake/unit_tests_level2.cmake
+  # and this entry is dropped.
+  unit_test_device_level2_dispatch.cpp
 )
 
 # Host building-block library translation units under test by the
