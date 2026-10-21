@@ -308,6 +308,11 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_SOURCES
   # the sibling unit-test branches above. Drives public entry points plus
   # rocsparse::convert_array, whose TU is already compiled in below.
   unit_test_internal_conversion_grid_clamp.cpp
+  # --- csritilu0 async_split without the residual norm [AISPARSE-898] ------
+  # Needs the itilu0 x-driver TUs in ROCSPARSE_UNIT_TEST_DEVICE_LIB_SOURCES below.
+  # Inline entry until #13475 lands; it then moves to cmake/unit_tests_precond.cmake
+  # and this entry is dropped.
+  unit_test_device_precond_itilu0.cpp
 )
 
 # Host building-block library translation units under test by the
@@ -405,6 +410,18 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_LIB_SOURCES
   # (CXX_VISIBILITY_PRESET "hidden"), so the defining TU is compiled into this
   # binary. Build wiring only -- no library source changes.
   ${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/conversion/rocsparse_csr2ell_strided_batched.cpp
+  # csritilu0x_buffer_size_impl, csritilu0x_preprocess_impl, csritilu0x_compute_impl
+  # and csritilu0x_history_template have no public wrapper in the itilu0 API. The
+  # symbols are hidden in librocsparse, so the defining TUs (and the x-driver TUs
+  # they reference) are compiled into this test binary.
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/precond/itilu0/rocsparse_csritilu0x_compute.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/precond/itilu0/rocsparse_csritilu0x_preprocess.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/precond/itilu0/rocsparse_csritilu0x_buffer_size.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/precond/itilu0/rocsparse_csritilu0x_history.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/precond/itilu0/rocsparse_csritilu0x_sync.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/precond/itilu0/rocsparse_csritilu0x_async.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/precond/itilu0/rocsparse_csritilu0x_sync_fusion.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/precond/itilu0/common.cpp
 )
 
 # Internal rocsparse::primitives building blocks under test. Like the host-pure
@@ -450,6 +467,7 @@ target_include_directories(rocsparse-unit-test-device PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/include>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/level1>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/level3>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../library/src/precond/itilu0>
 )
 
 # hip::device provides the HIP device-compilation flags (-x hip, --offload-arch).
