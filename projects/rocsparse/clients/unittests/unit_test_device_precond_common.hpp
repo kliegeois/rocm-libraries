@@ -22,8 +22,8 @@
  *
  * ************************************************************************ */
 
-// Shared helpers of the preconditioner device tests: scalar type utilities, the
-// scalar CSR matrix and the exact ILU(0) host reference.
+// Shared helpers of the preconditioner device tests: device upload, typed s / d / c / z
+// calls, scalar type utilities, the scalar CSR matrix and the exact ILU(0) host reference.
 
 #pragma once
 
@@ -34,17 +34,53 @@
 #include <complex>
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace precond_ut
 {
     using namespace rocsparse_ut;
 
+    // Replaces the content of a device vector.
+    template <typename T>
+    void upload(device_vector<T>& d, const std::vector<T>& host)
+    {
+        if(d.ptr)
+            (void)hipFree(d.ptr);
+        d.ptr = nullptr;
+        d.n   = host.size();
+        if(hipMalloc(&d.ptr, d.n * sizeof(T)) != hipSuccess)
+        {
+            d.ptr = nullptr;
+            return;
+        }
+        (void)hipMemcpy(d.ptr, host.data(), d.n * sizeof(T), hipMemcpyHostToDevice);
+    }
+
     // Index array for the entry points that take rocsparse_int (64-bit with rocsparse_ILP64).
     inline std::vector<rocsparse_int> as_rocsparse_int(const std::vector<int32_t>& v)
     {
         return std::vector<rocsparse_int>(v.begin(), v.end());
     }
+
+    // Calls the s / d / c / z variant of a routine matching T: the four names are passed
+    // as function pointers and only the matching call is instantiated.
+    template <typename T, typename S, typename D, typename C, typename Z, typename... Args>
+    rocsparse_status typed_call(S s, D d, C c, Z z, Args&&... args)
+    {
+        if constexpr(std::is_same_v<T, float>)
+            return s(std::forward<Args>(args)...);
+        else if constexpr(std::is_same_v<T, double>)
+            return d(std::forward<Args>(args)...);
+        else if constexpr(std::is_same_v<T, rocsparse_float_complex>)
+            return c(std::forward<Args>(args)...);
+        else
+            return z(std::forward<Args>(args)...);
+    }
+
+#define PRECOND_CALL(T, NAME, ...) \
+    ::precond_ut::typed_call<T>(   \
+        rocsparse_s##NAME, rocsparse_d##NAME, rocsparse_c##NAME, rocsparse_z##NAME, __VA_ARGS__)
 
     template <typename T>
     using real_of = std::conditional_t<
