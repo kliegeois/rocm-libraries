@@ -50,6 +50,9 @@ namespace rocsparse
                             const T* __restrict__ csc_val,
                             int64_t csc_val_stride,
                             const I* __restrict__ csc_diag_ind,
+                            int64_t num_tasks,
+                            const J* __restrict__ task_col,
+                            const I* __restrict__ task_begin,
                             const T* __restrict__ x,
                             int64_t x_inc,
                             int64_t x_stride,
@@ -71,13 +74,15 @@ namespace rocsparse
         {
             const T alpha = is_host_mode ? alpha_union.value
                                          : alpha_union.pointer[batch_index * alpha_stride];
-            rocsparse::cscsv_solve_device<BLOCKSIZE, NUM_LANES>(
-                m,
+            rocsparse::cscsv_solve_device<BLOCKSIZE, NUM_LANES, rocsparse::s_cscsv_items>(
+                num_tasks,
                 alpha,
                 csc_col_ptr,
                 csc_row_ind,
                 csc_val + batch_index * csc_val_stride,
                 csc_diag_ind,
+                task_col,
+                task_begin,
                 x + batch_index * x_stride,
                 x_inc,
                 y + batch_index * y_stride,
@@ -126,6 +131,9 @@ namespace rocsparse
                                                const void*          csc_val,
                                                int64_t              csc_val_stride,
                                                const void*          csc_diag_ind,
+                                               int64_t              num_tasks,
+                                               const void*          task_col,
+                                               const void*          task_begin,
                                                const void*          x,
                                                int64_t              x_inc,
                                                int64_t              x_stride,
@@ -142,7 +150,7 @@ namespace rocsparse
     {
         RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
             (rocsparse::cscsv_solve_kernel<BLOCKSIZE, NUM_LANES, I, J, T>),
-            dim3(rocsparse::ceil_div(m * NUM_LANES, BLOCKSIZE),
+            dim3(rocsparse::ceil_div(num_tasks * NUM_LANES, BLOCKSIZE),
                  rocsparse::get_grid_size_y(handle, batch_count)),
             dim3(BLOCKSIZE),
             0,
@@ -155,6 +163,9 @@ namespace rocsparse
             reinterpret_cast<const T*>(csc_val),
             csc_val_stride,
             reinterpret_cast<const I*>(csc_diag_ind),
+            num_tasks,
+            reinterpret_cast<const J*>(task_col),
+            reinterpret_cast<const I*>(task_begin),
             reinterpret_cast<const T*>(x),
             x_inc,
             x_stride,
@@ -358,8 +369,7 @@ rocsparse_status rocsparse::cscsv_solve(rocsparse_handle            handle,
         RETURN_IF_ROCSPARSE_ERROR(
             init_launch(handle, m, batch_count, info->get_dependency_count(descr->fill_mode), rem));
 
-        const uint32_t num_lanes = rocsparse::cscsv_num_lanes(
-            trm_info->get_max_nnz(), static_cast<uint32_t>(handle->wavefront_size));
+        const uint32_t num_lanes = info->get_num_lanes(descr->fill_mode);
 
         rocsparse::cscsv_solve_launch_t solve_launch;
         RETURN_IF_ROCSPARSE_ERROR(rocsparse::cscsv_solve_launch_find(
@@ -375,6 +385,9 @@ rocsparse_status rocsparse::cscsv_solve(rocsparse_handle            handle,
                          A->const_val_data,
                          (A->batch_count > 1) ? A->columns_values_batch_stride : 0,
                          trm_info->get_diag_ind(),
+                         info->get_num_tasks(descr->fill_mode),
+                         trm_info->get_row_map(),
+                         trm_info->get_transposed_perm(),
                          x->const_values,
                          x->inc,
                          x->batch_stride,

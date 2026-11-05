@@ -152,15 +152,188 @@ namespace rocsparse
         }
     }
 
-    // One group of NUM_LANES lanes per unknown, in elimination order. Blocks take an atomic ticket
-    // instead of hipBlockIdx_x, so a group only waits on groups that are already running.
-    template <uint32_t BLOCKSIZE, uint32_t NUM_LANES, typename I, typename J, typename T>
-    ROCSPARSE_DEVICE_ILF void cscsv_solve_device(J m,
-                                                 T alpha,
+    // The entries of each column are split into tasks of at most NUM_LANES * ITEMS entries, so
+    // that a long column is pushed by several groups at once instead of one.
+    template <uint32_t BLOCKSIZE, typename I>
+    ROCSPARSE_KERNEL(BLOCKSIZE)
+    void cscsv_count_tasks_kernel(int64_t m,
+                                  const I* __restrict__ csc_col_ptr,
+                                  int64_t chunk,
+                                  I* __restrict__ task_count)
+    {
+        const int64_t col = static_cast<int64_t>(hipBlockIdx_x) * BLOCKSIZE + hipThreadIdx_x;
+        if(col < m)
+        {
+            const int64_t len = csc_col_ptr[col + 1] - csc_col_ptr[col];
+            task_count[col]   = static_cast<I>(rocsparse::max(static_cast<int64_t>(1),
+                                                            (len + chunk - 1) / chunk));
+        }
+    }
+
+    template <uint32_t BLOCKSIZE, typename I, typename J>
+    ROCSPARSE_KERNEL(BLOCKSIZE)
+    void cscsv_expand_tasks_kernel(int64_t m,
+                                   const I* __restrict__ csc_col_ptr,
+                                   const I* __restrict__ task_ptr,
+                                   int64_t chunk,
+                                   J* __restrict__ task_col,
+                                   I* __restrict__ task_begin,
+                                   rocsparse_index_base idx_base)
+    {
+        const int64_t col = static_cast<int64_t>(hipBlockIdx_x) * BLOCKSIZE + hipThreadIdx_x;
+        if(col < m)
+        {
+            const I begin = csc_col_ptr[col] - idx_base;
+            for(I t = task_ptr[col]; t < task_ptr[col + 1]; ++t)
+            {
+                task_col[t]   = static_cast<J>(col);
+                task_begin[t] = begin + static_cast<I>((t - task_ptr[col]) * chunk);
+            }
+        }
+    }
+
+    // Level of each unknown: one plus the highest level of the unknowns it depends on. Same
+    // traversal as the solve, in elimination order, with integer atomics only.
+    template <uint32_t BLOCKSIZE, uint32_t NUM_LANES, uint32_t ITEMS, typename I, typename J>
+    ROCSPARSE_KERNEL(BLOCKSIZE)
+    void cscsv_level_kernel(int64_t num_tasks,
+                            const I* __restrict__ csc_col_ptr,
+                            const J* __restrict__ csc_row_ind,
+                            const J* __restrict__ task_col,
+                            const I* __restrict__ task_begin,
+                            J* __restrict__ rem,
+                            int32_t* __restrict__ level,
+                            int32_t* __restrict__ ticket,
+                            rocsparse_index_base idx_base,
+                            rocsparse_fill_mode  fill_mode)
+    {
+        __shared__ int32_t block_id;
+        if(hipThreadIdx_x == 0)
+        {
+            block_id = rocsparse::atomic_add(ticket, 1);
+        }
+        __syncthreads();
+
+        const uint32_t lid = hipThreadIdx_x & (NUM_LANES - 1);
+        const uint32_t wid = hipThreadIdx_x / NUM_LANES;
+        const int64_t  w   = static_cast<int64_t>(block_id) * (BLOCKSIZE / NUM_LANES) + wid;
+        if(w >= num_tasks)
+        {
+            return;
+        }
+
+        const bool    lower   = (fill_mode == rocsparse_fill_mode_lower);
+        const int64_t t       = lower ? w : num_tasks - 1 - w;
+        const J       col     = task_col[t];
+        const I       kbeg    = task_begin[t];
+        const I       col_end = csc_col_ptr[col + 1] - idx_base;
+
+        J    rows[ITEMS];
+        bool deps[ITEMS];
+        for(uint32_t i = 0; i < ITEMS; ++i)
+        {
+            const I k = kbeg + lid + i * NUM_LANES;
+            rows[i]   = (k < col_end) ? csc_row_ind[k] - idx_base : col;
+            deps[i]   = lower ? (rows[i] > col) : (rows[i] < col);
+        }
+
+        bool done = false;
+        while(!done)
+        {
+            J r = (lid == 0)
+                      ? rocsparse::atomic_load(&rem[col], __ATOMIC_RELAXED, __MEMORY_SCOPE_DEVICE)
+                      : static_cast<J>(0);
+            r   = rocsparse::cscsv_group_broadcast<NUM_LANES>(r);
+            if(r == 0)
+            {
+                rocsparse::acquire_done_rows();
+                const int32_t lvl
+                    = rocsparse::atomic_load(&level[col], __ATOMIC_RELAXED, __MEMORY_SCOPE_DEVICE)
+                      + 1;
+                for(uint32_t i = 0; i < ITEMS; ++i)
+                {
+                    if(deps[i])
+                    {
+                        rocsparse::atomic_max(&level[rows[i]], lvl);
+                    }
+                }
+                rocsparse::release_done_row_data();
+                for(uint32_t i = 0; i < ITEMS; ++i)
+                {
+                    if(deps[i])
+                    {
+                        __scoped_atomic_fetch_sub(&rem[rows[i]],
+                                                  static_cast<J>(1),
+                                                  __ATOMIC_RELAXED,
+                                                  __MEMORY_SCOPE_DEVICE);
+                    }
+                }
+                done = true;
+            }
+            else
+            {
+                __builtin_amdgcn_s_sleep(1);
+            }
+        }
+    }
+
+    template <uint32_t BLOCKSIZE, typename I, typename J>
+    ROCSPARSE_KERNEL(BLOCKSIZE)
+    void cscsv_task_keys_kernel(int64_t num_tasks,
+                                const J* __restrict__ task_col,
+                                const int32_t* __restrict__ level,
+                                int32_t* __restrict__ keys,
+                                I* __restrict__ perm,
+                                int32_t natural_order,
+                                rocsparse_fill_mode fill_mode)
+    {
+        const int64_t t = static_cast<int64_t>(hipBlockIdx_x) * BLOCKSIZE + hipThreadIdx_x;
+        if(t < num_tasks)
+        {
+            keys[t] = natural_order ? static_cast<int32_t>((fill_mode == rocsparse_fill_mode_lower)
+                                                               ? t
+                                                               : num_tasks - 1 - t)
+                                    : level[task_col[t]];
+            perm[t] = static_cast<I>(t);
+        }
+    }
+
+    template <uint32_t BLOCKSIZE, typename I, typename J>
+    ROCSPARSE_KERNEL(BLOCKSIZE)
+    void cscsv_task_gather_kernel(int64_t num_tasks,
+                                  const I* __restrict__ perm,
+                                  const J* __restrict__ task_col,
+                                  const I* __restrict__ task_begin,
+                                  J* __restrict__ sorted_task_col,
+                                  I* __restrict__ sorted_task_begin)
+    {
+        const int64_t t = static_cast<int64_t>(hipBlockIdx_x) * BLOCKSIZE + hipThreadIdx_x;
+        if(t < num_tasks)
+        {
+            const I p            = perm[t];
+            sorted_task_col[t]   = task_col[p];
+            sorted_task_begin[t] = task_begin[p];
+        }
+    }
+
+    // One group of NUM_LANES lanes per task, tasks sorted by level. Every task of a column waits
+    // for the column to be ready and computes its unknown from the same final partial sum; the
+    // first task of the column stores it. Blocks take an atomic ticket instead of hipBlockIdx_x,
+    // so a group only waits on groups that are already running.
+    template <uint32_t BLOCKSIZE,
+              uint32_t NUM_LANES,
+              uint32_t ITEMS,
+              typename I,
+              typename J,
+              typename T>
+    ROCSPARSE_DEVICE_ILF void cscsv_solve_device(int64_t num_tasks,
+                                                 T       alpha,
                                                  const I* __restrict__ csc_col_ptr,
                                                  const J* __restrict__ csc_row_ind,
                                                  const T* __restrict__ csc_val,
                                                  const I* __restrict__ csc_diag_ind,
+                                                 const J* __restrict__ task_col,
+                                                 const I* __restrict__ task_begin,
                                                  const T* __restrict__ x,
                                                  int64_t x_inc,
                                                  T*      y,
@@ -182,18 +355,19 @@ namespace rocsparse
 
         const uint32_t lid = hipThreadIdx_x & (NUM_LANES - 1);
         const uint32_t wid = hipThreadIdx_x / NUM_LANES;
-        const int64_t  w   = static_cast<int64_t>(block_id) * (BLOCKSIZE / NUM_LANES) + wid;
+        const int64_t  t   = static_cast<int64_t>(block_id) * (BLOCKSIZE / NUM_LANES) + wid;
 
-        if(w >= m)
+        if(t >= num_tasks)
         {
             return;
         }
 
-        const bool lower = (fill_mode == rocsparse_fill_mode_lower);
-        const J    col   = lower ? static_cast<J>(w) : static_cast<J>(m - 1 - w);
-
-        const I col_begin = csc_col_ptr[col] - idx_base;
-        const I col_end   = csc_col_ptr[col + 1] - idx_base;
+        const bool lower     = (fill_mode == rocsparse_fill_mode_lower);
+        const J    col       = task_col[t];
+        const I    kbeg      = task_begin[t];
+        const I    col_begin = csc_col_ptr[col] - idx_base;
+        const I    col_end   = csc_col_ptr[col + 1] - idx_base;
+        const bool owner     = (kbeg == col_begin);
 
         // Off the critical path: everything that does not depend on other unknowns.
         T inv_diag = static_cast<T>(1);
@@ -205,7 +379,7 @@ namespace rocsparse
                 T diag = csc_val[d];
                 if(diag == static_cast<T>(0))
                 {
-                    if(lid == 0)
+                    if(owner && lid == 0)
                     {
                         rocsparse::atomic_min(zero_pivot, col + idx_base);
                     }
@@ -216,11 +390,16 @@ namespace rocsparse
         }
         const T ax = alpha * x[col * x_inc];
 
-        // Loaded before the wait to keep the memory round trip off the dependency chain.
-        const I    k0   = col_begin + lid;
-        const J    row0 = (k0 < col_end) ? csc_row_ind[k0] - idx_base : col;
-        const T    val0 = (k0 < col_end) ? csc_val[k0] : static_cast<T>(0);
-        const bool dep0 = lower ? (row0 > col) : (row0 < col);
+        J    rows[ITEMS];
+        T    vals[ITEMS];
+        bool deps[ITEMS];
+        for(uint32_t i = 0; i < ITEMS; ++i)
+        {
+            const I k = kbeg + lid + i * NUM_LANES;
+            rows[i]   = (k < col_end) ? csc_row_ind[k] - idx_base : col;
+            vals[i]   = (k < col_end) ? csc_val[k] : static_cast<T>(0);
+            deps[i]   = lower ? (rows[i] > col) : (rows[i] < col);
+        }
 
         bool done = false;
         while(!done)
@@ -242,39 +421,30 @@ namespace rocsparse
                     yc = yc * inv_diag;
                 }
 
-                if(lid == 0)
+                if(owner && lid == 0)
                 {
                     y[col * y_inc] = yc;
                 }
 
-                if(dep0)
+                for(uint32_t i = 0; i < ITEMS; ++i)
                 {
-                    rocsparse::atomic_add(&sum[row0], val0 * yc);
-                }
-                for(I k = k0 + NUM_LANES; k < col_end; k += NUM_LANES)
-                {
-                    const J row = csc_row_ind[k] - idx_base;
-                    if(lower ? (row > col) : (row < col))
+                    if(deps[i])
                     {
-                        rocsparse::atomic_add(&sum[row], csc_val[k] * yc);
+                        rocsparse::atomic_add(&sum[rows[i]], vals[i] * yc);
                     }
                 }
 
                 // One release for all the additions of this lane.
                 rocsparse::release_done_row_data();
 
-                if(dep0)
+                for(uint32_t i = 0; i < ITEMS; ++i)
                 {
-                    __scoped_atomic_fetch_sub(
-                        &rem[row0], static_cast<J>(1), __ATOMIC_RELAXED, __MEMORY_SCOPE_DEVICE);
-                }
-                for(I k = k0 + NUM_LANES; k < col_end; k += NUM_LANES)
-                {
-                    const J row = csc_row_ind[k] - idx_base;
-                    if(lower ? (row > col) : (row < col))
+                    if(deps[i])
                     {
-                        __scoped_atomic_fetch_sub(
-                            &rem[row], static_cast<J>(1), __ATOMIC_RELAXED, __MEMORY_SCOPE_DEVICE);
+                        __scoped_atomic_fetch_sub(&rem[rows[i]],
+                                                  static_cast<J>(1),
+                                                  __ATOMIC_RELAXED,
+                                                  __MEMORY_SCOPE_DEVICE);
                     }
                 }
                 done = true;

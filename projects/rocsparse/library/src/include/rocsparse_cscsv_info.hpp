@@ -40,6 +40,11 @@ protected:
     rocsparse::singular_info_t m_singularity_numeric_exact{};
     // Number of unknowns each unknown depends on, per fill mode.
     void* m_dependency_count[2]{};
+    // Number of tasks of the solve and lanes per task, per fill mode. The tasks themselves are
+    // stored in the trm_info_t of the fill mode: their column in row_map and their first entry
+    // in transposed_perm.
+    int64_t  m_num_tasks[2]{};
+    uint32_t m_num_lanes[2]{};
     // Transposed CSR analysis, shared with the matrix info with rocsparse_analysis_policy_reuse.
     std::shared_ptr<_rocsparse_csrsv_info> m_csrsv_info;
 
@@ -67,6 +72,8 @@ public:
         this->trm_data_t::copy(that, stream);
         for(int f = 0; f < 2; ++f)
         {
+            this->m_num_tasks[f] = that->m_num_tasks[f];
+            this->m_num_lanes[f] = that->m_num_lanes[f];
             const rocsparse_fill_mode fill_mode
                 = (f == 0) ? rocsparse_fill_mode_lower : rocsparse_fill_mode_upper;
             const rocsparse::trm_info_t* trm = that->get(rocsparse_operation_none, fill_mode);
@@ -114,6 +121,22 @@ public:
     void** get_ref_dependency_count(rocsparse_fill_mode fill_mode)
     {
         return &this->m_dependency_count[fill_mode == rocsparse_fill_mode_upper];
+    }
+
+    int64_t get_num_tasks(rocsparse_fill_mode fill_mode) const
+    {
+        return this->m_num_tasks[fill_mode == rocsparse_fill_mode_upper];
+    }
+
+    uint32_t get_num_lanes(rocsparse_fill_mode fill_mode) const
+    {
+        return this->m_num_lanes[fill_mode == rocsparse_fill_mode_upper];
+    }
+
+    void set_tasks(rocsparse_fill_mode fill_mode, int64_t num_tasks, uint32_t num_lanes)
+    {
+        this->m_num_tasks[fill_mode == rocsparse_fill_mode_upper] = num_tasks;
+        this->m_num_lanes[fill_mode == rocsparse_fill_mode_upper] = num_lanes;
     }
 
     rocsparse_csrsv_info get_csrsv_info()
