@@ -349,6 +349,9 @@ set(ROCSPARSE_UNIT_TEST_DEVICE_SOURCES
   unit_test_internal_conversion_grid_clamp.cpp
   # Default CSR SpMV algorithm selection (adaptive vs nnz-split).
   unit_test_internal_level2_csrmv_default_dispatch.cpp
+  # Shapes the quick and pre-checkin csrmv suites never build. Public
+  # rocsparse_Xcsrmv / rocsparse_spmv only; no compile-in library TUs.
+  unit_test_internal_level2_csrmv_gap.cpp
 )
 
 if(BUILD_WITH_SPSORT)

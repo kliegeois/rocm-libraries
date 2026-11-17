@@ -93,6 +93,19 @@ void testing_csrmv_bad_arg(const Arguments& arg)
                             rocsparse_status_requires_sorted_storage);
     EXPECT_ROCSPARSE_STATUS(rocsparse_csrmv<T>(PARAMS), rocsparse_status_requires_sorted_storage);
 
+    // Symmetric matrices must be square. testing_csrmv returns before the API
+    // when the matrix is symmetric or triangular and M != N, and the calls
+    // above keep m == n, so this is the path that reaches the check.
+    CHECK_ROCSPARSE_ERROR(rocsparse_set_mat_storage_mode(descr, rocsparse_storage_mode_sorted));
+    CHECK_ROCSPARSE_ERROR(rocsparse_set_mat_type(descr, rocsparse_matrix_type_symmetric));
+    {
+        const rocsparse_int saved_n = n;
+        n                           = m + 1;
+        EXPECT_ROCSPARSE_STATUS(rocsparse_csrmv<T>(PARAMS), rocsparse_status_invalid_size);
+        n = saved_n;
+    }
+    CHECK_ROCSPARSE_ERROR(rocsparse_set_mat_type(descr, rocsparse_matrix_type_general));
+
 #undef PARAMS_ANALYSIS
 #undef PARAMS
 }
