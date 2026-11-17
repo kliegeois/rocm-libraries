@@ -24,6 +24,9 @@
 
 #include "rocsparse_enum.hpp"
 #include "testing.hpp"
+#ifdef ROCSPARSE_WITH_EIGEN
+#include "rocsparse_eigen_csrmv.hpp"
+#endif
 
 template <typename T>
 void testing_csrmv_bad_arg(const Arguments& arg)
@@ -221,6 +224,29 @@ void testing_csrmv(const Arguments& arg)
                                                              false);
 
         hy.near_check(dy, tol);
+#ifdef ROCSPARSE_WITH_EIGEN
+        {
+            const rocsparse_int  y_len = (trans == rocsparse_operation_none) ? M : N;
+            host_dense_matrix<T> hy_eigen(y_len, static_cast<rocsparse_int>(1));
+            if(rocsparse_eigen_csrmv<T>(trans,
+                                        M,
+                                        N,
+                                        hA.nnz,
+                                        *h_alpha,
+                                        hA.ptr,
+                                        hA.ind,
+                                        hA.val,
+                                        hx,
+                                        *h_beta,
+                                        hy_copy,
+                                        hy_eigen,
+                                        base,
+                                        matrix_type))
+            {
+                hy_eigen.near_check(dy, tol);
+            }
+        }
+#endif
         dy = hy_copy;
 
         // Pointer mode device

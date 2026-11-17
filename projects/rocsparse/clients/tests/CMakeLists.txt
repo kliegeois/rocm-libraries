@@ -526,6 +526,34 @@ apply_omp_settings(rocsparse-test)
 # Target link libraries
 target_link_libraries(rocsparse-test PRIVATE GTest::gtest roc::rocsparse hip::host hip::device ${ROCSPARSE_CLIENT_LIBS})
 
+# Eigen is a header-only reference for general CSR SpMV. Download it the same
+# way googletest is fetched: one pinned tarball at configure time, no package
+# to install on the CI image. -DROCSPARSE_USE_EIGEN=OFF skips it.
+option(ROCSPARSE_USE_EIGEN "Fetch Eigen and compare general CSR SpMV against it" ON)
+if(ROCSPARSE_USE_EIGEN)
+  set(ROCSPARSE_EIGEN_VERSION "3.4.0")
+  set(ROCSPARSE_EIGEN_SHA256 "8586084f71f9bde545ee7fa6d00288b264a2b7ac3607b974e54d13e7162c1c72")
+  set(ROCSPARSE_EIGEN_TARBALL "${PROJECT_BINARY_DIR}/deps/eigen-${ROCSPARSE_EIGEN_VERSION}.tar.gz")
+  set(ROCSPARSE_EIGEN_SOURCE "${PROJECT_BINARY_DIR}/deps/eigen-${ROCSPARSE_EIGEN_VERSION}")
+  if(NOT EXISTS "${ROCSPARSE_EIGEN_SOURCE}/Eigen/Sparse")
+    file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/deps")
+    message(STATUS "Downloading Eigen ${ROCSPARSE_EIGEN_VERSION}")
+    file(DOWNLOAD
+      "https://gitlab.com/libeigen/eigen/-/archive/${ROCSPARSE_EIGEN_VERSION}/eigen-${ROCSPARSE_EIGEN_VERSION}.tar.gz"
+      "${ROCSPARSE_EIGEN_TARBALL}"
+      EXPECTED_HASH SHA256=${ROCSPARSE_EIGEN_SHA256}
+      STATUS ROCSPARSE_EIGEN_DL)
+    list(GET ROCSPARSE_EIGEN_DL 0 ROCSPARSE_EIGEN_DL_CODE)
+    if(NOT ROCSPARSE_EIGEN_DL_CODE EQUAL 0)
+      message(FATAL_ERROR "Failed to download Eigen: ${ROCSPARSE_EIGEN_DL}")
+    endif()
+    file(ARCHIVE_EXTRACT INPUT "${ROCSPARSE_EIGEN_TARBALL}" DESTINATION "${PROJECT_BINARY_DIR}/deps")
+  endif()
+  target_sources(rocsparse-test PRIVATE ../common/rocsparse_eigen_csrmv.cpp)
+  target_include_directories(rocsparse-test SYSTEM PRIVATE "${ROCSPARSE_EIGEN_SOURCE}")
+  target_compile_definitions(rocsparse-test PRIVATE ROCSPARSE_WITH_EIGEN)
+endif()
+
 if (NOT WIN32)
   if (BUILD_WITH_ROCTX)
     if(ROCTRACER_INCLUDE_DIR AND ROCTX_LIBRARY)

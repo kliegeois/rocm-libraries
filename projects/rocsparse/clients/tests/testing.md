@@ -215,12 +215,12 @@ at one tier — e.g., `./rocsparse-test --gtest_filter=*quick/csrmv*` should fin
 > and substantially exceeds its budget, that is a signal to trim redundant cases (see the test-size guidance
 > below).
 
-**Known gap — no independent third-party reference:** numerical results are checked against an
-in-tree host implementation of the same routine, and the unit-test layer exercises components in
-isolation. rocSPARSE is not checked against an independent third-party sparse library (for example
-cuSPARSE or SciPy) at any tier. A host implementation can be wrong in the same way as the device
-kernel, so host/device agreement does not by itself establish numerical correctness. Closing this
-gap needs an external reference wired into the YAML pipeline or a dedicated comparison suite.
+**Eigen reference for CSR SpMV:** with `ROCSPARSE_USE_EIGEN=ON` (the default when the tests are
+built), CMake downloads Eigen 3.4.0 and `csrmv` compares the device result against it for general,
+Hermitian, and triangular matrices. Symmetric `csrmv` is not compared: rocSPARSE mirrors the stored
+off-diagonal entries, and this check multiplies the matrix Eigen sees. Matrices with more than
+5,000,000 stored nonzeros skip the Eigen check. Every other routine is still checked only against
+the in-tree host implementation, which can be wrong in the same way as the device kernel.
 
 **Test data / matrices:** functional suites read `.csr` matrices converted from **24 SuiteSparse**
 matrices (e.g. `nos1`–`nos7`, `amazon0312`, `webbase-1M`), MD5-verified and converted by
@@ -525,7 +525,7 @@ device configurations are not ASAN-covered.
 | Coverage `coverage_analysis` ignores unit-test failures | Low | Medium | Failures do not block the Codecov upload |
 | No tracked quarantine list (owner + ticket + expiry) for `known_bug` cases | Low | Low | `*known_bug*` excluded from gating; linkage is ad-hoc |
 | No TSAN/UBSAN/MSAN | High | High | ASAN only |
-| No independent third-party numerical reference (only in-tree host reference and unit tests) | Medium | High | Device results are compared with an in-tree host implementation; a bug shared with that host reference is not caught by any suite |
+| No independent third-party numerical reference beyond general CSR SpMV | Medium | High | Eigen 3.4.0 checks general, Hermitian, and triangular `csrmv`. Symmetric `csrmv`, matrices above 5,000,000 nonzeros, and every other routine still use only the in-tree host reference |
 
 ---
 
