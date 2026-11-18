@@ -561,41 +561,42 @@ namespace rocsparse
         const int     nblocks    = ((m - 1) / BLOCKSIZE + 1);
         const int     num_spikes = 2 * nblocks;
 
-        rocsparse_host_assert(batch_count > 0, "This function is designed for batch_count > 0.");
-        const uint32_t grid_y   = rocsparse::get_grid_size_y(handle, batch_count);
-        const bool     straight = rocsparse::gtsv_no_pivot_strided_medium_straight<rocsparse_int>(
-            m, batch_count, num_spikes, handle->properties.maxGridSize[1]);
+        // The forward and backward kernels handle each system on its own, so they run
+        // over chunks of the batch that fit in grid.y and keep their workspace offsets
+        // in range. The spike solve in between covers the whole batch at once.
+        const int64_t chunk = rocsparse::gtsv_no_pivot_strided_medium_chunk<rocsparse_int>(
+            m, num_spikes, handle->properties.maxGridSize[1]);
+        rocsparse_host_assert(chunk > 0, "The chunk must hold at least one system.");
 
-        RETURN_IF_ROCSPARSE_ERROR(rocsparse::gtsv_no_pivot_dispatch_grid_stride(
-            straight, [&](auto grid_stride) -> rocsparse_status {
-                RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
-                    (rocsparse::gtsv_nopivot_strided_batch_pcr_tiled_forward_kernel<
-                        BLOCKSIZE,
-                        T,
-                        decltype(grid_stride)::value>),
-                    dim3(nblocks, grid_y, 1),
-                    dim3(BLOCKSIZE),
-                    0,
-                    handle->stream,
-                    m,
-                    batch_count,
-                    static_cast<int64_t>(batch_stride),
-                    static_cast<int64_t>(batch_stride),
-                    num_spikes,
-                    dl,
-                    d,
-                    du,
-                    x,
-                    buffer_data->dl_modified[level],
-                    buffer_data->d_modified[level],
-                    buffer_data->du_modified[level],
-                    buffer_data->B_modified[level],
-                    buffer_data->dl_spike[level],
-                    buffer_data->d_spike[level],
-                    buffer_data->du_spike[level],
-                    buffer_data->B_spike[level]);
-                return rocsparse_status_success;
-            }));
+        const int64_t stride = batch_stride;
+        for(int64_t first = 0; first < batch_count; first += chunk)
+        {
+            const rocsparse_int count
+                = static_cast<rocsparse_int>(std::min(chunk, batch_count - first));
+            RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
+                (rocsparse::gtsv_nopivot_strided_batch_pcr_tiled_forward_kernel<BLOCKSIZE, T>),
+                dim3(nblocks, count, 1),
+                dim3(BLOCKSIZE),
+                0,
+                handle->stream,
+                m,
+                count,
+                stride,
+                stride,
+                num_spikes,
+                dl + stride * first,
+                d + stride * first,
+                du + stride * first,
+                x + stride * first,
+                buffer_data->dl_modified[level] + static_cast<int64_t>(m) * first,
+                buffer_data->d_modified[level] + static_cast<int64_t>(m) * first,
+                buffer_data->du_modified[level] + static_cast<int64_t>(m) * first,
+                buffer_data->B_modified[level] + static_cast<int64_t>(m) * first,
+                buffer_data->dl_spike[level] + static_cast<int64_t>(num_spikes) * first,
+                buffer_data->d_spike[level] + static_cast<int64_t>(num_spikes) * first,
+                buffer_data->du_spike[level] + static_cast<int64_t>(num_spikes) * first,
+                buffer_data->B_spike[level] + static_cast<int64_t>(num_spikes) * first);
+        }
 
         // Define function pointer type for kernel dispatch
         using KernelFuncPtr = rocsparse_status (*)(rocsparse_handle handle,
@@ -659,29 +660,27 @@ namespace rocsparse
                                                               level + 1));
         }
 
-        RETURN_IF_ROCSPARSE_ERROR(rocsparse::gtsv_no_pivot_dispatch_grid_stride(
-            straight, [&](auto grid_stride) -> rocsparse_status {
-                RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
-                    (rocsparse::gtsv_nopivot_strided_batch_pcr_tiled_backward_kernel<
-                        BLOCKSIZE,
-                        T,
-                        decltype(grid_stride)::value>),
-                    dim3(nblocks, grid_y, 1),
-                    dim3(BLOCKSIZE),
-                    0,
-                    handle->stream,
-                    m,
-                    batch_count,
-                    static_cast<int64_t>(batch_stride),
-                    num_spikes,
-                    buffer_data->dl_modified[level],
-                    buffer_data->d_modified[level],
-                    buffer_data->du_modified[level],
-                    buffer_data->B_modified[level],
-                    buffer_data->B_spike[level],
-                    x);
-                return rocsparse_status_success;
-            }));
+        for(int64_t first = 0; first < batch_count; first += chunk)
+        {
+            const rocsparse_int count
+                = static_cast<rocsparse_int>(std::min(chunk, batch_count - first));
+            RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
+                (rocsparse::gtsv_nopivot_strided_batch_pcr_tiled_backward_kernel<BLOCKSIZE, T>),
+                dim3(nblocks, count, 1),
+                dim3(BLOCKSIZE),
+                0,
+                handle->stream,
+                m,
+                count,
+                stride,
+                num_spikes,
+                buffer_data->dl_modified[level] + static_cast<int64_t>(m) * first,
+                buffer_data->d_modified[level] + static_cast<int64_t>(m) * first,
+                buffer_data->du_modified[level] + static_cast<int64_t>(m) * first,
+                buffer_data->B_modified[level] + static_cast<int64_t>(m) * first,
+                buffer_data->B_spike[level] + static_cast<int64_t>(num_spikes) * first,
+                x + stride * first);
+        }
 
         return rocsparse_status_success;
     }

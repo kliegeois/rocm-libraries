@@ -24,77 +24,53 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
-#include <type_traits>
 
 namespace rocsparse
 {
-    // stride * columns + inner fits in limit, without overflowing int64_t. columns == 0
-    // checks inner alone.
-    inline bool gtsv_index_fits(int64_t stride, int64_t columns, int64_t inner, int64_t limit)
+    // Largest count with stride * (count - 1) + stride - 1 <= limit, for
+    // 1 < stride <= limit.
+    inline int64_t gtsv_max_count(int64_t stride, int64_t limit)
     {
-        if(stride < 0 || columns < 0 || inner < 0 || inner > limit)
-        {
-            return false;
-        }
-        if(columns == 0)
-        {
-            return true;
-        }
-        if(stride > std::numeric_limits<int64_t>::max() / columns)
-        {
-            return false;
-        }
-        return stride * columns <= limit - inner;
+        return (limit - stride + 1) / stride + 1;
     }
 
-    // Whether the gtsv_no_pivot medium path (m > 1024) can launch the straight-line
-    // kernels for n > 0 right-hand sides in tiles of num_rhs. Each tile needs its own
-    // block in grid.y, at most max_grid_y. Those kernels index the right-hand side
-    // column with a 32-bit unsigned value: the temporary buffer at m * column + row
-    // in I (32-bit unsigned when I is 32-bit), the spike buffer at
-    // num_spikes * column + spike in 32-bit unsigned.
+    // Largest number of right-hand sides one launch of the gtsv_no_pivot medium
+    // kernels (m > 1024) can take. The kernels put one block per tile of num_rhs on
+    // grid.y, at most max_grid_y. They index column c of the temporary buffer at
+    // m * c + row in I (32-bit unsigned when I is 32-bit) and of the spike buffer at
+    // num_spikes * c + spike in 32-bit unsigned. The result is a multiple of num_rhs
+    // unless not even one tile fits.
     template <typename I>
-    inline bool gtsv_no_pivot_medium_straight(
-        int64_t m, int64_t n, int64_t num_rhs, int64_t num_spikes, int64_t max_grid_y)
+    inline int64_t gtsv_no_pivot_medium_chunk(int64_t m,
+                                              int64_t num_rhs,
+                                              int64_t num_spikes,
+                                              int64_t max_grid_y)
     {
-        const int64_t tiles = (n - 1) / num_rhs + 1;
-        if(tiles > max_grid_y)
-        {
-            return false;
-        }
         const int64_t uint32_limit = std::numeric_limits<uint32_t>::max();
-        const int64_t modified_limit
-            = (sizeof(I) == sizeof(int32_t)) ? uint32_limit : std::numeric_limits<int64_t>::max();
-        return gtsv_index_fits(m, n - 1, m - 1, modified_limit)
-               && gtsv_index_fits(num_spikes, n - 1, num_spikes - 1, uint32_limit);
-    }
 
-    // Whether the gtsv_no_pivot_strided_batch medium path can launch the
-    // straight-line kernels for batch_count > 0 systems. Each system needs its own
-    // block in grid.y, at most max_grid_y. Those kernels offset the workspace by
-    // m * batch and num_spikes * batch in I, the type of rocsparse_int.
-    template <typename I>
-    inline bool gtsv_no_pivot_strided_medium_straight(int64_t m,
-                                                      int64_t batch_count,
-                                                      int64_t num_spikes,
-                                                      int64_t max_grid_y)
-    {
-        if(batch_count > max_grid_y)
+        int64_t columns
+            = std::min(max_grid_y * num_rhs, rocsparse::gtsv_max_count(num_spikes, uint32_limit));
+        if(sizeof(I) == sizeof(int32_t))
         {
-            return false;
+            columns = std::min(columns, rocsparse::gtsv_max_count(m, uint32_limit));
         }
-        const int64_t limit = std::numeric_limits<I>::max();
-        return gtsv_index_fits(m, batch_count - 1, m - 1, limit)
-               && gtsv_index_fits(num_spikes, batch_count - 1, num_spikes - 1, limit);
+        return (columns >= num_rhs) ? columns / num_rhs * num_rhs : columns;
     }
 
-    // launch(std::false_type{}) launches the straight-line kernel and
-    // launch(std::true_type{}) the grid-stride one.
-    template <typename F>
-    inline decltype(auto) gtsv_no_pivot_dispatch_grid_stride(bool straight, F&& launch)
+    // Largest number of systems one launch of the gtsv_no_pivot_strided_batch medium
+    // kernels can take. The kernels put one block per system on grid.y, at most
+    // max_grid_y, and offset the workspace by m * batch and num_spikes * batch in I,
+    // the type of rocsparse_int.
+    template <typename I>
+    inline int64_t
+        gtsv_no_pivot_strided_medium_chunk(int64_t m, int64_t num_spikes, int64_t max_grid_y)
     {
-        return straight ? launch(std::false_type{}) : launch(std::true_type{});
+        const int64_t limit = std::numeric_limits<I>::max();
+        return std::min({max_grid_y,
+                         rocsparse::gtsv_max_count(m, limit),
+                         rocsparse::gtsv_max_count(num_spikes, limit)});
     }
 }
