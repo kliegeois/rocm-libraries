@@ -1,6 +1,6 @@
 /*! \file */
 /* ************************************************************************
- * Copyright (C) 2021-2025 Advanced Micro Devices, Inc. All rights Reserved.
+ * Copyright (C) 2021-2026 Advanced Micro Devices, Inc. All rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -93,6 +93,98 @@ void testing_csrcolor_bad_arg(const Arguments& arg)
                             rocsparse_status_requires_sorted_storage);
 
 #undef PARAMS
+}
+
+// Disjoint triangles. The first Jones-Plassmann-Luby round colors exactly two vertices
+// of every triangle (the local maximum and the local minimum of the vertex weights)
+// and leaves the third, whatever the weights are, so the result does not depend on
+// the hash. With Mt = 3 * (M / 3) vertices the number of colors is known in closed
+// form: when fraction_to_color allows Mt / 3 uncolored vertices the loop stops after
+// one round and every leftover gets its own color (2 + Mt / 3); otherwise a second
+// round colors all the leftovers alike (3). This pins the fraction, which the random
+// matrix cannot.
+template <typename T>
+static void testing_csrcolor_triangles(rocsparse_handle         handle,
+                                       rocsparse_mat_descr      descr,
+                                       rocsparse_mat_info       info,
+                                       rocsparse_int            M,
+                                       rocsparse_index_base     base,
+                                       const floating_data_t<T> fraction_to_color)
+{
+    const rocsparse_int Mt   = 3 * (M / 3);
+    const rocsparse_int ntri = Mt / 3;
+    if(ntri < 1)
+    {
+        return;
+    }
+
+    host_csr_matrix<T> hA(Mt, Mt, 2 * Mt, base);
+    rocsparse_int      k = 0;
+    for(rocsparse_int v = 0; v < Mt; ++v)
+    {
+        const rocsparse_int t = v / 3;
+        hA.ptr[v]             = k + base;
+        for(rocsparse_int w = 3 * t; w < 3 * t + 3; ++w)
+        {
+            if(w != v)
+            {
+                hA.ind[k] = w + base;
+                hA.val[k] = static_cast<T>(1);
+                ++k;
+            }
+        }
+    }
+    hA.ptr[Mt] = k + base;
+
+    device_csr_matrix<T>               dA(hA);
+    device_dense_vector<rocsparse_int> dcoloring(Mt);
+    rocsparse_int                      ncolor;
+    CHECK_ROCSPARSE_ERROR(rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_host));
+    CHECK_ROCSPARSE_ERROR(rocsparse_csrcolor<T>(handle,
+                                                dA.m,
+                                                dA.nnz,
+                                                descr,
+                                                dA.val,
+                                                dA.ptr,
+                                                dA.ind,
+                                                &fraction_to_color,
+                                                &ncolor,
+                                                dcoloring,
+                                                nullptr,
+                                                info));
+
+    // Same arithmetic as the library: the loop runs while more than
+    // max_num_uncolored vertices are uncolored.
+    const rocsparse_int max_num_uncolored = static_cast<rocsparse_int>(Mt - Mt * fraction_to_color);
+    const bool          one_round         = (ntri <= max_num_uncolored);
+    unit_check_scalar<rocsparse_int>(one_round ? 2 + ntri : 3, ncolor);
+
+    // Every triangle carries the colors 0 and 1 once each; its third vertex has the
+    // color 2 + t (the leftovers are numbered in increasing vertex order) after one
+    // round and the color 2 after two.
+    host_dense_vector<rocsparse_int> hcoloring(dcoloring);
+    for(rocsparse_int t = 0; t < ntri; ++t)
+    {
+        rocsparse_int count0 = 0, count1 = 0, third = -1;
+        for(rocsparse_int v = 3 * t; v < 3 * t + 3; ++v)
+        {
+            if(hcoloring[v] == 0)
+            {
+                ++count0;
+            }
+            else if(hcoloring[v] == 1)
+            {
+                ++count1;
+            }
+            else
+            {
+                third = hcoloring[v];
+            }
+        }
+        unit_check_scalar<rocsparse_int>(1, count0);
+        unit_check_scalar<rocsparse_int>(1, count1);
+        unit_check_scalar<rocsparse_int>(one_round ? 2 + t : 2, third);
+    }
 }
 
 template <typename T>
@@ -301,6 +393,8 @@ void testing_csrcolor(const Arguments& arg)
                                         rocsparse_status_success);
             }
         }
+
+        testing_csrcolor_triangles<T>(handle, csr_descr, mat_info, M, csr_base, fraction_to_color);
     }
 
     if(arg.timing)
