@@ -452,14 +452,16 @@ Tests:
   orderC: [rocsparse_order_column]
 
 # row_split conjugate-transpose on B (complex) to exercise the conj_B order/trans
-# sub-conditions of the NN/NT dispatch.
+# sub-conditions of the NN/NT dispatch. N 3 and 12 (N mod 64 in 1..15) reach the
+# NT remainder kernels, which have their own conj_B path, when orderB is column;
+# with orderB row the same cases take the NN dispatch with conj_B set.
 - name: spmm_csr
   category: quick
   function: spmm_csr
   indextype: *i32
   precision: *single_double_precisions_complex
   M: [37]
-  N: [20, 35]
+  N: [3, 12, 20, 35]
   K: [43]
   alpha_beta: *alpha_beta_range_quick
   transA: [rocsparse_operation_none]
