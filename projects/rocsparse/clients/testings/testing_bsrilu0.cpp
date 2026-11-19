@@ -197,7 +197,7 @@ template <typename T>
 void testing_bsrilu0(const Arguments& arg)
 {
     static constexpr bool       to_int    = false;
-    static constexpr bool       full_rank = false;
+    static constexpr bool       full_rank = true;
     rocsparse_matrix_factory<T> matrix_factory(arg, to_int, full_rank);
 
     rocsparse_int             M           = arg.M;

@@ -184,7 +184,7 @@ template <typename T>
 void testing_bsric0(const Arguments& arg)
 {
     static constexpr bool       toint     = false;
-    static constexpr bool       full_rank = false;
+    static constexpr bool       full_rank = true;
     rocsparse_matrix_factory<T> matrix_factory(arg, toint, full_rank);
 
     rocsparse_int             M         = arg.M;

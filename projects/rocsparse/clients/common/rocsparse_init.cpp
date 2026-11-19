@@ -1,6 +1,6 @@
 /*! \file */
 /* ************************************************************************
- * Copyright (C) 2020-2025 Advanced Micro Devices, Inc. All rights Reserved.
+ * Copyright (C) 2020-2026 Advanced Micro Devices, Inc. All rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -282,6 +282,25 @@ void rocsparse_init_nan(
 }
 
 /* ==================================================================================== */
+/*! \brief  Values of a full rank random matrix: the diagonal is large, [4, 8) with a one
+ *  percent perturbation, and the off-diagonal entries are small, (-h, h) with h <= 0.5, so
+ *  that the matrix is diagonally dominant and its factorizations stay well conditioned.
+ *  Shared by the COO (CSR) and the GEBSR random generators. */
+template <typename T>
+static T rocsparse_full_rank_diagonal_value()
+{
+    T v = random_cached_generator<T>(static_cast<T>(4.0), static_cast<T>(8.0));
+    v += v * random_cached_generator<T>(static_cast<T>(-1.0e-2), static_cast<T>(1.0e-2));
+    return v;
+}
+
+template <typename T>
+static T rocsparse_full_rank_off_diagonal_value(double h = 0.5)
+{
+    return random_cached_generator<T>(static_cast<T>(-h), static_cast<T>(h));
+}
+
+/* ==================================================================================== */
 /*! \brief  Generate a random sparse matrix in COO format */
 template <typename I, typename T>
 void rocsparse_init_coo_matrix(std::vector<I>&      row_ind,
@@ -346,8 +365,11 @@ void rocsparse_init_coo_matrix(std::vector<I>&      row_ind,
 
     for(I k = 0; k < M; k++)
     {
-        I nnz_in_row = std::min(random_cached_generator_exact<I>(0, 2 * avg_nnz_per_row), N);
-        nnz_in_row   = (I)std::min(remaining_nnz, (int64_t)nnz_in_row);
+        // The row already holds its diagonal when full_rank is set; never
+        // exceed N entries, that would force a duplicate column index.
+        I nnz_in_row
+            = std::min(random_cached_generator_exact<I>(0, 2 * avg_nnz_per_row), N - count[k]);
+        nnz_in_row = (I)std::min(remaining_nnz, (int64_t)nnz_in_row);
 
         count[k] += nnz_in_row;
 
@@ -423,12 +445,18 @@ void rocsparse_init_coo_matrix(std::vector<I>&      row_ind,
 
         if(full_rank)
         {
+            // Slot 0 of the permutation is replaced by the diagonal. If the
+            // diagonal also shows up in a later slot, that slot takes an unused
+            // column instead: the last slot of the permutation when the row
+            // does not fill the window, otherwise the column slot 0 gave up.
+            const I spare = (nnz_in_row <= bmax - bmin) ? random[bmax - bmin] : random[0];
+
             col_ind[at++] = i;
             for(I k = 1; k < nnz_in_row; ++k)
             {
                 if(bmin + random[k] == i)
                 {
-                    col_ind[at++] = bmin + random[bmax - bmin];
+                    col_ind[at++] = bmin + spare;
                 }
                 else
                 {
@@ -477,15 +505,12 @@ void rocsparse_init_coo_matrix(std::vector<I>&      row_ind,
                 if(row_ind[i] == col_ind[i])
                 {
                     // Sample diagonal values
-                    val[i] = random_cached_generator<T>(static_cast<T>(4.0), static_cast<T>(8.0));
-                    val[i] += val[i]
-                              * random_cached_generator<T>(static_cast<T>(-1.0e-2),
-                                                           static_cast<T>(1.0e-2));
+                    val[i] = rocsparse_full_rank_diagonal_value<T>();
                 }
                 else
                 {
                     // Samples off-diagonal values
-                    val[i] = random_cached_generator<T>(static_cast<T>(-0.5), static_cast<T>(0.5));
+                    val[i] = rocsparse_full_rank_off_diagonal_value<T>();
                 }
             }
         }
@@ -1438,6 +1463,42 @@ void rocsparse_init_gebsr_random(std::vector<I>&            row_ptr,
         for(size_t i = 0; i < nvalues; ++i)
         {
             val[i] = random_cached_generator_exact<T>();
+        }
+    }
+    else if(full_rank && row_block_dim == col_block_dim)
+    {
+        // Full rank: the block pattern has a diagonal block in every block row
+        // (see rocsparse_init_coo_matrix) and the values are the full rank
+        // values of the COO generator at the scalar level. The off-diagonal
+        // bound shrinks with the number of entries in the row: the sum of
+        // their magnitudes stays below 2 while the diagonal is at least 3.96,
+        // so every row is strictly diagonally dominant and the block
+        // factorizations (bsric0, bsrilu0) remain well conditioned. The
+        // diagonal of a square block has the same offset in row and column
+        // major storage.
+        const size_t block_size = size_t(row_block_dim) * col_block_dim;
+        for(J i = 0; i < Mb; ++i)
+        {
+            const I      row_begin = row_ptr[i] - base;
+            const I      row_end   = row_ptr[i + 1] - base;
+            const double row_size  = double(row_end - row_begin) * double(col_block_dim);
+            const double h         = std::min(0.5, 2.0 / row_size);
+            for(I j = row_begin; j < row_end; ++j)
+            {
+                const bool diag_block = (col_ind[j] - base == i);
+                for(size_t k = 0; k < block_size; ++k)
+                {
+                    const size_t idx = size_t(j) * block_size + k;
+                    if(diag_block && (k % row_block_dim) == (k / row_block_dim))
+                    {
+                        val[idx] = rocsparse_full_rank_diagonal_value<T>();
+                    }
+                    else
+                    {
+                        val[idx] = rocsparse_full_rank_off_diagonal_value<T>(h);
+                    }
+                }
+            }
         }
     }
     else
