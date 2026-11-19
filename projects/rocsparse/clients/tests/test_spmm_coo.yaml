@@ -149,6 +149,30 @@ Tests:
   orderB: [rocsparse_order_column]
   orderC: [rocsparse_order_column]
 
+# Segmented cross-block carry: ASIC_320k has two rows of about 200k nonzeros,
+# so consecutive 1024-nonzero blocks end on the same row and the final block
+# reduction must add only the last partial sum of each run. pre_checkin runs
+# ASIC_320k through the segmented kernels with alpha 0, which hides a double
+# count; this entry uses alpha 1. N 7 runs the WF 4 main kernel plus the
+# remainder kernel, N 16 the WF 8 main kernel only.
+- name: spmm_coo_file
+  category: quick
+  function: spmm_coo
+  indextype: *i32
+  precision: *double_only_precisions
+  M: 1
+  N: [7, 16]
+  K: 1
+  alpha_beta: *alpha_beta_range_quick
+  transA: [rocsparse_operation_none]
+  transB: [rocsparse_operation_none]
+  baseA: [rocsparse_index_base_zero]
+  matrix: [rocsparse_matrix_file_rocalution]
+  spmm_alg: [rocsparse_spmm_alg_coo_segmented]
+  orderB: [rocsparse_order_column]
+  orderC: [rocsparse_order_column]
+  filename: [ASIC_320k]
+
 # Pre_checkin
 - name: spmm_coo_bad_arg
   category: pre_checkin
