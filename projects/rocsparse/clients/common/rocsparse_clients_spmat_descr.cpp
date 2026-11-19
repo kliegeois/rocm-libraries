@@ -365,7 +365,7 @@ void rocsparse_clients::spmat_descr<T, I, J>::init(const Arguments& arg,
 
                        [&](bsr_t& that) {
                            static constexpr bool             toint = false;
-                           rocsparse_matrix_factory<T, I, J> matrix_factory(arg, toint, false);
+                           rocsparse_matrix_factory<T, I, J> matrix_factory(arg, toint, full_rank);
 
                            {
                                J                   M         = arg.M;
