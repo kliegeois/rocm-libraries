@@ -1672,6 +1672,15 @@ void testing_spilu0_extra(const Arguments& arg)
     }
 
     {
+        // Same matrix in double. The 1099 updates of the last pivot sum to about
+        // 6e-5 of its value, below the float tolerance, so a kernel that drops the
+        // last column of a row is only visible in double. This is the only
+        // quick/pre_checkin input that reaches the binary-search kernel.
+        auto h_A = make_arrow_matrix<double, I, J>(1100);
+        spilu0_zero_batch_stride<double, I, J>(arg, *h_A, batch_count);
+    }
+
+    {
         // Binary-search kernel, zero pivot at row 5. The values are not compared.
         auto h_A = make_arrow_matrix<T, I, J>(1100, 5);
         spilu0_zero_batch_stride<T, I, J>(arg, *h_A, batch_count, false);
