@@ -285,6 +285,7 @@ void near_check_general_template(int64_t            M,
 {
     int                tolm            = 1;
     bool               passed          = true;
+    bool               nan_failed      = false;
     floating_data_t<T> min_passing_tol = 0;
     for(int64_t j = 0; j < N; ++j)
     {
@@ -304,6 +305,23 @@ void near_check_general_template(int64_t            M,
             else
 #endif
             {
+                // A NaN in B makes every comparison below false, so it has to be
+                // rejected explicitly; otherwise it would pass as "in range". A NaN
+                // reference is left to the branch above, which is compiled out
+                // without GOOGLE_TEST and must keep passing there.
+                if(rocsparse_isnan(B[i + j * LDB]) && !rocsparse_isnan(A[i + j * LDA]))
+                {
+                    if(passed)
+                    {
+                        std::cerr.precision(12);
+                        std::cerr << "ASSERT_NEAR(" << A[i + j * LDA] << ", " << B[i + j * LDB]
+                                  << ") failed: the computed value is NaN" << std::endl;
+                    }
+                    nan_failed = true;
+                    passed     = false;
+                    continue;
+                }
+
                 int k;
                 for(k = 1; k <= MAX_TOL_MULTIPLIER; ++k)
                 {
@@ -340,7 +358,11 @@ void near_check_general_template(int64_t            M,
             }
         }
     }
-    if(!passed)
+    if(nan_failed)
+    {
+        std::cerr << "Test failed: the computed values contain NaN." << std::endl;
+    }
+    else if(!passed)
     {
         std::cerr << "Test failed with tol = " << tol << ". Relaxing the tolerance to at least "
                   << min_passing_tol << " would make the test pass." << std::endl;
@@ -369,6 +391,7 @@ void near_check_general_template(int64_t                        M,
 {
     int   tolm            = 1;
     bool  passed          = true;
+    bool  nan_failed      = false;
     float min_passing_tol = 0;
     for(int64_t j = 0; j < N; ++j)
     {
@@ -388,6 +411,23 @@ void near_check_general_template(int64_t                        M,
             else
 #endif
             {
+                // A NaN in B makes every comparison below false, so it has to be
+                // rejected explicitly; otherwise it would pass as "in range". A NaN
+                // reference is left to the branch above, which is compiled out
+                // without GOOGLE_TEST and must keep passing there.
+                if(rocsparse_isnan(B[i + j * LDB]) && !rocsparse_isnan(A[i + j * LDA]))
+                {
+                    if(passed)
+                    {
+                        std::cerr.precision(16);
+                        std::cerr << "ASSERT_NEAR(" << A[i + j * LDA] << ", " << B[i + j * LDB]
+                                  << ") failed: the computed value is NaN" << std::endl;
+                    }
+                    nan_failed = true;
+                    passed     = false;
+                    continue;
+                }
+
                 int k;
                 for(k = 1; k <= MAX_TOL_MULTIPLIER; ++k)
                 {
@@ -423,7 +463,11 @@ void near_check_general_template(int64_t                        M,
             }
         }
     }
-    if(!passed)
+    if(nan_failed)
+    {
+        std::cerr << "Test failed: the computed values contain NaN." << std::endl;
+    }
+    else if(!passed)
     {
         std::cerr << "Test failed with tol = " << tol << ". Relaxing the tolerance to at least "
                   << min_passing_tol << " would make the test pass." << std::endl;
@@ -452,6 +496,7 @@ void near_check_general_template(int64_t                         M,
 {
     int    tolm            = 1;
     bool   passed          = true;
+    bool   nan_failed      = false;
     double min_passing_tol = 0;
     for(int64_t j = 0; j < N; ++j)
     {
@@ -471,6 +516,23 @@ void near_check_general_template(int64_t                         M,
             else
 #endif
             {
+                // A NaN in B makes every comparison below false, so it has to be
+                // rejected explicitly; otherwise it would pass as "in range". A NaN
+                // reference is left to the branch above, which is compiled out
+                // without GOOGLE_TEST and must keep passing there.
+                if(rocsparse_isnan(B[i + j * LDB]) && !rocsparse_isnan(A[i + j * LDA]))
+                {
+                    if(passed)
+                    {
+                        std::cerr.precision(16);
+                        std::cerr << "ASSERT_NEAR(" << A[i + j * LDA] << ", " << B[i + j * LDB]
+                                  << ") failed: the computed value is NaN" << std::endl;
+                    }
+                    nan_failed = true;
+                    passed     = false;
+                    continue;
+                }
+
                 int k;
                 for(k = 1; k <= MAX_TOL_MULTIPLIER; ++k)
                 {
@@ -506,7 +568,11 @@ void near_check_general_template(int64_t                         M,
             }
         }
     }
-    if(!passed)
+    if(nan_failed)
+    {
+        std::cerr << "Test failed: the computed values contain NaN." << std::endl;
+    }
+    else if(!passed)
     {
         std::cerr << "Test failed with tol = " << tol << ". Relaxing the tolerance to at least "
                   << min_passing_tol << " would make the test pass." << std::endl;

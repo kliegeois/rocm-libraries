@@ -258,6 +258,7 @@ void testing_spmm_coo(const Arguments& arg)
 
         // Pointer mode host
         CHECK_ROCSPARSE_ERROR(rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_host));
+        rocsparse_matrix_utils::init_nan_if_beta_zero(hbeta, (C*)dC_1, C_m, C_n, ldc, order_C);
         CHECK_ROCSPARSE_ERROR(testing::rocsparse_spmm(handle,
                                                       trans_A,
                                                       trans_B,
@@ -278,6 +279,7 @@ void testing_spmm_coo(const Arguments& arg)
 
         // Pointer mode device
         CHECK_ROCSPARSE_ERROR(rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_device));
+        rocsparse_matrix_utils::init_nan_if_beta_zero(hbeta, (C*)dC_2, C_m, C_n, ldc, order_C);
         CHECK_ROCSPARSE_ERROR(testing::rocsparse_spmm(handle,
                                                       trans_A,
                                                       trans_B,

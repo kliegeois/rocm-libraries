@@ -29,6 +29,8 @@
 #include "rocsparse.hpp"
 #include "rocsparse_matrix.hpp"
 
+#include <type_traits>
+
 static inline const float* get_boost_tol(const float* tol)
 {
     return tol;
@@ -183,6 +185,55 @@ struct rocsparse_matrix_utils
             break;
         }
         }
+    }
+
+    //
+    // @brief Fill the m x n block of a device dense array with NaN when \p beta is exactly zero.
+    // @details With beta == 0 the library documents the output (y of SpMV, C of SpMM) as write only:
+    // it is overwritten with alpha * op(A) * x and whatever it held before must not reach the result.
+    // Filling the device copy with NaN while the host reference keeps its finite copy exposes a kernel
+    // that still evaluates beta * y. Every byte of the block is set to 0xFF, which is a (quiet) NaN
+    // for all real, half, bfloat16 and complex types. Integral output types have no NaN and are left
+    // unchanged.
+    // @param[in] beta Scalar of the test, as passed to the library.
+    // @param[out] d_val Device pointer to the output block.
+    // @param[in] m Number of rows of the block.
+    // @param[in] n Number of columns of the block.
+    // @param[in] ld Leading dimension of the block.
+    // @param[in] order Memory order of the block.
+    //
+    template <typename T, typename Y>
+    static void init_nan_if_beta_zero(T               beta,
+                                      Y*              d_val,
+                                      int64_t         m,
+                                      int64_t         n,
+                                      int64_t         ld,
+                                      rocsparse_order order = rocsparse_order_column)
+    {
+        if constexpr(!std::is_integral<Y>::value)
+        {
+            if(beta != static_cast<T>(0) || m <= 0 || n <= 0)
+            {
+                return;
+            }
+
+            const int64_t contiguous = (order == rocsparse_order_column) ? m : n;
+            const int64_t count      = (order == rocsparse_order_column) ? n : m;
+
+            CHECK_HIP_THROW_ERROR(
+                hipMemset2D(d_val, sizeof(Y) * ld, 0xFF, sizeof(Y) * contiguous, count));
+        }
+    }
+
+    //
+    // @brief Fill a device dense matrix with NaN when \p beta is exactly zero.
+    // @param[in] beta Scalar of the test, as passed to the library.
+    // @param[out] that Device matrix (or view) to fill.
+    //
+    template <typename T, typename Y, typename I>
+    static void init_nan_if_beta_zero(T beta, device_dense_matrix_view<Y, I>& that)
+    {
+        init_nan_if_beta_zero(beta, that.data(), that.m, that.n, that.ld, that.order);
     }
 
     //
