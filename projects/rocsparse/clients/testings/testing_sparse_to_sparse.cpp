@@ -1439,6 +1439,31 @@ spmat spmat_create_A(const Arguments& arg, rocsparse_format format, rocsparse_in
     }
 }
 
+// Run the analysis and the compute stage of one source to target conversion.
+static void sparse_to_sparse_extra_convert(rocsparse_handle            handle,
+                                           rocsparse_const_spmat_descr source,
+                                           rocsparse_spmat_descr       target)
+{
+    rocsparse_sparse_to_sparse_descr descr;
+    CHECK_ROCSPARSE_ERROR(rocsparse_create_sparse_to_sparse_descr(
+        &descr, source, target, rocsparse_sparse_to_sparse_alg_default));
+
+    for(auto stage :
+        {rocsparse_sparse_to_sparse_stage_analysis, rocsparse_sparse_to_sparse_stage_compute})
+    {
+        size_t buffer_size;
+        void*  buffer;
+        CHECK_ROCSPARSE_ERROR(rocsparse_sparse_to_sparse_buffer_size(
+            handle, descr, source, target, stage, &buffer_size));
+        CHECK_HIP_ERROR(hipMalloc(&buffer, buffer_size));
+        CHECK_ROCSPARSE_ERROR(
+            rocsparse_sparse_to_sparse(handle, descr, source, target, stage, buffer_size, buffer));
+        CHECK_HIP_ERROR(hipFree(buffer));
+    }
+
+    CHECK_ROCSPARSE_ERROR(rocsparse_destroy_sparse_to_sparse_descr(descr));
+}
+
 void testing_sparse_to_sparse_extra(const Arguments& arg)
 {
     // 1 0 0 0
@@ -1490,39 +1515,7 @@ void testing_sparse_to_sparse_extra(const Arguments& arg)
                                                      dcsc.base,
                                                      rocsparse_datatype_f32_r));
 
-    // Create descriptor
-    rocsparse_sparse_to_sparse_descr descr;
-    CHECK_ROCSPARSE_ERROR(rocsparse_create_sparse_to_sparse_descr(
-        &descr, source, target, rocsparse_sparse_to_sparse_alg_default));
-
-    size_t buffer_size;
-    void*  buffer;
-
-    // Analysis phase
-    CHECK_ROCSPARSE_ERROR(rocsparse_sparse_to_sparse_buffer_size(
-        handle, descr, source, target, rocsparse_sparse_to_sparse_stage_analysis, &buffer_size));
-    CHECK_HIP_ERROR(hipMalloc(&buffer, buffer_size));
-    CHECK_ROCSPARSE_ERROR(rocsparse_sparse_to_sparse(handle,
-                                                     descr,
-                                                     source,
-                                                     target,
-                                                     rocsparse_sparse_to_sparse_stage_analysis,
-                                                     buffer_size,
-                                                     buffer));
-    CHECK_HIP_ERROR(hipFree(buffer));
-
-    // Calculation phase
-    CHECK_ROCSPARSE_ERROR(rocsparse_sparse_to_sparse_buffer_size(
-        handle, descr, source, target, rocsparse_sparse_to_sparse_stage_compute, &buffer_size));
-    CHECK_HIP_ERROR(hipMalloc(&buffer, buffer_size));
-    CHECK_ROCSPARSE_ERROR(rocsparse_sparse_to_sparse(handle,
-                                                     descr,
-                                                     source,
-                                                     target,
-                                                     rocsparse_sparse_to_sparse_stage_compute,
-                                                     buffer_size,
-                                                     buffer));
-    CHECK_HIP_ERROR(hipFree(buffer));
+    sparse_to_sparse_extra_convert(handle, source, target);
 
     host_csr_matrix<float, int, int> hcsc_solution(dcsc);
 
@@ -1535,8 +1528,67 @@ void testing_sparse_to_sparse_extra(const Arguments& arg)
     unit_check_segments<int>(nnz, hcsc_solution.ind, hcsc_gold.ind);
     unit_check_segments<float>(nnz, hcsc_solution.val, hcsc_gold.val);
 
-    CHECK_ROCSPARSE_ERROR(rocsparse_destroy_spmat_descr(source));
     CHECK_ROCSPARSE_ERROR(rocsparse_destroy_spmat_descr(target));
+
+    // The same const CSR source into a COO target. Unlike CSR to CSC, this goes
+    // through the generic CSR to COO conversion, which has to read the const pointers
+    // of the source: a descriptor created with rocsparse_create_const_csr_descr
+    // leaves the mutable ones null.
+    const std::vector<int> coo_row_gold = {0, 1, 1, 1, 1, 2, 2, 3, 3};
+    {
+        device_coo_matrix<float, int> dcoo(m, n, nnz, base);
+        rocsparse_spmat_descr         coo_target;
+        CHECK_ROCSPARSE_ERROR(rocsparse_create_coo_descr(&coo_target,
+                                                         dcoo.m,
+                                                         dcoo.n,
+                                                         dcoo.nnz,
+                                                         dcoo.row_ind,
+                                                         dcoo.col_ind,
+                                                         (float*)dcoo.val,
+                                                         rocsparse_indextype_i32,
+                                                         dcoo.base,
+                                                         rocsparse_datatype_f32_r));
+
+        sparse_to_sparse_extra_convert(handle, source, coo_target);
+
+        host_coo_matrix<float, int> hcoo_solution(dcoo);
+        unit_check_segments<int>(nnz, hcoo_solution.row_ind, coo_row_gold.data());
+        unit_check_segments<int>(nnz, hcoo_solution.col_ind, hcsr.ind);
+        unit_check_segments<float>(nnz, hcoo_solution.val, hcsr.val);
+
+        CHECK_ROCSPARSE_ERROR(rocsparse_destroy_spmat_descr(coo_target));
+    }
+
+    // And into a COO (AoS) target.
+    {
+        device_coo_aos_matrix<float, int> dcoo_aos(m, n, nnz, base);
+        rocsparse_spmat_descr             coo_aos_target;
+        CHECK_ROCSPARSE_ERROR(rocsparse_create_coo_aos_descr(&coo_aos_target,
+                                                             dcoo_aos.m,
+                                                             dcoo_aos.n,
+                                                             dcoo_aos.nnz,
+                                                             dcoo_aos.ind,
+                                                             (float*)dcoo_aos.val,
+                                                             rocsparse_indextype_i32,
+                                                             dcoo_aos.base,
+                                                             rocsparse_datatype_f32_r));
+
+        sparse_to_sparse_extra_convert(handle, source, coo_aos_target);
+
+        host_coo_aos_matrix<float, int> hcoo_aos_solution(dcoo_aos);
+        std::vector<int>                coo_aos_ind_gold(2 * nnz);
+        for(int k = 0; k < nnz; ++k)
+        {
+            coo_aos_ind_gold[2 * k]     = coo_row_gold[k];
+            coo_aos_ind_gold[2 * k + 1] = hcsr.ind[k];
+        }
+        unit_check_segments<int>(2 * nnz, hcoo_aos_solution.ind, coo_aos_ind_gold.data());
+        unit_check_segments<float>(nnz, hcoo_aos_solution.val, hcsr.val);
+
+        CHECK_ROCSPARSE_ERROR(rocsparse_destroy_spmat_descr(coo_aos_target));
+    }
+
+    CHECK_ROCSPARSE_ERROR(rocsparse_destroy_spmat_descr(source));
 
     CHECK_ROCSPARSE_ERROR(rocsparse_destroy_handle(handle));
 }
