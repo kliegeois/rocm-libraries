@@ -1,6 +1,6 @@
 /*! \file */
 /* ************************************************************************
- * Copyright (C) 2021-2025 Advanced Micro Devices, Inc. All rights Reserved.
+ * Copyright (C) 2021-2026 Advanced Micro Devices, Inc. All rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -93,11 +93,37 @@ void testing_gtsv(const Arguments& arg)
     host_vector<T> hdu(m);
 
     // initialize tri-diagonal matrix
-    for(rocsparse_int i = 0; i < m; ++i)
+    if(arg.matrix_init_kind == rocsparse_matrix_init_kind_pivoting)
     {
-        hdl[i] = random_cached_generator<T>(1, 8);
-        hd[i]  = random_cached_generator<T>(10, 20);
-        hdu[i] = random_cached_generator<T>(1, 8);
+        // Rows (2j, 2j + 1) form 2x2 blocks with a zero diagonal on the even row, a
+        // large coupling inside the block and a weak coupling between blocks. The
+        // matrix is nonsingular and well conditioned (the block determinants are
+        // about -(17..32)^2), but every even row fails the 1x1 Bunch-Kaufman
+        // criterion, so the solver has to take its 2x2 pivot block. The pairing
+        // matches the spike solver's diagonal blocks: block_dim is 2 for these sizes
+        // and always even, and the criterion runs at the top of each block with
+        // the last row forced to 1x1. An odd m leaves a trailing row with a
+        // regular diagonal.
+        for(rocsparse_int i = 0; i < m; ++i)
+        {
+            const bool paired    = (i % 2 == 0) && (i + 1 < m);
+            const bool strong_dl = (i % 2 == 1);
+            hdl[i]
+                = strong_dl ? random_cached_generator<T>(17, 32) : random_cached_generator<T>(0, 1);
+            hd[i] = paired ? static_cast<T>(0) : random_cached_generator<T>(1, 2);
+            hdu[i]
+                = strong_dl ? random_cached_generator<T>(0, 1) : random_cached_generator<T>(17, 32);
+        }
+    }
+    else
+    {
+        // Diagonally dominant: the solver never needs to pivot.
+        for(rocsparse_int i = 0; i < m; ++i)
+        {
+            hdl[i] = random_cached_generator<T>(1, 8);
+            hd[i]  = random_cached_generator<T>(10, 20);
+            hdu[i] = random_cached_generator<T>(1, 8);
+        }
     }
 
     hdl[0]     = static_cast<T>(0);

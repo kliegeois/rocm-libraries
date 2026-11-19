@@ -108,6 +108,21 @@ Tests:
   denseld: [2]
   matrix: [rocsparse_matrix_random]
 
+# The default values are diagonally dominant, so the 1x1 Bunch-Kaufman criterion
+# always holds and the 2x2 pivot block of gtsv_LBM_wv_kernel / gtsv_LBM_rhs_kernel
+# never runs. The pivoting kind pairs the rows into 2x2 blocks with a zero diagonal
+# on the even row and a large coupling, which forces that block on every even row
+# (odd m leaves a trailing 1x1 row). m = 513 pads to two spike blocks.
+- name: gtsv_pivoting
+  category: quick
+  function: gtsv
+  precision: *single_double_precisions_complex_real
+  M: [7, 25, 128, 513]
+  N: [1, 4]
+  denseld: [513]
+  matrix: [rocsparse_matrix_random]
+  matrix_init_kind: [rocsparse_matrix_init_kind_pivoting]
+
 # Pre_checkin
 - name: gtsv_bad_arg
   category: pre_checkin
