@@ -1,6 +1,6 @@
 /*! \file */
 /* ************************************************************************
-* Copyright (C) 2019-2025 Advanced Micro Devices, Inc. All rights Reserved.
+* Copyright (C) 2019-2026 Advanced Micro Devices, Inc. All rights Reserved.
 *
 * Permission is hereby granted, free of charge, to any person obtaining a copy
 * of this software and associated documentation files (the "Software"), to deal
@@ -210,6 +210,44 @@ void testing_csrmm_bad_arg(const Arguments& arg)
         ldb = n;
         ldc = k - 1;
         EXPECT_ROCSPARSE_STATUS(rocsparse_csrmm<T>(PARAMS), rocsparse_status_invalid_size);
+    }
+
+    //
+    // Empty product (k == 0) with a non-empty C. The matrix is never read, but
+    // C = beta * C still has to run, so a null beta or a null C must be rejected.
+    // bad_arg_analysis above only nulls pointers at non-zero sizes.
+    //
+    {
+        m       = 8;
+        n       = 8;
+        k       = 0;
+        nnz     = 0;
+        ldb     = safe_size;
+        ldc     = safe_size;
+        trans_A = rocsparse_operation_none;
+        trans_B = rocsparse_operation_none;
+
+        // op(A) = A: C is m x n.
+        beta    = &local_beta;
+        dense_C = nullptr;
+        EXPECT_ROCSPARSE_STATUS(rocsparse_csrmm<T>(PARAMS), rocsparse_status_invalid_pointer);
+
+        beta    = nullptr;
+        dense_C = (T*)0x4;
+        EXPECT_ROCSPARSE_STATUS(rocsparse_csrmm<T>(PARAMS), rocsparse_status_invalid_pointer);
+
+        // op(A) = A^T: C is k x n, so the empty extent moves to m.
+        m       = 0;
+        k       = 8;
+        trans_A = rocsparse_operation_transpose;
+
+        beta    = &local_beta;
+        dense_C = nullptr;
+        EXPECT_ROCSPARSE_STATUS(rocsparse_csrmm<T>(PARAMS), rocsparse_status_invalid_pointer);
+
+        beta    = nullptr;
+        dense_C = (T*)0x4;
+        EXPECT_ROCSPARSE_STATUS(rocsparse_csrmm<T>(PARAMS), rocsparse_status_invalid_pointer);
     }
 
 #undef PARAMS
