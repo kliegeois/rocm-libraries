@@ -35,6 +35,9 @@ Definitions:
 
   - &alpha_beta_range_quick
     - { alpha:   1.0, beta: -1.0, alphai:  1.0, betai: -0.5 }
+    # alpha == 0 with beta != 1 must not take the (alpha == 0, beta == 1) host-pointer
+    # quick return: the kernel runs and C must come back as beta * C.
+    - { alpha:   0.0, beta:  2.0, alphai:  0.0, betai:  0.0 }
 
   - &alpha_beta_range_checkin
     - { alpha:   2.0, beta:  0.0,  alphai:  0.5, betai:  0.5 }

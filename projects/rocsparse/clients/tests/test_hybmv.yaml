@@ -28,10 +28,17 @@ include: rocsparse_common.yaml
 Definitions:
   - &alpha_beta_range_quick
     - { alpha:   1.0, beta: -1.0, alphai:  1.0, betai: -0.5 }
+    # alpha == 0 with beta != 1 must not take the (alpha == 0, beta == 1) host-pointer
+    # quick return: the kernel runs and y must come back as beta * y.
+    - { alpha:   0.0, beta:  2.0, alphai:  0.0, betai:  0.0 }
 
 
   - &alpha_beta_range_checkin
-    - { alpha:   0.0, beta:  1.0,  alphai:  1.5, betai:  0.5 }
+    - { alpha:   2.0, beta:  0.5,  alphai:  1.5, betai:  0.5 }
+
+  # alpha == 0 and beta == 1 is the host-pointer quick return (no kernel runs).
+  # Used by one small pre_checkin entry so that path stays covered.
+  - &alpha_beta_range_0_1
     - { alpha:   0.0, beta:  1.0,  alphai:  0.0, betai:  0.0 }
 
 
@@ -54,7 +61,7 @@ Tests:
   precision: *single_double_precisions_complex_real
   M: [8, 16]
   N: [8, 16]
-  alpha_beta: *alpha_beta_range_checkin
+  alpha_beta: *alpha_beta_range_0_1
   transA: [rocsparse_operation_none]
   baseA: [rocsparse_index_base_zero]
   matrix: [rocsparse_matrix_random]

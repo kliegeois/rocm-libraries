@@ -1,5 +1,5 @@
 # ########################################################################
-# Copyright (C) 2020-2025 Advanced Micro Devices, Inc. All rights Reserved.
+# Copyright (C) 2020-2026 Advanced Micro Devices, Inc. All rights Reserved.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -26,9 +26,17 @@ include: rocsparse_common.yaml
 Definitions:
   - &alpha_beta_range_quick
     - { alpha:   1.0, beta: -1.0, alphai:  1.0, betai: -0.5 }
+    # alpha == 0 with beta != 1 must not take the (alpha == 0, beta == 1) host-pointer
+    # quick return: the kernel runs and y must come back as beta * y.
+    - { alpha:   0.0, beta:  2.0, alphai:  0.0, betai:  0.0 }
 
   - &alpha_beta_range_checkin
-    - { alpha:   0.0, beta:  1.0,  alphai:  1.5, betai:  0.5 }
+    - { alpha:   2.0, beta:  0.5,  alphai:  1.5, betai:  0.5 }
+
+  # alpha == 0 and beta == 1 is the host-pointer quick return (no kernel runs).
+  # Used by one small pre_checkin entry so that path stays covered.
+  - &alpha_beta_range_0_1
+    - { alpha:   0.0, beta:  1.0,  alphai:  0.0, betai:  0.0 }
 
   - &alpha_beta_range_nightly
     - { alpha:  -0.5, beta:  0.5,  alphai:  1.0, betai: -0.5 }
@@ -149,7 +157,7 @@ Tests:
   precision: *single_double_precisions_complex_real
   M: [100]
   N: [100]
-  alpha_beta: *alpha_beta_range_checkin
+  alpha_beta: *alpha_beta_range_0_1
   transA: [rocsparse_operation_none]
   baseA: [rocsparse_index_base_one]
   matrix: [rocsparse_matrix_random]
@@ -180,6 +188,27 @@ Tests:
              bibd_22_8,
              Chebyshev4,
              mac_econ_fwd500]
+
+# nnz-split and LRB on matrices with rows of thousands of nonzeros (ASIC_320k:
+# longest row 203800; bibd_22_8: every row 38760). The nnz-split single-row block
+# path runs only when a whole nnz block lies inside one row, and the LRB long-row
+# kernel only for rows above 2048 nonzeros; no random quick or pre_checkin matrix
+# reaches either.
+- name: spmv_csr_file
+  category: pre_checkin
+  function: spmv_csr
+  indextype: *i32i32_i64i32_i64i64
+  precision: *single_double_precisions
+  M: 1
+  N: 1
+  alpha_beta: *alpha_beta_range_checkin
+  transA: [rocsparse_operation_none]
+  baseA: [rocsparse_index_base_zero]
+  matrix: [rocsparse_matrix_file_rocalution]
+  matrix_type: [rocsparse_matrix_type_general]
+  spmv_alg: [rocsparse_spmv_alg_csr_nnzsplit, rocsparse_spmv_alg_csr_lrb]
+  filename: [ASIC_320k,
+             bibd_22_8]
 
 - name: spmv_csr_file
   category: pre_checkin
