@@ -5191,9 +5191,13 @@ void host_csrgeam_nnz(J                    M,
     if(M == 0 || N == 0)
     {
         *nnz_C = 0;
-        for(J i = 0; i <= M; ++i)
+        // The client matrices allocate no row pointer for a matrix with no rows.
+        if(csr_row_ptr_C != nullptr)
         {
-            csr_row_ptr_C[i] = base_C;
+            for(J i = 0; i <= M; ++i)
+            {
+                csr_row_ptr_C[i] = base_C;
+            }
         }
         return;
     }
