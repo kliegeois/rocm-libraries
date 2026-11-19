@@ -151,17 +151,39 @@ void testing_csrgeam(const Arguments& arg)
     // Sample A
     matrix_factory.init_csr(hcsr_row_ptr_A, hcsr_col_ind_A, hcsr_val_A, M, N, nnz_A, baseA);
 
-    // Sample B
-    matrix_factory_random.init_csr(hcsr_row_ptr_B,
-                                   hcsr_col_ind_B,
-                                   hcsr_val_B,
-                                   M,
-                                   N,
-                                   nnz_B,
-                                   baseB,
-                                   rocsparse_matrix_type_general,
-                                   rocsparse_fill_mode_lower,
-                                   rocsparse_storage_mode_sorted);
+    // Sample B from arg.matrixB (arg.matrix only drives A, so matrix: rocsparse_matrix_zero
+    // pairs an empty A with a non-empty B and matrixB: rocsparse_matrix_zero the reverse).
+    // The default rocsparse_matrix_random keeps the standalone random factory:
+    // rocsparse_matrix_factory reseeds in its constructor, so a second factory built from
+    // arg would reproduce A. Only random and zero are supported; a file or structured B
+    // would rewrite M and N under A.
+    if(arg.matrixB == rocsparse_matrix_random)
+    {
+        matrix_factory_random.init_csr(hcsr_row_ptr_B,
+                                       hcsr_col_ind_B,
+                                       hcsr_val_B,
+                                       M,
+                                       N,
+                                       nnz_B,
+                                       baseB,
+                                       rocsparse_matrix_type_general,
+                                       rocsparse_fill_mode_lower,
+                                       rocsparse_storage_mode_sorted);
+    }
+    else if(arg.matrixB == rocsparse_matrix_zero)
+    {
+        static constexpr bool       noseed = true;
+        rocsparse_matrix_factory<T> matrix_factory_B(
+            arg, arg.matrixB, arg.timing ? false : true, full_rank, noseed);
+        matrix_factory_B.init_csr(hcsr_row_ptr_B, hcsr_col_ind_B, hcsr_val_B, M, N, nnz_B, baseB);
+    }
+    else
+    {
+        std::cerr << "testing_csrgeam: matrixB must be rocsparse_matrix_random or "
+                     "rocsparse_matrix_zero"
+                  << std::endl;
+        throw rocsparse_status_invalid_value;
+    }
 
     // Allocate device memory
     device_vector<rocsparse_int> dcsr_row_ptr_A(M + 1);

@@ -602,6 +602,7 @@ Arguments:
   - spsort_alg: rocsparse_spsort_alg
   - matrix: rocsparse_matrix_init
   - matrix_init_kind: rocsparse_matrix_init_kind
+  - matrixB: rocsparse_matrix_init
   - unit_check: rocsparse_int
   - timing: rocsparse_int
   - iters: rocsparse_int
@@ -766,6 +767,7 @@ Defaults:
   diagonal_modifier: rocsparse_diagonal_modifier_none
   matrix: rocsparse_matrix_random
   matrix_init_kind: rocsparse_matrix_init_kind_default
+  matrixB: rocsparse_matrix_random
   unit_check: 1
   timing: 0
   iters: 10

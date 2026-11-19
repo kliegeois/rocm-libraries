@@ -132,6 +132,7 @@ struct Arguments
 
     rocsparse_matrix_init      matrix;
     rocsparse_matrix_init_kind matrix_init_kind;
+    rocsparse_matrix_init      matrixB;
 
     rocsparse_int unit_check;
     rocsparse_int timing;
@@ -296,6 +297,7 @@ struct Arguments
         ROCSPARSE_FORMAT_CHECK(spsort_alg);
         ROCSPARSE_FORMAT_CHECK(matrix);
         ROCSPARSE_FORMAT_CHECK(matrix_init_kind);
+        ROCSPARSE_FORMAT_CHECK(matrixB);
         ROCSPARSE_FORMAT_CHECK(unit_check);
         ROCSPARSE_FORMAT_CHECK(timing);
         ROCSPARSE_FORMAT_CHECK(iters);
@@ -544,6 +546,7 @@ private:
 #endif
         print("matrix", rocsparse_matrix2string(arg.matrix));
         print("matrix_init_kind", rocsparse_matrix_init_kind2string(arg.matrix_init_kind));
+        print("matrixB", rocsparse_matrix2string(arg.matrixB));
         print("file", arg.filename);
         print("algo", arg.algo);
         print("numeric_boost", arg.numericboost);
