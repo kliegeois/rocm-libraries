@@ -219,6 +219,7 @@ public:
         if(arg.unit_check)
         {
             // Run solve
+            rocsparse_matrix_utils::init_nan_if_beta_zero(*h_beta, dy);
             CHECK_ROCSPARSE_ERROR(testing::rocsparse_spmv(
                 PARAMS(h_alpha, matA, x, h_beta, y, rocsparse_spmv_stage_compute)));
 
@@ -235,6 +236,7 @@ public:
             dy.transfer_from(hy_copy);
             CHECK_ROCSPARSE_ERROR(
                 rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_device));
+            rocsparse_matrix_utils::init_nan_if_beta_zero(*h_beta, dy);
             CHECK_ROCSPARSE_ERROR(testing::rocsparse_spmv(
                 PARAMS(d_alpha, matA, x, d_beta, y, rocsparse_spmv_stage_compute)));
             CHECK_ROCSPARSE_ERROR(rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_host));

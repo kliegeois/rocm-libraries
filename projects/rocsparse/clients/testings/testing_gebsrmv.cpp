@@ -1,5 +1,5 @@
 /* ************************************************************************
- * Copyright (C) 2020-2025 Advanced Micro Devices, Inc. All rights Reserved.
+ * Copyright (C) 2020-2026 Advanced Micro Devices, Inc. All rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -212,6 +212,7 @@ void testing_gebsrmv(const Arguments& arg)
 
         // Pointer mode host
         CHECK_ROCSPARSE_ERROR(rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_host));
+        rocsparse_matrix_utils::init_nan_if_beta_zero(*h_beta, dy);
         CHECK_ROCSPARSE_ERROR(testing::rocsparse_gebsrmv<T>(PARAMS(h_alpha, dA, dx, h_beta, dy)));
         if(ROCSPARSE_REPRODUCIBILITY)
         {
@@ -241,6 +242,7 @@ void testing_gebsrmv(const Arguments& arg)
         }
 
         CHECK_ROCSPARSE_ERROR(rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_device));
+        rocsparse_matrix_utils::init_nan_if_beta_zero(*h_beta, dy);
         CHECK_ROCSPARSE_ERROR(testing::rocsparse_gebsrmv<T>(PARAMS(d_alpha, dA, dx, d_beta, dy)));
         if(ROCSPARSE_REPRODUCIBILITY)
         {

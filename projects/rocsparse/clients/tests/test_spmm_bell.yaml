@@ -34,6 +34,9 @@ Definitions:
     - { alpha:   0.0, beta:  1.0,  alphai:  1.5, betai:  0.5 }
     - { alpha:   3.0, beta:  1.0,  alphai:  2.0, betai: -0.5 }
 
+  - &alpha_beta_range_beta_zero
+    - { alpha:   2.0, beta:  0.0,  alphai:  1.5, betai:  0.0 }
+
   - &alpha_beta_range_nightly
     - { alpha:  -0.5, beta:  0.5,  alphai:  1.0, betai: -0.5 }
     - { alpha:  -1.0, beta: -0.5,  alphai:  0.0, betai:  0.0 }
@@ -114,6 +117,25 @@ Tests:
   orderC: [rocsparse_order_row]
   filename: [nos6]
 
+# beta == 0: the harness fills the device C with NaN, so every kernel must
+# overwrite C instead of scaling it.
+- name: spmm_bell
+  category: quick
+  function: spmm_bell
+  indextype: *i32
+  precision: *single_double_precisions_complex_real
+  M: [48]
+  N: [64]
+  K: [22]
+  block_dim: [2, 5, 16]
+  alpha_beta: *alpha_beta_range_beta_zero
+  transA: [rocsparse_operation_none]
+  transB: [rocsparse_operation_none, rocsparse_operation_transpose]
+  baseA: [rocsparse_index_base_zero]
+  matrix: [rocsparse_matrix_random]
+  spmm_alg: [rocsparse_spmm_alg_bell]
+  orderB: [rocsparse_order_column, rocsparse_order_row]
+  orderC: [rocsparse_order_column, rocsparse_order_row]
 
 # Pre-checkin
 - name: spmm_bell_bad_arg
