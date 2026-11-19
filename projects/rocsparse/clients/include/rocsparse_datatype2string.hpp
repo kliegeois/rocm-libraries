@@ -33,8 +33,9 @@
 
 typedef enum rocsparse_matrix_init_kind_
 {
-    rocsparse_matrix_init_kind_default  = 0,
-    rocsparse_matrix_init_kind_tunedavg = 1
+    rocsparse_matrix_init_kind_default  = 0, /**< Random values */
+    rocsparse_matrix_init_kind_tunedavg = 1, /**< Random values, nnz per row tuned to N */
+    rocsparse_matrix_init_kind_pivoting = 2 /**< Tridiagonal values that force pivoting (gtsv) */
 } rocsparse_matrix_init_kind;
 
 constexpr auto rocsparse_matrix_init_kind2string(rocsparse_matrix_init_kind matrix)
@@ -45,6 +46,8 @@ constexpr auto rocsparse_matrix_init_kind2string(rocsparse_matrix_init_kind matr
         return "default";
     case rocsparse_matrix_init_kind_tunedavg:
         return "tunedavg";
+    case rocsparse_matrix_init_kind_pivoting:
+        return "pivoting";
     }
     return "invalid";
 }

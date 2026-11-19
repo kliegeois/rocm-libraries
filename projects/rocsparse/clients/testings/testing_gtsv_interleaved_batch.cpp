@@ -1,6 +1,6 @@
 /*! \file */
 /* ************************************************************************
- * Copyright (C) 2021-2025 Advanced Micro Devices, Inc. All rights Reserved.
+ * Copyright (C) 2021-2026 Advanced Micro Devices, Inc. All rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -98,13 +98,39 @@ void testing_gtsv_interleaved_batch(const Arguments& arg)
     host_vector<T> hdu(m * batch_stride);
 
     // initialize tri-diagonal matrix
+    const bool pivoting = (arg.matrix_init_kind == rocsparse_matrix_init_kind_pivoting);
     for(rocsparse_int i = 0; i < m; ++i)
     {
-        for(rocsparse_int j = 0; j < batch_stride; ++j)
+        if(pivoting)
         {
-            hdl[i * batch_stride + j] = random_cached_generator<T>(1, 8);
-            hd[i * batch_stride + j]  = random_cached_generator<T>(17, 32);
-            hdu[i * batch_stride + j] = random_cached_generator<T>(1, 8);
+            // Rows (2j, 2j + 1) form 2x2 blocks with a zero diagonal on the even
+            // row, a large coupling inside the block and a weak coupling between
+            // blocks. The matrix is nonsingular and well conditioned (the block
+            // determinants are about -(17..32)^2), but |d_k| < |dl_k+1| on every
+            // even row, so the LU algorithm has to swap rows; Thomas has no
+            // pivoting and does not apply. An odd m leaves a trailing row with a
+            // regular diagonal.
+            const bool paired    = (i % 2 == 0) && (i + 1 < m);
+            const bool strong_dl = (i % 2 == 1);
+            for(rocsparse_int j = 0; j < batch_stride; ++j)
+            {
+                hdl[i * batch_stride + j] = strong_dl ? random_cached_generator<T>(17, 32)
+                                                      : random_cached_generator<T>(0, 1);
+                hd[i * batch_stride + j]
+                    = paired ? static_cast<T>(0) : random_cached_generator<T>(1, 2);
+                hdu[i * batch_stride + j] = strong_dl ? random_cached_generator<T>(0, 1)
+                                                      : random_cached_generator<T>(17, 32);
+            }
+        }
+        else
+        {
+            // Diagonally dominant: the solver never needs to pivot.
+            for(rocsparse_int j = 0; j < batch_stride; ++j)
+            {
+                hdl[i * batch_stride + j] = random_cached_generator<T>(1, 8);
+                hd[i * batch_stride + j]  = random_cached_generator<T>(17, 32);
+                hdu[i * batch_stride + j] = random_cached_generator<T>(1, 8);
+            }
         }
 
         if(i == 0)

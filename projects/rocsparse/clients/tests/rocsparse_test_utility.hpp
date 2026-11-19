@@ -1,6 +1,6 @@
 /*! \file */
 /* ************************************************************************
-* Copyright (C) 2022-2025 Advanced Micro Devices, Inc. All rights Reserved.
+* Copyright (C) 2022-2026 Advanced Micro Devices, Inc. All rights Reserved.
 *
 * Permission is hereby granted, free of charge, to any person obtaining a copy
 * of this software and associated documentation files (the "Software"), to deal
@@ -41,6 +41,8 @@ inline void rocsparse_test_name_suffix_generator_print(std::ostream& s, T item)
 
 ROCSPARSE_TEST_NAME_SUFFIX_GENERATOR_PRINT_SPECIALIZE(rocsparse_matrix_init,
                                                       rocsparse_matrix2string);
+ROCSPARSE_TEST_NAME_SUFFIX_GENERATOR_PRINT_SPECIALIZE(rocsparse_matrix_init_kind,
+                                                      rocsparse_matrix_init_kind2string);
 ROCSPARSE_TEST_NAME_SUFFIX_GENERATOR_PRINT_SPECIALIZE(rocsparse_indextype,
                                                       rocsparse_indextype2string);
 ROCSPARSE_TEST_NAME_SUFFIX_GENERATOR_PRINT_SPECIALIZE(rocsparse_datatype,

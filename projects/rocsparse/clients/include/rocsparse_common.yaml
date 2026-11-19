@@ -65,6 +65,7 @@ Datatypes:
       attr:
         rocsparse_matrix_init_kind_default: 0
         rocsparse_matrix_init_kind_tunedavg: 1
+        rocsparse_matrix_init_kind_pivoting: 2
   - rocsparse_operation:
       bases: [ c_int ]
       attr:

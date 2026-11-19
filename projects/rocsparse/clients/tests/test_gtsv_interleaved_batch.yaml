@@ -76,6 +76,22 @@ Tests:
   host_memory_gb: 1
   device_memory_gb: 1
 
+# The default values are diagonally dominant, so |d_k| < |dl_k+1| never holds and
+# the LU algorithm's row swap never runs. The pivoting kind pairs the rows into 2x2
+# blocks with a zero diagonal on the even row and a large coupling, which forces the
+# swap on every even row. QR solves the same systems; Thomas has no pivoting and
+# would divide by the zero diagonal, so it is left out.
+- name: gtsv_interleaved_batch_pivoting
+  category: quick
+  function: gtsv_interleaved_batch
+  precision: *single_double_precisions_complex_real
+  M: [7, 25, 128, 513]
+  batch_count: [3, 27]
+  batch_stride: [27]
+  gtsv_interleaved_alg: [rocsparse_gtsv_interleaved_alg_lu, rocsparse_gtsv_interleaved_alg_qr]
+  matrix: [rocsparse_matrix_random]
+  matrix_init_kind: [rocsparse_matrix_init_kind_pivoting]
+
 # Pre-checkin
 - name: gtsv_interleaved_batch_bad_arg
   category: pre_checkin

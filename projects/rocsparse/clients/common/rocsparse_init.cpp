@@ -1334,6 +1334,7 @@ void rocsparse_init_csr_random(std::vector<I>&            csr_row_ptr,
         break;
     }
 
+    case rocsparse_matrix_init_kind_pivoting:
     case rocsparse_matrix_init_kind_default:
     {
         if(M < 32 && N < 32)
@@ -1415,6 +1416,7 @@ void rocsparse_init_coo_random(std::vector<I>&            row_ind,
         rocsparse_init_coo_matrix(row_ind, col_ind, val, M, N, nnz, base, full_rank, to_int);
         break;
     }
+    case rocsparse_matrix_init_kind_pivoting:
     case rocsparse_matrix_init_kind_default:
     {
         // Compute non-zero entries of the matrix
