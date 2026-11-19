@@ -141,6 +141,23 @@ Tests:
   baseA: [rocsparse_index_base_zero]
   matrix: [rocsparse_matrix_random]
 
+# Conjugate-transpose B through the NT row-split remainder kernels. The
+# remainder kernels only run when N mod 64 is in 1..15 (N 3 selects the <=8
+# handler, N 12 the <=16 handler), so complex values are needed here to check
+# that the conjugation of B is applied in the remainder path.
+- name: csrmm
+  category: quick
+  function: csrmm
+  precision: *single_double_precisions_complex
+  M: [37]
+  N: [3, 12]
+  K: [43]
+  alpha_beta: *alpha_beta_range_quick
+  transA: [rocsparse_operation_none]
+  transB: [rocsparse_operation_conjugate_transpose]
+  baseA: [rocsparse_index_base_zero]
+  matrix: [rocsparse_matrix_random]
+
 # Pre_checkin
 - name: csrmm_bad_arg
   category: pre_checkin
