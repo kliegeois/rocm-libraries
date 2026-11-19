@@ -25,9 +25,13 @@
 #include "testing_csritilu0.hpp"
 
 #include "rocsparse.hpp"
+#include "rocsparse_clients_objects.hpp"
 #include "rocsparse_enum.hpp"
 #include "testing.hpp"
 #include <hip/hip_runtime.h>
+
+#include <algorithm>
+#include <limits>
 
 template <typename T>
 static rocsparse_status csrilu0(rocsparse_handle          handle_,
@@ -91,7 +95,132 @@ static rocsparse_status csrilu0(rocsparse_handle          handle_,
     return rocsparse_csrilu0_clear(handle_, info_);
 }
 
-void testing_csritilu0_extra(const Arguments& arg) {}
+// One compute call with the stopping criteria and the residual norm enabled,
+// starting from the iterate ilu0_. Returns the status of the compute stage.
+template <typename T>
+static rocsparse_status
+    csritilu0_extra_compute(rocsparse_handle                                    handle,
+                            rocsparse_itilu0_alg                                alg,
+                            device_csr_matrix<T, rocsparse_int, rocsparse_int>& dA,
+                            const host_dense_vector<T>&                         ilu0_,
+                            rocsparse_int&                                      nmaxiter)
+{
+    const rocsparse_int options
+        = rocsparse_itilu0_option_stopping_criteria | rocsparse_itilu0_option_compute_nrm_residual;
+    const rocsparse_datatype datatype = rocsparse_datatype_t::get<T>();
+    const T                  tol      = static_cast<T>(1.0e-8);
+
+    rocsparse_status status;
+    size_t           buffer_size = 0;
+    status                       = rocsparse_csritilu0_buffer_size(handle,
+                                             alg,
+                                             options,
+                                             nmaxiter,
+                                             dA.m,
+                                             dA.nnz,
+                                             dA.ptr,
+                                             dA.ind,
+                                             dA.base,
+                                             datatype,
+                                             &buffer_size);
+    if(status != rocsparse_status_success)
+    {
+        return status;
+    }
+
+    device_dense_vector<char> buffer(buffer_size);
+    status = rocsparse_csritilu0_preprocess(handle,
+                                            alg,
+                                            options,
+                                            nmaxiter,
+                                            dA.m,
+                                            dA.nnz,
+                                            dA.ptr,
+                                            dA.ind,
+                                            dA.base,
+                                            datatype,
+                                            buffer_size,
+                                            buffer);
+    if(status != rocsparse_status_success)
+    {
+        return status;
+    }
+
+    // The library takes ilu0 as the initial iterate (L_0 = lower(ilu0),
+    // U_0 = upper(ilu0)), so it is set before every compute.
+    device_dense_vector<T> ilu0(ilu0_);
+    status = rocsparse_set_pointer_mode(handle, rocsparse_pointer_mode_host);
+    if(status != rocsparse_status_success)
+    {
+        return status;
+    }
+
+    return rocsparse_csritilu0_compute<T>(handle,
+                                          alg,
+                                          options,
+                                          &nmaxiter,
+                                          tol,
+                                          dA.m,
+                                          dA.nnz,
+                                          dA.ptr,
+                                          dA.ind,
+                                          dA.val,
+                                          ilu0,
+                                          dA.base,
+                                          buffer_size,
+                                          buffer);
+}
+
+void testing_csritilu0_extra(const Arguments& arg)
+{
+    // Divergence report. The compute stage stops when the residual indicator of a
+    // sweep is not finite. Two inputs make the infinity norm of the matrix zero (the
+    // norm reductions drop a NaN in the first stored value; an all-zero value array
+    // has norm zero outright), so the finite, non-zero residual of the first sweep
+    // divides to +inf and every algorithm must return rocsparse_status_zero_pivot
+    // with nmaxiter == 1 rather than run every sweep and report success. The
+    // residual is non-zero because the iteration starts from the values of the
+    // unmodified matrix; from a zero start the all-zero input would converge at
+    // once. The functional harness cannot host these inputs: it requires the
+    // status to match the exact csrilu0, which reports a numerical pivot and skips
+    // the case.
+    using T = double;
+    using I = rocsparse_int;
+    using J = rocsparse_int;
+
+    rocsparse_local_handle handle;
+
+    // Initial iterate: the unmodified tridiagonal matrix.
+    std::unique_ptr<host_csr_matrix<T, I, J>> hA0(
+        rocsparse_clients::csr_tridiag_matrix_t<T, I, J>::init(4));
+    host_dense_vector<T> hilu0(hA0->val);
+
+    for(int input = 0; input < 2; ++input)
+    {
+        std::unique_ptr<host_csr_matrix<T, I, J>> hA(
+            rocsparse_clients::csr_tridiag_matrix_t<T, I, J>::init(4));
+        if(input == 0)
+        {
+            hA->val[0] = std::numeric_limits<T>::quiet_NaN(); // entry (0, 0), first stored value
+        }
+        else
+        {
+            std::fill(hA->val.data(), hA->val.data() + hA->val.size(), static_cast<T>(0));
+        }
+        device_csr_matrix<T, I, J> dA(*hA);
+
+        for(auto alg : {rocsparse_itilu0_alg_sync_split,
+                        rocsparse_itilu0_alg_async_split,
+                        rocsparse_itilu0_alg_async_inplace})
+        {
+            rocsparse_int nmaxiter = 10;
+            EXPECT_ROCSPARSE_STATUS(csritilu0_extra_compute<T>(handle, alg, dA, hilu0, nmaxiter),
+                                    rocsparse_status_zero_pivot);
+            // The divergence is detected after the first sweep.
+            unit_check_scalar<rocsparse_int>(1, nmaxiter);
+        }
+    }
+}
 
 template <typename T>
 void testing_csritilu0_bad_arg(const Arguments& arg)

@@ -1,5 +1,5 @@
 # ########################################################################
-# Copyright (C) 2019-2024 Advanced Micro Devices, Inc.
+# Copyright (C) 2019-2026 Advanced Micro Devices, Inc.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -51,6 +51,15 @@ Tests:
   category: pre_checkin
   function: csritilu0_bad_arg
   precision: *single_double_precisions_complex_real
+
+# Divergence report: a matrix whose infinity norm evaluates to zero (NaN in the
+# first stored value, or all-zero values) gives an infinite residual indicator and
+# must stop the iteration after one sweep with rocsparse_status_zero_pivot. The
+# parametrised entries below cannot carry these inputs because the harness ties the
+# status to the exact csrilu0.
+- name: csritilu0_extra
+  category: quick
+  function: csritilu0_extra
 
 - name: csritilu0
   category: quick
