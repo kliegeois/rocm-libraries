@@ -38,8 +38,8 @@ namespace rocsparse
     {
     private:
         rng_t();
-        ~rng_t()            = default;
-        rng_t(const rng_t&) = delete;
+        ~rng_t()                       = default;
+        rng_t(const rng_t&)            = delete;
         rng_t& operator=(const rng_t&) = delete;
 
         static constexpr size_t s_rand_cache_size = 1024;
@@ -72,7 +72,11 @@ namespace rocsparse
         rocsparse_rng_t& get_rng_nan();
         rocsparse_rng_t& get_rng_seed();
 
-        /*! \brief  generate a random number in range [a,b]*/
+        /*! \brief  generate a random number in range [a,b].
+         *  For complex T the bounds are read as a real interval: the phase is uniform on
+         *  [0, 2pi) and the modulus is uniform on the moduli of [a,b], that is
+         *  [0, max(|a|,|b|)) when the interval contains zero and [min(|a|,|b|), max(|a|,|b|))
+         *  otherwise. */
         template <typename T>
         T generator(T a, T b);
 
@@ -80,7 +84,8 @@ namespace rocsparse
         template <typename T>
         T generator_exact(int a, int b);
 
-        /*! \brief  generate a random number in range [a,b] from a predetermined finite cache*/
+        /*! \brief  generate a random number in range [a,b] from a predetermined finite cache.
+         *  Complex T: same bounds semantics as generator(). */
         template <typename T>
         T cached_generator(T a, T b);
 
@@ -119,6 +124,9 @@ T random_cached_generator_exact(int a = 1, int b = 10);
 template <typename T, typename std::enable_if_t<std::is_integral<T>::value, bool> = true>
 T random_cached_generator(T a = static_cast<T>(1), T b = static_cast<T>(10));
 
+/*! \brief  generate a random number in range [a,b] from a predetermined finite cache.
+ *  For complex T see rocsparse::rng_t::generator: the modulus is uniform on the moduli of
+ *  the real interval [a,b] and the phase is uniform on [0, 2pi). */
 template <typename T, typename std::enable_if_t<!std::is_integral<T>::value, bool> = true>
 T random_cached_generator(T a = static_cast<T>(0), T b = static_cast<T>(1));
 

@@ -168,13 +168,33 @@ T rocsparse::rng_t::cached_generator_normal()
     return static_cast<T>(this->normal_double());
 }
 
+namespace
+{
+    // Modulus bounds for a complex sample drawn from the "interval" [a, b].
+    // The callers pass real bounds (zero imaginary part); the modulus of a
+    // point of [a, b] ranges over [min(|a|, |b|), max(|a|, |b|)] unless the
+    // interval contains zero, in which case it ranges over [0, max(|a|, |b|)].
+    // Taking [|a|, |b|] directly collapses symmetric bounds such as (-1, 1) to
+    // the single modulus 1.
+    template <typename R, typename C>
+    void complex_modulus_bounds(C a, C b, R& r_lo, R& r_hi)
+    {
+        const R abs_a = std::abs(a);
+        const R abs_b = std::abs(b);
+        r_hi          = std::max(abs_a, abs_b);
+        r_lo = (std::real(a) <= R(0) && R(0) <= std::real(b)) ? R(0) : std::min(abs_a, abs_b);
+    }
+}
+
 template <>
 rocsparse_float_complex
     rocsparse::rng_t::generator<rocsparse_float_complex>(rocsparse_float_complex a,
                                                          rocsparse_float_complex b)
 {
+    float r_lo, r_hi;
+    complex_modulus_bounds(a, b, r_lo, r_hi);
     const float theta = rocsparse::rng_t::generator<float>(0.0f, 2.0f * acos(-1.0f));
-    const float r     = rocsparse::rng_t::generator<float>(std::abs(a), std::abs(b));
+    const float r     = rocsparse::rng_t::generator<float>(r_lo, r_hi);
 
     return rocsparse_float_complex(r * cos(theta), r * sin(theta));
 }
@@ -184,8 +204,10 @@ rocsparse_double_complex
     rocsparse::rng_t::generator<rocsparse_double_complex>(rocsparse_double_complex a,
                                                           rocsparse_double_complex b)
 {
+    double r_lo, r_hi;
+    complex_modulus_bounds(a, b, r_lo, r_hi);
     const double theta = rocsparse::rng_t::generator<double>(0.0, 2.0 * acos(-1.0));
-    const double r     = rocsparse::rng_t::generator<double>(std::abs(a), std::abs(b));
+    const double r     = rocsparse::rng_t::generator<double>(r_lo, r_hi);
 
     return rocsparse_double_complex(r * cos(theta), r * sin(theta));
 }
@@ -222,8 +244,10 @@ rocsparse_float_complex
     rocsparse::rng_t::cached_generator<rocsparse_float_complex>(rocsparse_float_complex a,
                                                                 rocsparse_float_complex b)
 {
-    float theta = rocsparse::rng_t::cached_generator<float>(0.0f, 2.0f * acos(-1.0f));
-    float r     = rocsparse::rng_t::cached_generator<float>(std::abs(a), std::abs(b));
+    float r_lo, r_hi;
+    complex_modulus_bounds(a, b, r_lo, r_hi);
+    const float theta = rocsparse::rng_t::cached_generator<float>(0.0f, 2.0f * acos(-1.0f));
+    const float r     = rocsparse::rng_t::cached_generator<float>(r_lo, r_hi);
 
     return rocsparse_float_complex(r * cos(theta), r * sin(theta));
 }
@@ -233,8 +257,10 @@ rocsparse_double_complex
     rocsparse::rng_t::cached_generator<rocsparse_double_complex>(rocsparse_double_complex a,
                                                                  rocsparse_double_complex b)
 {
+    double r_lo, r_hi;
+    complex_modulus_bounds(a, b, r_lo, r_hi);
     const double theta = rocsparse::rng_t::cached_generator<double>(0.0, 2.0 * acos(-1.0));
-    const double r     = rocsparse::rng_t::cached_generator<double>(std::abs(a), std::abs(b));
+    const double r     = rocsparse::rng_t::cached_generator<double>(r_lo, r_hi);
 
     return rocsparse_double_complex(r * cos(theta), r * sin(theta));
 }
