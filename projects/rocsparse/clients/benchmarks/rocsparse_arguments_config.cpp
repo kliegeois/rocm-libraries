@@ -120,6 +120,7 @@ rocsparse_arguments_config::rocsparse_arguments_config()
 
         this->matrix                              = static_cast<rocsparse_matrix_init>(0);
         this->matrix_init_kind                    = static_cast<rocsparse_matrix_init_kind>(0);
+        this->matrixB                             = static_cast<rocsparse_matrix_init>(0);
         this->unit_check                          = static_cast<rocsparse_int>(0);
         this->timing                              = static_cast<rocsparse_int>(1);
         this->iters                               = static_cast<rocsparse_int>(0);

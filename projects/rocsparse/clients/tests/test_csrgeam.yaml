@@ -72,6 +72,38 @@ Tests:
   baseC: [rocsparse_index_base_one]
   matrix: [rocsparse_matrix_zero]
 
+# Reverse pairing: A non-empty, B empty (nnz_B == 0). The entry above empties A
+# only, since matrix does not affect B (B defaults to matrixB: rocsparse_matrix_random).
+- name: csrgeam
+  category: quick
+  function: csrgeam
+  precision: *single_double_precisions_complex_real
+  M: [300]
+  N: [243]
+  alpha_alphai: *alpha_range_quick
+  beta_betai: *beta_range_quick
+  baseA: [rocsparse_index_base_one]
+  baseB: [rocsparse_index_base_zero]
+  baseC: [rocsparse_index_base_one]
+  matrix: [rocsparse_matrix_random]
+  matrixB: [rocsparse_matrix_zero]
+
+# No rows: the legacy API still has to write csr_row_ptr_C[0] = base_C when the
+# caller passes a row pointer (the generic spgeam tests compare no row pointer
+# for M 0).
+- name: csrgeam
+  category: quick
+  function: csrgeam
+  precision: *single_double_precisions_complex_real
+  M: [0]
+  N: [300]
+  alpha_alphai: *alpha_range_quick
+  beta_betai: *beta_range_quick
+  baseA: [rocsparse_index_base_one]
+  baseB: [rocsparse_index_base_zero]
+  baseC: [rocsparse_index_base_one]
+  matrix: [rocsparse_matrix_random]
+
 - name: csrgeam
   category: quick
   function: csrgeam
