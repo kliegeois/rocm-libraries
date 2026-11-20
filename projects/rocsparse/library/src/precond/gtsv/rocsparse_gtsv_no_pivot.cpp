@@ -31,10 +31,9 @@
 #include "gtsv_nopivot_medium_device.h"
 #include "gtsv_nopivot_thomas_device.h"
 
+#include <algorithm>
 #include <cstdint>
-#include <limits>
 #include <map>
-#include <type_traits>
 
 namespace rocsparse
 {
@@ -521,6 +520,101 @@ namespace rocsparse
     }
 
     template <uint32_t BLOCKSIZE, uint32_t NUM_RHS, typename T>
+    rocsparse_status launch_backward_substitution_kernel(rocsparse_handle handle,
+                                                         rocsparse_int    m,
+                                                         rocsparse_int    n,
+                                                         int64_t          ldb,
+                                                         int              num_spikes,
+                                                         const T*         dl_modified,
+                                                         const T*         d_modified,
+                                                         const T*         du_modified,
+                                                         const T*         B_modified,
+                                                         const T*         B_spike,
+                                                         T*               B)
+    {
+        const int64_t chunk = rocsparse::gtsv_no_pivot_medium_chunk<rocsparse_int>(
+            m, NUM_RHS, num_spikes, handle->properties.maxGridSize[1]);
+        rocsparse_host_assert(chunk > 0, "The chunk must hold at least one right-hand side.");
+
+        for(int64_t first = 0; first < n; first += chunk)
+        {
+            const rocsparse_int columns = static_cast<rocsparse_int>(std::min(chunk, n - first));
+            RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
+                (rocsparse::gtsv_no_pivot_pcr_tiled_backward_kernel<BLOCKSIZE, NUM_RHS>),
+                dim3((m - 1) / BLOCKSIZE + 1, rocsparse::ceil_div(columns, NUM_RHS), 1),
+                dim3(BLOCKSIZE),
+                0,
+                handle->stream,
+                m,
+                columns,
+                ldb,
+                num_spikes,
+                dl_modified,
+                d_modified,
+                du_modified,
+                B_modified + static_cast<int64_t>(m) * first,
+                B_spike + static_cast<int64_t>(num_spikes) * first,
+                B + ldb * first);
+        }
+        return rocsparse_status_success;
+    }
+
+    template <uint32_t BLOCKSIZE, uint32_t NUM_RHS, typename T>
+    rocsparse_status launch_forward_elimination_kernel(rocsparse_handle handle,
+                                                       rocsparse_int    m,
+                                                       rocsparse_int    n,
+                                                       int64_t          ldb,
+                                                       rocsparse_int    num_spikes,
+                                                       const T*         dl,
+                                                       const T*         d,
+                                                       const T*         du,
+                                                       const T*         B,
+                                                       T*               dl_modified,
+                                                       T*               d_modified,
+                                                       T*               du_modified,
+                                                       T*               B_modified,
+                                                       T*               dl_spike,
+                                                       T*               d_spike,
+                                                       T*               du_spike,
+                                                       T*               B_spike)
+    {
+        // The forward and backward kernels handle each right-hand side column on its
+        // own, so they run over chunks of columns that fit in grid.y and keep their
+        // indices in range. The spike solve in between covers all n columns at once.
+        const int64_t chunk = rocsparse::gtsv_no_pivot_medium_chunk<rocsparse_int>(
+            m, NUM_RHS, num_spikes, handle->properties.maxGridSize[1]);
+        rocsparse_host_assert(chunk > 0, "The chunk must hold at least one right-hand side.");
+
+        for(int64_t first = 0; first < n; first += chunk)
+        {
+            const rocsparse_int columns = static_cast<rocsparse_int>(std::min(chunk, n - first));
+            RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
+                (rocsparse::gtsv_no_pivot_pcr_tiled_forward_kernel<BLOCKSIZE, NUM_RHS>),
+                dim3((m - 1) / BLOCKSIZE + 1, rocsparse::ceil_div(columns, NUM_RHS), 1),
+                dim3(BLOCKSIZE),
+                0,
+                handle->stream,
+                m,
+                columns,
+                ldb,
+                num_spikes,
+                dl,
+                d,
+                du,
+                B + ldb * first,
+                dl_modified,
+                d_modified,
+                du_modified,
+                B_modified + static_cast<int64_t>(m) * first,
+                dl_spike,
+                d_spike,
+                du_spike,
+                B_spike + static_cast<int64_t>(num_spikes) * first);
+        }
+        return rocsparse_status_success;
+    }
+
+    template <uint32_t BLOCKSIZE, uint32_t NUM_RHS, typename T>
     rocsparse_status launch_spike_solver_kernel(rocsparse_handle handle,
                                                 rocsparse_int    num_spikes,
                                                 rocsparse_int    n,
@@ -577,39 +671,24 @@ namespace rocsparse
 
         constexpr int NUM_RHS = 8;
 
-        // The forward and backward kernels handle each right-hand side column on its
-        // own, so they run over chunks of columns that fit in grid.y and keep their
-        // indices in range. The spike solve in between covers all n columns at once.
-        const int64_t chunk = rocsparse::gtsv_no_pivot_medium_chunk<rocsparse_int>(
-            m, NUM_RHS, num_spikes, handle->properties.maxGridSize[1]);
-        rocsparse_host_assert(chunk > 0, "The chunk must hold at least one right-hand side.");
-
-        for(int64_t first = 0; first < n; first += chunk)
-        {
-            const rocsparse_int columns = static_cast<rocsparse_int>(std::min(chunk, n - first));
-            RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
-                (rocsparse::gtsv_no_pivot_pcr_tiled_forward_kernel<BLOCKSIZE, NUM_RHS, T>),
-                dim3(nblocks, rocsparse::ceil_div(columns, NUM_RHS), 1),
-                dim3(BLOCKSIZE),
-                0,
-                handle->stream,
-                m,
-                columns,
-                ldb,
-                num_spikes,
-                dl,
-                d,
-                du,
-                B + ldb * first,
-                buffer_data->dl_modified[level],
-                buffer_data->d_modified[level],
-                buffer_data->du_modified[level],
-                buffer_data->B_modified[level] + static_cast<int64_t>(m) * first,
-                buffer_data->dl_spike[level],
-                buffer_data->d_spike[level],
-                buffer_data->du_spike[level],
-                buffer_data->B_spike[level] + static_cast<int64_t>(num_spikes) * first);
-        }
+        RETURN_IF_ROCSPARSE_ERROR(
+            (launch_forward_elimination_kernel<BLOCKSIZE, NUM_RHS>(handle,
+                                                                   m,
+                                                                   n,
+                                                                   ldb,
+                                                                   num_spikes,
+                                                                   dl,
+                                                                   d,
+                                                                   du,
+                                                                   B,
+                                                                   buffer_data->dl_modified[level],
+                                                                   buffer_data->d_modified[level],
+                                                                   buffer_data->du_modified[level],
+                                                                   buffer_data->B_modified[level],
+                                                                   buffer_data->dl_spike[level],
+                                                                   buffer_data->d_spike[level],
+                                                                   buffer_data->du_spike[level],
+                                                                   buffer_data->B_spike[level])));
 
         // Define function pointer type for kernel dispatch
         using KernelFuncPtr = rocsparse_status (*)(rocsparse_handle handle,
@@ -672,26 +751,18 @@ namespace rocsparse
                                                                       level + 1));
         }
 
-        for(int64_t first = 0; first < n; first += chunk)
-        {
-            const rocsparse_int columns = static_cast<rocsparse_int>(std::min(chunk, n - first));
-            RETURN_IF_HIPLAUNCHKERNELGGL_ERROR(
-                (rocsparse::gtsv_no_pivot_pcr_tiled_backward_kernel<BLOCKSIZE, NUM_RHS, T>),
-                dim3(nblocks, rocsparse::ceil_div(columns, NUM_RHS), 1),
-                dim3(BLOCKSIZE),
-                0,
-                handle->stream,
-                m,
-                columns,
-                ldb,
-                num_spikes,
-                buffer_data->dl_modified[level],
-                buffer_data->d_modified[level],
-                buffer_data->du_modified[level],
-                buffer_data->B_modified[level] + static_cast<int64_t>(m) * first,
-                buffer_data->B_spike[level] + static_cast<int64_t>(num_spikes) * first,
-                B + ldb * first);
-        }
+        RETURN_IF_ROCSPARSE_ERROR((
+            launch_backward_substitution_kernel<BLOCKSIZE, NUM_RHS>(handle,
+                                                                    m,
+                                                                    n,
+                                                                    ldb,
+                                                                    num_spikes,
+                                                                    buffer_data->dl_modified[level],
+                                                                    buffer_data->d_modified[level],
+                                                                    buffer_data->du_modified[level],
+                                                                    buffer_data->B_modified[level],
+                                                                    buffer_data->B_spike[level],
+                                                                    B)));
 
         return rocsparse_status_success;
     }
